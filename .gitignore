@@ -1,2 +1,20 @@
 node_modules/
 dist/
+
+# Environment
+.env
+.env.production
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Cloudflare Wrangler
+.wrangler/
+
+# OS
+.DS_Store
+Thumbs.db
