@@ -44,16 +44,11 @@ const Icons = {
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
     </svg>
   ),
-  initexLogo: (
+  openExchangeLogo: (
     <svg viewBox="0 0 40 40" fill="none">
-      <circle cx="8" cy="12" r="4" fill="currentColor"/>
-      <circle cx="8" cy="32" r="4" fill="currentColor"/>
-      <circle cx="22" cy="22" r="4" fill="currentColor"/>
-      <circle cx="32" cy="8" r="4" fill="currentColor"/>
-      <line x1="8" y1="16" x2="8" y2="28" stroke="currentColor" strokeWidth="2"/>
-      <line x1="11" y1="13" x2="19" y2="20" stroke="currentColor" strokeWidth="2"/>
-      <line x1="11" y1="31" x2="19" y2="24" stroke="currentColor" strokeWidth="2"/>
-      <line x1="25" y1="20" x2="29" y2="11" stroke="currentColor" strokeWidth="2"/>
+      <polyline points="6,8 16,20 6,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <polyline points="14,8 24,20 14,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <polyline points="22,8 32,20 22,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
     </svg>
   ),
 };
@@ -262,8 +257,8 @@ function MarketPage() {
       <header className="app-header">
         <div className="header-left">
           <div className="logo">
-            <span className="logo-icon">{Icons.initexLogo}</span>
-            <span className="logo-text"><span className="init">init</span><span className="ex">EX</span></span>
+            <span className="logo-icon">{Icons.openExchangeLogo}</span>
+            <span className="logo-text"><span className="open">Open</span> <span className="exchange">Exchange</span></span>
           </div>
           {isMobile && (
             <button
@@ -451,7 +446,7 @@ function MarketPage() {
       <footer className="app-footer">
         <div className="footer-left">
           <span className="footer-icon">{Icons.activity}</span>
-          <span>initEX Trading Engine</span>
+          <span>Open Exchange Trading Engine</span>
           <span className="separator">|</span>
           <span className="version">v1.0.0</span>
         </div>

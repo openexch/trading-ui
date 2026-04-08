@@ -1,5 +1,5 @@
 /* ================================================================
-   initEX Design System — Global Styles
+   Open Exchange Design System — Global Styles
    ================================================================ */
 
 :root {
@@ -218,11 +218,11 @@ body::before {
   line-height: 1;
 }
 
-.logo-text .init {
+.logo-text .open {
   color: var(--accent-primary);
 }
 
-.logo-text .ex {
+.logo-text .exchange {
   color: var(--text-bright);
 }
 
