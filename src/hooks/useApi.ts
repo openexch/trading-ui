@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
 import type { OrderRequest } from '../types/market';
+import { MARKETS } from '../types/market';
 
-const API_BASE = import.meta.env.VITE_ORDER_API_URL || 'http://localhost:8080';
+const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
 interface ApiState {
   loading: boolean;
@@ -13,6 +14,21 @@ interface ApiResponse {
   message: string;
 }
 
+const SIDE_MAP: Record<string, string> = { BID: 'BUY', ASK: 'SELL' };
+
+function toOmsRequest(order: OrderRequest) {
+  const market = MARKETS.find(m => m.symbol === order.market);
+  return {
+    userId: Number(order.userId),
+    marketId: market?.id ?? 1,
+    side: SIDE_MAP[order.orderSide] ?? order.orderSide,
+    orderType: order.orderType,
+    timeInForce: 'GTC',
+    price: order.price,
+    quantity: order.quantity,
+  };
+}
+
 export function useApi() {
   const [state, setState] = useState<ApiState>({ loading: false, error: null });
 
@@ -20,21 +36,21 @@ export function useApi() {
     setState({ loading: true, error: null });
 
     try {
-      const response = await fetch(`${API_BASE}/order`, {
+      const response = await fetch(`${API_BASE}/api/v1/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(order),
+        body: JSON.stringify(toOmsRequest(order)),
       });
 
-      const message = await response.text();
+      const data = await response.json();
 
-      if (response.ok || response.status === 202) {
+      if (data.accepted) {
         setState({ loading: false, error: null });
-        return { success: true, message };
+        return { success: true, message: `Order accepted (${data.omsOrderId})` };
       } else {
-        const error = message || `Error: ${response.status}`;
+        const error = data.rejectReason || `Error: ${response.status}`;
         setState({ loading: false, error });
         return { success: false, message: error };
       }
@@ -45,31 +61,21 @@ export function useApi() {
     }
   }, []);
 
-  const cancelOrder = useCallback(async (orderId: number, userId: string, market: string): Promise<ApiResponse> => {
+  const cancelOrder = useCallback(async (orderId: number, _userId: string, _market: string): Promise<ApiResponse> => {
     setState({ loading: true, error: null });
 
     try {
-      const response = await fetch(`${API_BASE}/order`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId,
-          market,
-          orderType: 'CANCEL',
-          orderId,
-          timestamp: Date.now(),
-        }),
+      const response = await fetch(`${API_BASE}/api/v1/orders/${orderId}`, {
+        method: 'DELETE',
       });
 
-      const message = await response.text();
+      const data = await response.json();
 
-      if (response.ok || response.status === 202) {
+      if (response.ok) {
         setState({ loading: false, error: null });
-        return { success: true, message };
+        return { success: true, message: data.status || 'Order cancelled' };
       } else {
-        const error = message || `Error: ${response.status}`;
+        const error = data.error || data.rejectReason || `Error: ${response.status}`;
         setState({ loading: false, error });
         return { success: false, message: error };
       }

@@ -15,7 +15,7 @@ export default defineConfig({
         target: 'ws://localhost:8081',
         ws: true,
       },
-      '/order': {
+      '/api/v1': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
@@ -33,7 +33,7 @@ export default defineConfig({
         target: 'ws://localhost:8081',
         ws: true,
       },
-      '/order': {
+      '/api/v1': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
