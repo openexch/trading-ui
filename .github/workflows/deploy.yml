@@ -20,6 +20,9 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+        env:
+          VITE_ORDER_API_URL: ${{ vars.VITE_ORDER_API_URL }}
+          VITE_MARKET_WS_URL: ${{ vars.VITE_MARKET_WS_URL }}
 
       - uses: cloudflare/wrangler-action@v3
         with:
