@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import './AdminPage.css';
 
+const ADMIN_BASE = import.meta.env.VITE_ADMIN_API_URL || '';
+
 type NodeStatusType = 'LEADER' | 'FOLLOWER' | 'OFFLINE' | 'STOPPING' | 'STARTING' | 'REJOINING' | 'ELECTION';
 
 interface NodeStatus {
@@ -316,7 +318,7 @@ export function AdminPage() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/admin/status');
+      const response = await fetch(`${ADMIN_BASE}/api/admin/status`);
       if (response.ok) {
         const data = await response.json() as ClusterStatus;
         setStatus(data);
@@ -329,14 +331,14 @@ export function AdminPage() {
 
   const fetchProgress = useCallback(async () => {
     try {
-      const response = await fetch('/api/admin/progress');
+      const response = await fetch(`${ADMIN_BASE}/api/admin/progress`);
       if (response.ok) {
         const data = await response.json() as OperationProgress;
         if (data.operation || data.currentStep > 0) {
           setProgress(data);
           if (data.complete) {
             setTimeout(async () => {
-              await fetch('/api/admin/progress?reset=true');
+              await fetch(`${ADMIN_BASE}/api/admin/progress?reset=true`);
               setProgress(null);
             }, 3000);
           }
@@ -350,7 +352,7 @@ export function AdminPage() {
   const fetchLogs = useCallback(async () => {
     if (!logSource) return;
     try {
-      let url = '/api/admin/logs?lines=200';
+      let url = `${ADMIN_BASE}/api/admin/logs?lines=200`;
       if (logSource.type === 'node') {
         url += `&node=${logSource.id}`;
       } else {
@@ -369,8 +371,8 @@ export function AdminPage() {
   const fetchProcesses = useCallback(async () => {
     try {
       const [listRes, summaryRes] = await Promise.all([
-        fetch('/api/admin/processes'),
-        fetch('/api/admin/processes/summary'),
+        fetch(`${ADMIN_BASE}/api/admin/processes`),
+        fetch(`${ADMIN_BASE}/api/admin/processes/summary`),
       ]);
       if (listRes.ok) {
         setProcesses(await listRes.json());
@@ -505,7 +507,7 @@ export function AdminPage() {
 
   const executeNodeAction = async (action: string, nodeId: number) => {
     try {
-      await fetch(`/api/admin/${action}`, {
+      await fetch(`${ADMIN_BASE}/api/admin/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nodeId }),
@@ -565,7 +567,7 @@ export function AdminPage() {
   const executeProcessAction = async (service: string, action: string) => {
     setOperatingServices(prev => new Set(prev).add(service));
     try {
-      await fetch(`/api/admin/processes/${service}/${action}`, { method: 'POST' });
+      await fetch(`${ADMIN_BASE}/api/admin/processes/${service}/${action}`, { method: 'POST' });
       const timeout = action === 'restart' ? 8000 : 3000;
       setTimeout(() => {
         setOperatingServices(prev => {
@@ -601,7 +603,7 @@ export function AdminPage() {
   const executeSelfUpdate = async () => {
     setOperatingServices(prev => new Set(prev).add('admin'));
     try {
-      await fetch('/api/admin/rebuild-admin', { method: 'POST' });
+      await fetch(`${ADMIN_BASE}/api/admin/rebuild-admin`, { method: 'POST' });
       // Admin will restart automatically — connection will drop
     } catch {
       setError('Failed to trigger self-update');
@@ -619,7 +621,7 @@ export function AdminPage() {
     if (snapshotOp || (progress?.operation && !progress.complete)) return;
     setSnapshotOp(true);
     try {
-      await fetch('/api/admin/snapshot', { method: 'POST' });
+      await fetch(`${ADMIN_BASE}/api/admin/snapshot`, { method: 'POST' });
       setTimeout(() => { setSnapshotOp(false); }, 5000);
     } catch {
       setError('Failed to take snapshot');
@@ -642,7 +644,7 @@ export function AdminPage() {
 
   const executeRollingUpdate = async () => {
     try {
-      const response = await fetch('/api/admin/rolling-update', { method: 'POST' });
+      const response = await fetch(`${ADMIN_BASE}/api/admin/rolling-update`, { method: 'POST' });
       if (!response.ok) {
         const data = await response.json();
         setError(data.error || 'Rolling update failed');
@@ -665,7 +667,7 @@ export function AdminPage() {
 
   const executeRollingCleanup = async () => {
     try {
-      const response = await fetch('/api/admin/rolling-cleanup', { method: 'POST' });
+      const response = await fetch(`${ADMIN_BASE}/api/admin/rolling-cleanup`, { method: 'POST' });
       if (!response.ok) {
         const data = await response.json();
         setError(data.error || 'Rolling cleanup failed');
@@ -677,7 +679,7 @@ export function AdminPage() {
 
   const executeStopAllNodes = async () => {
     try {
-      await fetch('/api/admin/stop-all-nodes', { method: 'POST' });
+      await fetch(`${ADMIN_BASE}/api/admin/stop-all-nodes`, { method: 'POST' });
     } catch {
       setError('Failed to stop all nodes');
     }
@@ -685,7 +687,7 @@ export function AdminPage() {
 
   const executeStartAllNodes = async () => {
     try {
-      await fetch('/api/admin/start-all-nodes', { method: 'POST' });
+      await fetch(`${ADMIN_BASE}/api/admin/start-all-nodes`, { method: 'POST' });
     } catch {
       setError('Failed to start all nodes');
     }
@@ -693,7 +695,7 @@ export function AdminPage() {
 
   const executeCleanup = async () => {
     try {
-      const response = await fetch('/api/admin/cleanup', {
+      const response = await fetch(`${ADMIN_BASE}/api/admin/cleanup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ force: true }),

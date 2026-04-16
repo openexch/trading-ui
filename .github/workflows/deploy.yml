@@ -23,6 +23,7 @@ jobs:
         env:
           VITE_ORDER_API_URL: ${{ vars.VITE_ORDER_API_URL }}
           VITE_MARKET_WS_URL: ${{ vars.VITE_MARKET_WS_URL }}
+          VITE_ADMIN_API_URL: ${{ vars.VITE_ADMIN_API_URL }}
 
       - uses: cloudflare/wrangler-action@v3
         with:
