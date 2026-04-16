@@ -6,6 +6,7 @@ import { useTrades } from './hooks/useTrades';
 import { useMarketStats } from './hooks/useMarketStats';
 import { useClusterState } from './hooks/useClusterState';
 import { useApi } from './hooks/useApi';
+import { useOrders } from './hooks/useOrders';
 import { OrderBook } from './components/OrderBook/OrderBook';
 import { TradeList } from './components/Trades/TradeList';
 import { Chart } from './components/Chart/Chart';
@@ -13,8 +14,10 @@ import { ConnectionStatus } from './components/ConnectionStatus/ConnectionStatus
 import { MarketSelector } from './components/MarketSelector/MarketSelector';
 import { MarketStats } from './components/MarketStats/MarketStats';
 import { OrderForm } from './components/OrderForm/OrderForm';
+import { OpenOrders } from './components/OpenOrders/OpenOrders';
+import { AccountPanel } from './components/AccountPanel/AccountPanel';
 import { AdminPage } from './pages/AdminPage';
-import type { WebSocketMessage, Market, OrderRequest, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
+import type { WebSocketMessage, Market, OrderRequest, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage, OrderStatusBatchMessage } from './types/market';
 import { MARKETS } from './types/market';
 import './App.css';
 
@@ -76,15 +79,17 @@ function MarketPage() {
   const { trades, handleTradesBatch, resetTrades } = useTrades();
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
   const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
-  const { submitOrder, loading: apiLoading } = useApi();
+  const { submitOrder, cancelOrder, loading: apiLoading } = useApi();
+  const { openOrders, handleOrderStatusBatch, resetOrders, removeOrder } = useOrders();
 
   const resetAllState = useCallback(() => {
     resetOrderBook();
     resetTrades();
     resetStats();
+    resetOrders();
     setCandles([]);
     setCurrentCandle(null);
-  }, [resetOrderBook, resetTrades, resetStats]);
+  }, [resetOrderBook, resetTrades, resetStats, resetOrders]);
 
   const handleReconnecting = useCallback(() => {
     resetAllState();
@@ -114,6 +119,7 @@ function MarketPage() {
           break;
         case 'ORDER_STATUS':
         case 'ORDER_STATUS_BATCH':
+          handleOrderStatusBatch(message as OrderStatusBatchMessage);
           break;
         case 'SUBSCRIPTION_CONFIRMED':
           break;
@@ -176,7 +182,8 @@ function MarketPage() {
       }
     },
     [handleBookSnapshot, handleBookDelta, handleTradesBatch, setStats,
-     handleBookUpdate, handleTrades, handleClusterStatus, handleClusterEvent]
+     handleBookUpdate, handleTrades, handleClusterStatus, handleClusterEvent,
+     handleOrderStatusBatch]
   );
 
   const { status, forceReconnect } = useWebSocket({
@@ -243,6 +250,13 @@ function MarketPage() {
   const handleSubmitOrder = useCallback(async (order: OrderRequest) => {
     return await submitOrder(order);
   }, [submitOrder]);
+
+  const handleCancelOrder = useCallback(async (orderId: number) => {
+    const result = await cancelOrder(orderId, '1', selectedMarket.symbol);
+    if (result.success) {
+      removeOrder(orderId);
+    }
+  }, [cancelOrder, removeOrder, selectedMarket.symbol]);
 
   // Order book price click → fills order form
   const handlePriceClick = useCallback((price: number) => {
@@ -360,7 +374,7 @@ function MarketPage() {
             </div>
           )}
 
-          {/* Desktop: inline order form. Mobile: Buy/Sell buttons */}
+          {/* Desktop: inline order form + open orders. Mobile: Buy/Sell buttons */}
           {!isMobile ? (
             <div className="order-area">
               <OrderForm
@@ -370,6 +384,11 @@ function MarketPage() {
                 onSubmitOrder={handleSubmitOrder}
                 loading={apiLoading}
                 externalPrice={clickedPrice}
+              />
+              <OpenOrders
+                orders={openOrders}
+                onCancelOrder={handleCancelOrder}
+                loading={apiLoading}
               />
             </div>
           ) : (
@@ -384,7 +403,7 @@ function MarketPage() {
           )}
         </section>
 
-        {/* Right sidebar — Market Selector + Recent Trades */}
+        {/* Right sidebar — Market Selector + Account + Recent Trades */}
         <aside className={`right-panel ${isMobile && mobileTab === 'trades' ? 'mobile-tab-active' : ''}`}>
           {!isMobile && (
             <MarketSelector
@@ -393,6 +412,7 @@ function MarketPage() {
               onSelectMarket={handleMarketChange}
             />
           )}
+          {!isMobile && <AccountPanel />}
           <TradeList trades={trades} />
         </aside>
       </main>

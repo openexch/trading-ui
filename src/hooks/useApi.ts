@@ -71,11 +71,11 @@ export function useApi() {
 
       const data = await response.json();
 
-      if (response.ok) {
+      if (data.accepted) {
         setState({ loading: false, error: null });
-        return { success: true, message: data.status || 'Order cancelled' };
+        return { success: true, message: data.message || 'Order cancelled' };
       } else {
-        const error = data.error || data.rejectReason || `Error: ${response.status}`;
+        const error = data.message || `Error: ${response.status}`;
         setState({ loading: false, error });
         return { success: false, message: error };
       }

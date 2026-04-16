@@ -1,8 +1,12 @@
 export function formatPrice(price: number | undefined | null): string {
   const val = price ?? 0;
+  // Use appropriate precision based on price magnitude
+  let decimals = 2;
+  if (val > 0 && val < 1) decimals = 6;
+  else if (val >= 1 && val < 10) decimals = 4;
   return val.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   });
 }
 
