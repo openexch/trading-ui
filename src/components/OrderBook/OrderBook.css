@@ -17,10 +17,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: var(--bg-tertiary);
+  background: transparent;
 }
 
 .header-title {
@@ -38,7 +38,7 @@
 .header-title h3 {
   margin: 0;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
@@ -114,15 +114,15 @@
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 4px;
-  padding: 5px 10px;
+  padding: 8px 16px;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border-color);
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: var(--bg-tertiary);
+  background: transparent;
 }
 
 .vertical-header .col.price { text-align: left; }
@@ -149,16 +149,16 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
-  background: var(--bg-primary);
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
+  padding: 8px 16px;
+  background: transparent;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .spread-price {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-bright);
   font-family: var(--font-mono);
   letter-spacing: -0.02em;
@@ -177,13 +177,13 @@
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 4px;
-  padding: 2px 10px;
+  padding: 3px 16px;
   position: relative;
-  font-size: 11px;
+  font-size: 11.5px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   transition: background var(--transition-fast);
-  line-height: 1.7;
+  line-height: 1.9;
   cursor: pointer;
 }
 
@@ -202,11 +202,11 @@
 }
 
 .book-row.bid .depth-bar {
-  background: linear-gradient(270deg, rgba(14, 203, 129, 0.15) 0%, rgba(14, 203, 129, 0.03) 100%);
+  background: linear-gradient(270deg, rgba(52, 211, 153, 0.08) 0%, rgba(52, 211, 153, 0.01) 100%);
 }
 
 .book-row.ask .depth-bar {
-  background: linear-gradient(270deg, rgba(246, 70, 93, 0.15) 0%, rgba(246, 70, 93, 0.03) 100%);
+  background: linear-gradient(270deg, rgba(248, 113, 113, 0.08) 0%, rgba(248, 113, 113, 0.01) 100%);
 }
 
 /* ── Columns ── */
@@ -219,7 +219,7 @@
 
 .book-row .col.price {
   text-align: left;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .book-row.bid .col.price {
@@ -313,15 +313,15 @@
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 4px;
-  padding: 5px 10px;
+  padding: 8px 16px;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border-color);
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: var(--bg-tertiary);
+  background: transparent;
 }
 
 .side-header .col { white-space: nowrap; }
@@ -341,15 +341,15 @@
 .horizontal-mode .bids-side .depth-bar {
   right: 0;
   left: auto;
-  background: linear-gradient(270deg, rgba(14, 203, 129, 0.18) 0%, rgba(14, 203, 129, 0.04) 100%);
-  border-right: 2px solid rgba(14, 203, 129, 0.25);
+  background: linear-gradient(270deg, rgba(52, 211, 153, 0.08) 0%, rgba(52, 211, 153, 0.01) 100%);
+  border-right: 2px solid rgba(52, 211, 153, 0.15);
 }
 
 .horizontal-mode .asks-side .depth-bar {
   left: 0;
   right: auto;
-  background: linear-gradient(90deg, rgba(246, 70, 93, 0.18) 0%, rgba(246, 70, 93, 0.04) 100%);
-  border-left: 2px solid rgba(246, 70, 93, 0.25);
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(248, 113, 113, 0.01) 100%);
+  border-left: 2px solid rgba(248, 113, 113, 0.15);
 }
 
 .horizontal-mode .book-row.bid .col.price { text-align: right; }
@@ -379,31 +379,19 @@
    ANIMATIONS
    ================================================================ */
 @keyframes level-flash {
-  0% { background: rgba(240, 185, 11, 0.2); }
-  50% { background: rgba(240, 185, 11, 0.1); }
+  0% { background: rgba(251, 191, 36, 0.10); }
+  50% { background: rgba(251, 191, 36, 0.05); }
   100% { background: transparent; }
 }
 
 @keyframes level-new-bid {
-  0% {
-    background: rgba(14, 203, 129, 0.22);
-    box-shadow: inset 0 0 0 1px rgba(14, 203, 129, 0.15);
-  }
-  100% {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px transparent;
-  }
+  0% { background: rgba(52, 211, 153, 0.12); }
+  100% { background: transparent; }
 }
 
 @keyframes level-new-ask {
-  0% {
-    background: rgba(246, 70, 93, 0.22);
-    box-shadow: inset 0 0 0 1px rgba(246, 70, 93, 0.15);
-  }
-  100% {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px transparent;
-  }
+  0% { background: rgba(248, 113, 113, 0.12); }
+  100% { background: transparent; }
 }
 
 .book-row.flash {

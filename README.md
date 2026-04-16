@@ -7,7 +7,10 @@ Web-based trading interface for the Open Exchange ultra-low-latency matching eng
 - Real-time order book with depth visualization
 - Live trade feed via WebSocket
 - Interactive candlestick charts (lightweight-charts)
-- Order entry (limit & market orders)
+- Order entry — limit, market, post-only, stop-loss, stop-limit, trailing stop, iceberg
+- Time-in-force options — GTC, IOC, FOK, GTD
+- Active orders panel with real-time status updates and cancel
+- Account management — balance display, deposit, and withdraw
 - Market statistics and ticker
 - Cluster administration panel
 - Responsive mobile layout

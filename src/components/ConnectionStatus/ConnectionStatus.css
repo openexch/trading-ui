@@ -1,14 +1,14 @@
 /* ================================================================
-   CONNECTION STATUS — Real-time connection badge
+   CONNECTION STATUS — Clean minimal badge
    ================================================================ */
 
 .connection-status {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 14px;
+  padding: 5px 12px;
   border-radius: var(--radius-full);
-  background: var(--bg-tertiary);
+  background: transparent;
   border: 1px solid var(--border-color);
   font-size: 11px;
   font-weight: 500;
@@ -25,31 +25,28 @@
 
 /* ── Connected ── */
 .connection-status.connected {
-  border-color: rgba(14, 203, 129, 0.2);
+  border-color: rgba(52, 211, 153, 0.15);
 }
 
 .connection-status.connected .status-indicator {
   background: var(--accent-green);
-  box-shadow: 0 0 6px var(--accent-green), 0 0 12px rgba(14, 203, 129, 0.3);
 }
 
 /* ── Connecting ── */
 .connection-status.connecting .status-indicator {
   background: var(--accent-yellow);
-  animation: pulse 1s infinite;
-  box-shadow: 0 0 6px rgba(240, 185, 11, 0.4);
+  animation: pulse 2s infinite;
 }
 
 /* ── Disconnected / Error ── */
 .connection-status.disconnected .status-indicator,
 .connection-status.error .status-indicator {
   background: var(--accent-red);
-  box-shadow: 0 0 4px rgba(246, 70, 93, 0.3);
 }
 
 .connection-status.disconnected,
 .connection-status.error {
-  border-color: rgba(246, 70, 93, 0.2);
+  border-color: rgba(248, 113, 113, 0.15);
 }
 
 @keyframes pulse {
@@ -65,10 +62,10 @@
 .reconnect-btn {
   margin-left: 4px;
   padding: 3px 10px;
-  background: var(--accent-green);
-  border: none;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.20);
   border-radius: var(--radius-full);
-  color: #fff;
+  color: var(--accent-green);
   font-size: 10px;
   font-weight: 600;
   cursor: pointer;
@@ -76,24 +73,22 @@
 }
 
 .reconnect-btn:hover {
-  background: var(--accent-green-hover);
-  box-shadow: 0 2px 8px rgba(14, 203, 129, 0.3);
+  background: rgba(52, 211, 153, 0.20);
 }
 
 /* ── Cluster Transition States ── */
 .connection-status.cluster-transition {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  background: transparent;
+  border: 1px solid rgba(251, 191, 36, 0.15);
 }
 
 .connection-status.cluster-transition .status-indicator {
-  background: #f59e0b;
-  animation: pulse 1.5s infinite;
-  box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+  background: var(--accent-yellow);
+  animation: pulse 2s infinite;
 }
 
 .connection-status.cluster-transition .status-text {
-  color: #f59e0b;
+  color: var(--accent-yellow);
 }
 
 /* ── Leader Badge ── */
@@ -101,10 +96,10 @@
   font-size: 9px;
   font-family: var(--font-mono);
   padding: 2px 6px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
   border-radius: 4px;
-  color: #7eb8f5;
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 /* ================================================================
@@ -118,7 +113,6 @@
     gap: 5px;
   }
 
-  /* Hide status text on mobile, just show dot */
   .connection-status .status-text {
     display: none;
   }

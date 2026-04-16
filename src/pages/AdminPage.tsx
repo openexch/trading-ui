@@ -813,11 +813,11 @@ export function AdminPage() {
     <div className="admin-page">
       {/* Header */}
       <header className="admin-header">
-        <Link to="/" className="back-link">
-          {Icons.back}
-          <span>Trading</span>
-        </Link>
-        <h1>Cluster Admin</h1>
+        <nav className="admin-breadcrumb">
+          <Link to="/">Open Exchange</Link>
+          <span className="separator">/</span>
+          <span className="current">Admin</span>
+        </nav>
       </header>
 
       {/* Error Banner */}

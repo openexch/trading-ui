@@ -1,5 +1,5 @@
 /* ================================================================
-   MARKET STATS BAR — Ticker display (Compact)
+   MARKET STATS BAR — Clean minimal ticker
    ================================================================ */
 
 .market-stats {
@@ -7,37 +7,36 @@
   align-items: stretch;
   gap: 0;
   padding: 0;
-  background: var(--bg-secondary);
+  background: transparent;
   border-radius: 0;
-  border: 1px solid var(--border-color);
-  
+  border: none;
   overflow: hidden;
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 18px;
+  gap: 3px;
+  padding: 8px 20px;
   position: relative;
 }
 
 .stat-item + .stat-item {
-  border-left: 1px solid var(--border-color);
+  border-left: 1px solid var(--border-subtle);
 }
 
 .stat-item.primary {
-  padding: 8px 20px;
-  background: linear-gradient(135deg, rgba(0, 184, 217, 0.04) 0%, transparent 100%);
-  min-width: 160px;
+  padding: 8px 24px 8px 0;
+  background: none;
+  min-width: auto;
 }
 
 .stat-label {
   font-size: 10px;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
+  letter-spacing: 0.8px;
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -45,16 +44,17 @@
   font-family: var(--font-mono);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-  font-weight: 500;
+  color: var(--text-secondary);
+  font-weight: 400;
   white-space: nowrap;
 }
 
 .stat-value.large {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-primary);
   transition: color 0.3s ease;
 }
 
@@ -68,7 +68,7 @@
 
 .stat-item:nth-child(2) .stat-value.positive,
 .stat-item:nth-child(2) .stat-value.negative {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
 }
 
@@ -82,7 +82,7 @@
 
   .stat-item.primary {
     width: 100%;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-subtle);
     padding: 10px 16px;
   }
 
@@ -104,12 +104,9 @@
     align-items: center;
     gap: 0;
     border-radius: 0;
-    border-left: none;
-    border-right: none;
     overflow: hidden;
   }
 
-  /* Show only primary (price) and 24h change */
   .stat-item {
     display: none;
   }
@@ -130,11 +127,9 @@
   }
 
   .stat-item.primary .stat-value.large {
-    font-size: 18px;
-    font-weight: 700;
+    font-size: 16px;
   }
 
-  /* Show 24h change inline */
   .stat-item:nth-child(2) {
     display: flex;
     flex-direction: row;
@@ -149,16 +144,12 @@
 
   .stat-item:nth-child(2) .stat-value {
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
   }
 }
 
 @media (max-width: 480px) {
   .stat-item.primary .stat-value.large {
-    font-size: 16px;
-  }
-
-  .stat-item:nth-child(2) .stat-value {
-    font-size: 11px;
+    font-size: 15px;
   }
 }

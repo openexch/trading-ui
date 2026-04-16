@@ -16,15 +16,15 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--bg-tertiary);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
 }
 
 .open-orders-header h3 {
   margin: 0;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
@@ -62,23 +62,23 @@
 }
 
 .orders-table th {
-  padding: 8px 14px;
+  padding: 10px 16px;
   text-align: left;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted);
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border-color);
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
-  background: var(--bg-tertiary);
+  background: transparent;
   position: sticky;
   top: 0;
 }
 
 .orders-table td {
-  padding: 8px 14px;
-  border-bottom: 1px solid rgba(34, 39, 48, 0.5);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
 }
 
@@ -162,12 +162,12 @@
 
 .cancel-btn {
   padding: 5px 12px;
-  border: 1px solid rgba(246, 70, 93, 0.3);
-  border-radius: 4px;
+  border: 1px solid rgba(248, 113, 113, 0.20);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--accent-red);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
 }

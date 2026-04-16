@@ -4,54 +4,55 @@
 
 :root {
   /* ── Backgrounds ── */
-  --bg-primary: #0b0e11;
-  --bg-secondary: #161a1e;
-  --bg-tertiary: #1e2329;
-  --bg-hover: #2b3139;
-  --bg-input: #11141a;
-  --bg-elevated: #1e2329;
+  --bg-primary: #111118;
+  --bg-secondary: #16161f;
+  --bg-tertiary: #1c1c28;
+  --bg-hover: #252532;
+  --bg-input: #0e0e15;
+  --bg-elevated: #1e1e2a;
 
   /* ── Borders ── */
-  --border-color: #222730;
-  --border-hover: #363e48;
-  --border-focus: rgba(0, 184, 217, 0.4);
+  --border-color: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.10);
+  --border-focus: rgba(129, 140, 248, 0.40);
+  --border-subtle: rgba(255, 255, 255, 0.03);
 
   /* ── Text ── */
-  --text-primary: #eaecef;
-  --text-secondary: #848e9c;
-  --text-muted: #5e6673;
-  --text-bright: #ffffff;
+  --text-primary: #e0e0e8;
+  --text-secondary: #7a7a8e;
+  --text-muted: #4a4a5a;
+  --text-bright: #f0f0f6;
 
-  /* ── Brand Accent (Cyan/Teal) ── */
-  --accent-primary: #00b8d9;
-  --accent-primary-hover: #00a3c4;
-  --accent-primary-glow: rgba(0, 184, 217, 0.15);
-  --accent-primary-ring: rgba(0, 184, 217, 0.3);
+  /* ── Brand Accent (Indigo) ── */
+  --accent-primary: #818cf8;
+  --accent-primary-hover: #6366f1;
+  --accent-primary-glow: rgba(129, 140, 248, 0.12);
+  --accent-primary-ring: rgba(129, 140, 248, 0.25);
 
   /* ── Trading Colors ── */
-  --accent-green: #0ecb81;
-  --accent-green-hover: #0bb574;
-  --accent-green-bg: rgba(14, 203, 129, 0.08);
-  --accent-green-glow: rgba(14, 203, 129, 0.15);
-  --accent-red: #f6465d;
-  --accent-red-hover: #e03d52;
-  --accent-red-bg: rgba(246, 70, 93, 0.08);
-  --accent-red-glow: rgba(246, 70, 93, 0.15);
-  --accent-yellow: #f0b90b;
-  --accent-yellow-bg: rgba(240, 185, 11, 0.08);
-  --accent-blue: #00b8d9;
+  --accent-green: #34d399;
+  --accent-green-hover: #2cc08a;
+  --accent-green-bg: rgba(52, 211, 153, 0.06);
+  --accent-green-glow: rgba(52, 211, 153, 0.10);
+  --accent-red: #f87171;
+  --accent-red-hover: #ef4444;
+  --accent-red-bg: rgba(248, 113, 113, 0.06);
+  --accent-red-glow: rgba(248, 113, 113, 0.10);
+  --accent-yellow: #fbbf24;
+  --accent-yellow-bg: rgba(251, 191, 36, 0.06);
+  --accent-blue: #818cf8;
 
   /* ── Shadows ── */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.15);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2);
-  --shadow-glow-green: 0 0 20px rgba(14, 203, 129, 0.15);
-  --shadow-glow-red: 0 0 20px rgba(246, 70, 93, 0.15);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.20);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-glow-green: 0 0 24px rgba(52, 211, 153, 0.08);
+  --shadow-glow-red: 0 0 24px rgba(248, 113, 113, 0.08);
 
   /* ── Radii ── */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --radius-full: 9999px;
 
   /* ── Typography ── */
@@ -59,9 +60,9 @@
   --font-mono: 'JetBrains Mono', 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
 
   /* ── Transitions ── */
-  --transition-fast: 0.12s ease;
-  --transition-base: 0.2s ease;
-  --transition-slow: 0.3s ease;
+  --transition-fast: 0.10s ease;
+  --transition-base: 0.18s ease;
+  --transition-slow: 0.28s ease;
 }
 
 /* ── Reset ── */
@@ -79,26 +80,12 @@ body {
   font-family: var(--font-sans);
   background: var(--bg-primary);
   color: var(--text-primary);
-  line-height: 1.5;
-  font-size: 14px;
+  line-height: 1.6;
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
   font-variant-numeric: tabular-nums;
-}
-
-/* Subtle background texture */
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.015) 1px, transparent 0);
-  background-size: 24px 24px;
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* ── App Layout ── */
@@ -120,27 +107,9 @@ body::before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-color);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  position: relative;
-}
-
-.app-header::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(0, 184, 217, 0.12) 20%,
-    rgba(0, 184, 217, 0.06) 50%,
-    rgba(0, 184, 217, 0.12) 80%,
-    transparent 100%
-  );
 }
 
 .header-left {
@@ -203,18 +172,17 @@ body::before {
   align-items: center;
   justify-content: center;
   color: var(--accent-primary);
-  filter: drop-shadow(0 0 6px rgba(0, 184, 217, 0.3));
 }
 
 .logo-icon svg {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 
 .logo-text {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
   line-height: 1;
 }
 
@@ -239,30 +207,31 @@ body::before {
    ================================================================ */
 .app-main {
   display: grid;
-  grid-template-columns: 280px 1fr 280px;
-  gap: 1px;
-  background: var(--border-color);
+  grid-template-columns: 320px 1fr;
+  gap: 6px;
+  background: transparent;
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-  margin: 4px 0;
+  border-radius: 0;
+  border: none;
+  margin: 6px 0;
 }
 
 .left-panel,
-.center-panel,
-.right-panel {
+.center-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
 }
 
-/* Remove border-radius from children inside the grid gap layout */
+/* Remove border-radius from children inside panel cards */
 .left-panel > *,
-.center-panel > *,
-.right-panel > * {
+.center-panel > * {
   border-radius: 0;
   border: none;
   box-shadow: none;
@@ -280,7 +249,7 @@ body::before {
   min-height: 200px;
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .chart-area > * {
@@ -292,6 +261,60 @@ body::before {
   flex-shrink: 0;
 }
 
+/* ── Bottom Tabbed Section ── */
+.bottom-section {
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  min-height: 200px;
+}
+
+.bottom-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.bottom-tab {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: color var(--transition-base);
+}
+
+.bottom-tab:hover {
+  color: var(--text-secondary);
+}
+
+.bottom-tab.active {
+  color: var(--text-primary);
+}
+
+.bottom-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent-primary);
+  border-radius: 2px 2px 0 0;
+}
+
+.bottom-tab-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
 /* ================================================================
    FOOTER
    ================================================================ */
@@ -299,8 +322,8 @@ body::before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 0;
-  border-top: 1px solid var(--border-color);
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
@@ -346,7 +369,6 @@ body::before {
   background: var(--accent-primary);
   border-radius: 50%;
   animation: pulse-glow 2s ease-in-out infinite;
-  box-shadow: 0 0 4px rgba(0, 184, 217, 0.4);
 }
 
 .update-rate {
@@ -359,8 +381,8 @@ body::before {
    ANIMATIONS
    ================================================================ */
 @keyframes pulse-glow {
-  0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(0, 184, 217, 0.4); }
-  50% { opacity: 0.5; box-shadow: 0 0 8px rgba(0, 184, 217, 0.2); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 @keyframes pulse {
@@ -374,13 +396,13 @@ body::before {
 }
 
 @keyframes priceFlashGreen {
-  0% { color: #0ecb81; text-shadow: 0 0 8px rgba(14, 203, 129, 0.4); }
-  100% { color: inherit; text-shadow: none; }
+  0% { color: #34d399; }
+  100% { color: inherit; }
 }
 
 @keyframes priceFlashRed {
-  0% { color: #f6465d; text-shadow: 0 0 8px rgba(246, 70, 93, 0.4); }
-  100% { color: inherit; text-shadow: none; }
+  0% { color: #f87171; }
+  100% { color: inherit; }
 }
 
 /* ================================================================
@@ -388,29 +410,17 @@ body::before {
    ================================================================ */
 @media (max-width: 1200px) {
   .app-main {
-    grid-template-columns: 240px 1fr 240px;
+    grid-template-columns: 280px 1fr;
   }
 }
 
 @media (max-width: 1000px) {
   .app-main {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr auto;
+    grid-template-columns: 1fr;
   }
 
   .left-panel {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .center-panel {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-
-  .right-panel {
-    grid-column: 2;
-    grid-row: 1;
+    max-height: 300px;
   }
 }
 
@@ -452,12 +462,12 @@ body::before {
     display: flex;
     align-items: center;
     gap: 4px;
-    background: var(--bg-tertiary);
+    background: transparent;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     color: var(--text-bright);
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     padding: 6px 10px;
     cursor: pointer;
     min-height: 36px;
@@ -490,12 +500,8 @@ body::before {
     overflow: hidden;
   }
 
-  /* Hide left/right panels on mobile — content shown via mobile tabs */
+  /* Hide left panel on mobile — content shown via mobile tabs */
   .left-panel {
-    display: none !important;
-  }
-
-  .right-panel {
     display: none !important;
   }
 
@@ -515,9 +521,9 @@ body::before {
   /* Mobile tab bar below chart */
   .mobile-tab-bar {
     display: flex;
-    background: var(--bg-tertiary);
-    border-bottom: 1px solid var(--border-color);
-    border-top: 1px solid var(--border-color);
+    background: transparent;
+    border-bottom: 1px solid var(--border-subtle);
+    border-top: 1px solid var(--border-subtle);
     flex-shrink: 0;
   }
 
@@ -528,7 +534,7 @@ body::before {
     background: transparent;
     color: var(--text-muted);
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
     position: relative;
     transition: color var(--transition-base);
@@ -596,21 +602,23 @@ body::before {
   }
 
   .mobile-buy-btn {
-    background: var(--accent-green);
-    color: #fff;
+    background: rgba(52, 211, 153, 0.15);
+    color: var(--accent-green);
+    border: 1px solid rgba(52, 211, 153, 0.25);
   }
 
   .mobile-buy-btn:active {
-    background: var(--accent-green-hover);
+    background: rgba(52, 211, 153, 0.22);
   }
 
   .mobile-sell-btn {
-    background: var(--accent-red);
-    color: #fff;
+    background: rgba(248, 113, 113, 0.15);
+    color: var(--accent-red);
+    border: 1px solid rgba(248, 113, 113, 0.25);
   }
 
   .mobile-sell-btn:active {
-    background: var(--accent-red-hover);
+    background: rgba(248, 113, 113, 0.22);
   }
 
   /* Footer: hide on mobile */
@@ -787,8 +795,8 @@ body::before {
    SCROLLBAR
    ================================================================ */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -796,12 +804,12 @@ body::before {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-hover);
-  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3d4654;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* ── Selection ── */

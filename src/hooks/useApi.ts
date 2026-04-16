@@ -18,15 +18,19 @@ const SIDE_MAP: Record<string, string> = { BID: 'BUY', ASK: 'SELL' };
 
 function toOmsRequest(order: OrderRequest) {
   const market = MARKETS.find(m => m.symbol === order.market);
-  return {
+  const req: Record<string, unknown> = {
     userId: Number(order.userId),
     marketId: market?.id ?? 1,
     side: SIDE_MAP[order.orderSide] ?? order.orderSide,
     orderType: order.orderType,
-    timeInForce: 'GTC',
+    timeInForce: order.timeInForce ?? 'GTC',
     price: order.price,
     quantity: order.quantity,
   };
+  if (order.stopPrice) req.stopPrice = order.stopPrice;
+  if (order.trailingDelta) req.trailingDelta = order.trailingDelta;
+  if (order.displayQuantity) req.displayQuantity = order.displayQuantity;
+  return req;
 }
 
 export function useApi() {

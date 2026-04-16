@@ -21,18 +21,6 @@ export interface BookLevel {
   orderCount: number;
 }
 
-export interface Trade {
-  tradeId: number;
-  takerOrderId: number;
-  makerOrderId: number;
-  takerUserId: number;
-  makerUserId: number;
-  price: number;
-  quantity: number;
-  takerSide: 'BID' | 'ASK';
-  timestamp: number;
-}
-
 // Aggregated trade from batch message
 export interface AggregatedTrade {
   price: number;
@@ -234,7 +222,8 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'er
 
 // Order types
 export type OrderSide = 'BID' | 'ASK';
-export type OrderType = 'LIMIT' | 'MARKET' | 'LIMIT_MAKER';
+export type OrderType = 'LIMIT' | 'MARKET' | 'LIMIT_MAKER' | 'STOP_LOSS' | 'STOP_LIMIT' | 'TRAILING_STOP' | 'ICEBERG';
+export type TimeInForce = 'GTC' | 'GTD' | 'IOC' | 'FOK';
 export type OrderStatus = 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'REJECTED';
 
 export interface UserOrder {
@@ -260,6 +249,10 @@ export interface OrderRequest {
   price: number;
   quantity: number;
   totalPrice?: number;
+  timeInForce?: TimeInForce;
+  stopPrice?: number;
+  trailingDelta?: number;
+  displayQuantity?: number;
   timestamp: number;
 }
 

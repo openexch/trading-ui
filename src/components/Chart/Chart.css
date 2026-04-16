@@ -19,10 +19,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: var(--bg-tertiary);
+  background: transparent;
   gap: 12px;
 }
 
@@ -37,7 +37,7 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
 }
@@ -84,7 +84,7 @@
 
 .chart-type-btn.active {
   color: var(--accent-primary);
-  background: rgba(0, 184, 217, 0.1);
+  background: rgba(129, 140, 248, 0.10);
 }
 
 /* ── Interval Tabs ── */
@@ -118,9 +118,9 @@
 }
 
 .interval-btn.active {
-  background: var(--accent-primary);
-  color: #fff;
-  box-shadow: 0 1px 4px rgba(0, 184, 217, 0.3);
+  background: rgba(129, 140, 248, 0.12);
+  color: var(--accent-primary);
+  box-shadow: none;
 }
 
 /* ── Chart Area (contains overlays + canvas) ── */
@@ -171,37 +171,37 @@
 }
 
 .ohlcv-label {
-  color: #848e9c;
+  color: var(--text-secondary);
   font-weight: 400;
   font-size: 10px;
 }
 
 .ohlcv-up {
-  color: #0ecb81;
+  color: var(--accent-green);
   font-weight: 500;
 }
 
 .ohlcv-down {
-  color: #f6465d;
+  color: var(--accent-red);
   font-weight: 500;
 }
 
 .ohlcv-change-up {
-  color: #0ecb81;
-  font-weight: 600;
+  color: var(--accent-green);
+  font-weight: 500;
   font-size: 10px;
   margin-left: 2px;
 }
 
 .ohlcv-change-down {
-  color: #f6465d;
-  font-weight: 600;
+  color: var(--accent-red);
+  font-weight: 500;
   font-size: 10px;
   margin-left: 2px;
 }
 
 .ohlcv-vol {
-  color: #b7bdc6;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 

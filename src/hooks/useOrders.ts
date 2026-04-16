@@ -24,7 +24,7 @@ export function useOrders() {
       market: message.market ?? market ?? 'BTC-USD',
       userId: message.userId,
       side: message.side,
-      type: 'LIMIT', // Default, could be enhanced
+      type: 'LIMIT', // SBE OrderStatusBatch doesn't include order type; LIMIT is default
       price: message.price,
       originalQuantity: message.remainingQuantity + message.filledQuantity,
       remainingQuantity: message.remainingQuantity,

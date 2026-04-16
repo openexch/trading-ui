@@ -1,99 +1,106 @@
 /* ================================================================
-   MARKET SELECTOR — Vertical list (sidebar)
+   MARKET SELECTOR — Horizontal pill tabs (header)
    ================================================================ */
 
 .market-selector {
-  flex-shrink: 0;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
 }
 
 .market-list-header {
-  padding: 10px 14px 6px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--text-muted);
+  display: none;
 }
 
 .market-list {
   display: flex;
-  flex-direction: column;
-  padding: 0 6px 8px;
-  gap: 1px;
+  flex-direction: row;
+  gap: 2px;
+  padding: 0;
 }
 
 .market-list-item {
   display: flex;
   align-items: center;
-  padding: 7px 10px;
-  border: none;
+  padding: 5px 12px;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.15s ease;
+  border-radius: var(--radius-full);
+  transition: all var(--transition-base);
   text-align: left;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .market-list-item:hover {
+  color: var(--text-primary);
   background: var(--bg-hover);
 }
 
 .market-list-item.active {
-  background: rgba(0, 184, 217, 0.08);
+  color: var(--text-bright);
+  background: rgba(129, 140, 248, 0.10);
+  border-color: rgba(129, 140, 248, 0.20);
 }
 
 /* ── Info layout ── */
 .market-item-info {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
 }
 
 .market-item-name {
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  transition: color 0.15s ease;
-}
-
-.market-list-item.active .market-item-name {
-  color: var(--accent-primary);
+  font-weight: 500;
+  color: inherit;
+  transition: color var(--transition-base);
 }
 
 .market-item-pair {
-  font-size: 11px;
-  font-family: var(--font-mono);
-  font-weight: 400;
-  color: var(--text-muted);
-  letter-spacing: 0.2px;
-}
-
-.market-list-item.active .market-item-pair {
-  color: var(--accent-primary);
-  opacity: 0.6;
+  display: none;
 }
 
 /* ================================================================
    RESPONSIVE
    ================================================================ */
 @media (max-width: 768px) {
-  .market-list-header {
-    padding: 8px 12px 4px;
+  .market-selector {
+    display: none;
   }
 
-  .market-list-item {
+  /* Overlay mode (mobile) */
+  .market-selector.market-selector-in-overlay {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+  }
+
+  .market-selector-in-overlay .market-list-header {
+    display: flex;
+  }
+
+  .market-selector-in-overlay .market-list {
+    flex-direction: column;
+    padding: 8px 12px 24px;
+    gap: 1px;
+  }
+
+  .market-selector-in-overlay .market-list-item {
     padding: 12px;
     min-height: 48px;
-  }
-
-  .market-item-name {
+    border-radius: var(--radius-md);
     font-size: 15px;
   }
 
-  .market-item-pair {
+  .market-selector-in-overlay .market-item-pair {
+    display: inline;
     font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
   }
 }

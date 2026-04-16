@@ -23,6 +23,10 @@ export default defineConfig({
         target: 'http://localhost:8082',
         changeOrigin: true,
       },
+      '/api/candles': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+      },
     },
   },
   preview: {
@@ -39,6 +43,10 @@ export default defineConfig({
       },
       '/api/admin': {
         target: 'http://localhost:8082',
+        changeOrigin: true,
+      },
+      '/api/candles': {
+        target: 'http://localhost:8081',
         changeOrigin: true,
       },
     },

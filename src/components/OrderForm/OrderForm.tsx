@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import type { Market, OrderSide, OrderType, OrderRequest } from '../../types/market';
+import type { Market, OrderSide, OrderType, OrderRequest, TimeInForce } from '../../types/market';
 import { formatPrice } from '../../utils/formatters';
 import './OrderForm.css';
 
@@ -16,10 +16,17 @@ interface OrderFormProps {
 
 const USER_ID = '1';
 
+const SYNTHETIC_TYPES: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
+const needsStopPrice = (t: OrderType) => t === 'STOP_LOSS' || t === 'STOP_LIMIT';
+const needsTrailingDelta = (t: OrderType) => t === 'TRAILING_STOP';
+const needsDisplayQty = (t: OrderType) => t === 'ICEBERG';
+const needsPrice = (t: OrderType) => t !== 'MARKET' && t !== 'STOP_LOSS';
+
 function OrderSideForm({
   side,
   market,
   orderType,
+  timeInForce,
   onSubmitOrder,
   loading,
   externalPrice,
@@ -27,12 +34,16 @@ function OrderSideForm({
   side: OrderSide;
   market: Market;
   orderType: OrderType;
+  timeInForce: TimeInForce;
   onSubmitOrder: (order: OrderRequest) => Promise<{ success: boolean; message: string }>;
   loading: boolean;
   externalPrice?: number | null;
 }) {
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [stopPrice, setStopPrice] = useState('');
+  const [trailingDelta, setTrailingDelta] = useState('');
+  const [displayQuantity, setDisplayQuantity] = useState('');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [sliderValue, setSliderValue] = useState(0);
 
@@ -85,9 +96,13 @@ function OrderSideForm({
       market: market.symbol,
       orderType,
       orderSide: side,
-      price: orderType === 'MARKET' ? 0 : priceNum,
+      price: !needsPrice(orderType) ? 0 : priceNum,
       quantity: quantityNum,
       totalPrice: orderType === 'MARKET' && isBuy ? total : undefined,
+      timeInForce,
+      stopPrice: needsStopPrice(orderType) ? parseFloat(stopPrice) || undefined : undefined,
+      trailingDelta: needsTrailingDelta(orderType) ? parseFloat(trailingDelta) || undefined : undefined,
+      displayQuantity: needsDisplayQty(orderType) ? parseFloat(displayQuantity) || undefined : undefined,
       timestamp: Date.now(),
     };
 
@@ -107,23 +122,77 @@ function OrderSideForm({
 
   return (
     <form onSubmit={handleSubmit} className={`order-side-form ${isBuy ? 'buy-form' : 'sell-form'}`}>
-      {/* Price Input — always rendered to keep form height stable */}
-      <div className={`form-group ${orderType === 'MARKET' ? 'form-group-hidden' : ''}`}>
+      {/* Price Input — hidden for MARKET and STOP_LOSS */}
+      <div className={`form-group ${!needsPrice(orderType) ? 'form-group-hidden' : ''}`}>
         <label>Price</label>
         <div className="input-wrapper">
           <input
             type="number"
-            value={orderType === 'MARKET' ? '' : price}
+            value={!needsPrice(orderType) ? '' : price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder={orderType === 'MARKET' ? 'Market' : '0.00'}
+            placeholder={!needsPrice(orderType) ? 'Market' : '0.00'}
             step="0.01"
             min="0"
-            disabled={orderType === 'MARKET'}
-            tabIndex={orderType === 'MARKET' ? -1 : undefined}
+            disabled={!needsPrice(orderType)}
+            tabIndex={!needsPrice(orderType) ? -1 : undefined}
           />
           <span className="input-suffix">{market.quoteAsset}</span>
         </div>
       </div>
+
+      {/* Stop Price — for STOP_LOSS, STOP_LIMIT */}
+      {needsStopPrice(orderType) && (
+        <div className="form-group">
+          <label>Stop Price</label>
+          <div className="input-wrapper">
+            <input
+              type="number"
+              value={stopPrice}
+              onChange={(e) => setStopPrice(e.target.value)}
+              placeholder="0.00"
+              step="0.01"
+              min="0"
+            />
+            <span className="input-suffix">{market.quoteAsset}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Trailing Delta — for TRAILING_STOP */}
+      {needsTrailingDelta(orderType) && (
+        <div className="form-group">
+          <label>Trailing Delta</label>
+          <div className="input-wrapper">
+            <input
+              type="number"
+              value={trailingDelta}
+              onChange={(e) => setTrailingDelta(e.target.value)}
+              placeholder="0.00"
+              step="0.01"
+              min="0"
+            />
+            <span className="input-suffix">{market.quoteAsset}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Display Quantity — for ICEBERG */}
+      {needsDisplayQty(orderType) && (
+        <div className="form-group">
+          <label>Visible Qty</label>
+          <div className="input-wrapper">
+            <input
+              type="number"
+              value={displayQuantity}
+              onChange={(e) => setDisplayQuantity(e.target.value)}
+              placeholder="0.00"
+              step="0.00000001"
+              min="0"
+            />
+            <span className="input-suffix">{market.baseAsset}</span>
+          </div>
+        </div>
+      )}
 
       {/* Amount Input */}
       <div className="form-group">
@@ -191,14 +260,36 @@ function OrderSideForm({
   );
 }
 
+const ORDER_TYPE_LABELS: Record<string, string> = {
+  LIMIT: 'Limit',
+  MARKET: 'Market',
+  LIMIT_MAKER: 'Post Only',
+  STOP_LOSS: 'Stop Loss',
+  STOP_LIMIT: 'Stop Limit',
+  TRAILING_STOP: 'Trail',
+  ICEBERG: 'Iceberg',
+};
+
+const TIF_LABELS: Record<TimeInForce, string> = {
+  GTC: 'GTC',
+  IOC: 'IOC',
+  FOK: 'FOK',
+  GTD: 'GTD',
+};
+
 export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMobile, defaultSide }: OrderFormProps) {
   const [orderType, setOrderType] = useState<OrderType>('LIMIT');
+  const [timeInForce, setTimeInForce] = useState<TimeInForce>('GTC');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [mobileSide, setMobileSide] = useState<'BID' | 'ASK'>(defaultSide || 'BID');
 
   // Sync mobileSide when defaultSide changes (e.g. opening from Buy/Sell button)
   useEffect(() => {
     if (defaultSide) setMobileSide(defaultSide);
   }, [defaultSide]);
+
+  const basicTypes: OrderType[] = ['LIMIT', 'MARKET', 'LIMIT_MAKER'];
+  const advancedTypes: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
 
   return (
     <div className="order-form-container">
@@ -220,26 +311,43 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
         </div>
       )}
 
-      {/* Shared Order Type Tabs */}
+      {/* Order Type Tabs */}
       <div className="order-type-tabs">
+        {basicTypes.map(t => (
+          <button key={t} className={`type-tab ${orderType === t ? 'active' : ''}`} onClick={() => setOrderType(t)}>
+            {ORDER_TYPE_LABELS[t]}
+          </button>
+        ))}
         <button
-          className={`type-tab ${orderType === 'LIMIT' ? 'active' : ''}`}
-          onClick={() => setOrderType('LIMIT')}
+          className={`type-tab type-tab-more ${showAdvanced || SYNTHETIC_TYPES.includes(orderType) ? 'active' : ''}`}
+          onClick={() => setShowAdvanced(!showAdvanced)}
         >
-          Limit
+          More
         </button>
-        <button
-          className={`type-tab ${orderType === 'MARKET' ? 'active' : ''}`}
-          onClick={() => setOrderType('MARKET')}
-        >
-          Market
-        </button>
-        <button
-          className={`type-tab ${orderType === 'LIMIT_MAKER' ? 'active' : ''}`}
-          onClick={() => setOrderType('LIMIT_MAKER')}
-        >
-          Post Only
-        </button>
+      </div>
+
+      {/* Advanced order types */}
+      {showAdvanced && (
+        <div className="order-type-tabs order-type-tabs-advanced">
+          {advancedTypes.map(t => (
+            <button key={t} className={`type-tab ${orderType === t ? 'active' : ''}`} onClick={() => { setOrderType(t); setShowAdvanced(false); }}>
+              {ORDER_TYPE_LABELS[t]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Time-in-Force selector */}
+      <div className="tif-tabs">
+        {(Object.keys(TIF_LABELS) as TimeInForce[]).map(tif => (
+          <button
+            key={tif}
+            className={`tif-tab ${timeInForce === tif ? 'active' : ''}`}
+            onClick={() => setTimeInForce(tif)}
+          >
+            {TIF_LABELS[tif]}
+          </button>
+        ))}
       </div>
 
       {/* Side-by-side Buy/Sell Forms (desktop) or single form (mobile) */}
@@ -248,6 +356,7 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
           side="BID"
           market={market}
           orderType={orderType}
+          timeInForce={timeInForce}
           onSubmitOrder={onSubmitOrder}
           loading={loading}
           externalPrice={externalPrice}
@@ -257,6 +366,7 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
           side="ASK"
           market={market}
           orderType={orderType}
+          timeInForce={timeInForce}
           onSubmitOrder={onSubmitOrder}
           loading={loading}
           externalPrice={externalPrice}

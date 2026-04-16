@@ -101,7 +101,7 @@ function MarketPage() {
     (message: WebSocketMessage) => {
       switch (message.type) {
         case 'BOOK_SNAPSHOT':
-          if (Number(message.marketId) === selectedMarketIdRef.current) {
+          if (message.marketId === selectedMarketIdRef.current) {
             handleBookSnapshot(message);
             handleBookUpdate(message.bids, message.asks);
           }
@@ -198,7 +198,7 @@ function MarketPage() {
     try {
       const apiBase = import.meta.env.VITE_MARKET_WS_URL
         ? import.meta.env.VITE_MARKET_WS_URL.replace(/^wss?:/, window.location.protocol === 'https:' ? 'https:' : 'http:')
-        : `http://${window.location.hostname}:8081`;
+        : '';
       const res = await fetch(`${apiBase}/api/candles?marketId=${marketId}&interval=${interval}&limit=${limit}`);
       if (res.ok) {
         const data = await res.json();
@@ -263,6 +263,9 @@ function MarketPage() {
     setClickedPrice(price);
   }, []);
 
+  // Bottom section tab state
+  const [bottomTab, setBottomTab] = useState<'order' | 'orders' | 'trades' | 'account'>('order');
+
   const bestBid = orderBook.bids.length > 0 ? orderBook.bids[0] : null;
   const bestAsk = orderBook.asks.length > 0 ? orderBook.asks[0] : null;
 
@@ -274,7 +277,7 @@ function MarketPage() {
             <span className="logo-icon">{Icons.openExchangeLogo}</span>
             <span className="logo-text"><span className="open">Open</span> <span className="exchange">Exchange</span></span>
           </div>
-          {isMobile && (
+          {isMobile ? (
             <button
               className="mobile-market-btn"
               onClick={() => setShowMarketSelector(true)}
@@ -284,6 +287,12 @@ function MarketPage() {
                 <path d="M2 4l4 4 4-4"/>
               </svg>
             </button>
+          ) : (
+            <MarketSelector
+              markets={MARKETS}
+              selectedMarket={selectedMarket}
+              onSelectMarket={handleMarketChange}
+            />
           )}
         </div>
         <div className="header-right">
@@ -310,7 +319,7 @@ function MarketPage() {
           />
         </aside>
 
-        {/* Center — Chart + Order Form */}
+        {/* Center — Chart + Bottom Tabbed Section */}
         <section className="center-panel">
           {/* Desktop: chart always visible */}
           {!isMobile && (
@@ -374,22 +383,40 @@ function MarketPage() {
             </div>
           )}
 
-          {/* Desktop: inline order form + open orders. Mobile: Buy/Sell buttons */}
+          {/* Desktop: bottom tabbed section */}
           {!isMobile ? (
-            <div className="order-area">
-              <OrderForm
-                market={selectedMarket}
-                bestBid={bestBid}
-                bestAsk={bestAsk}
-                onSubmitOrder={handleSubmitOrder}
-                loading={apiLoading}
-                externalPrice={clickedPrice}
-              />
-              <OpenOrders
-                orders={openOrders}
-                onCancelOrder={handleCancelOrder}
-                loading={apiLoading}
-              />
+            <div className="bottom-section">
+              <div className="bottom-tabs">
+                <button className={`bottom-tab ${bottomTab === 'order' ? 'active' : ''}`} onClick={() => setBottomTab('order')}>Order</button>
+                <button className={`bottom-tab ${bottomTab === 'orders' ? 'active' : ''}`} onClick={() => setBottomTab('orders')}>Open Orders ({openOrders.length})</button>
+                <button className={`bottom-tab ${bottomTab === 'trades' ? 'active' : ''}`} onClick={() => setBottomTab('trades')}>Trades</button>
+                <button className={`bottom-tab ${bottomTab === 'account' ? 'active' : ''}`} onClick={() => setBottomTab('account')}>Account</button>
+              </div>
+              <div className="bottom-tab-content">
+                {bottomTab === 'order' && (
+                  <OrderForm
+                    market={selectedMarket}
+                    bestBid={bestBid}
+                    bestAsk={bestAsk}
+                    onSubmitOrder={handleSubmitOrder}
+                    loading={apiLoading}
+                    externalPrice={clickedPrice}
+                  />
+                )}
+                {bottomTab === 'orders' && (
+                  <OpenOrders
+                    orders={openOrders}
+                    onCancelOrder={handleCancelOrder}
+                    loading={apiLoading}
+                  />
+                )}
+                {bottomTab === 'trades' && (
+                  <TradeList trades={trades} />
+                )}
+                {bottomTab === 'account' && (
+                  <AccountPanel />
+                )}
+              </div>
             </div>
           ) : (
             <div className="mobile-order-buttons">
@@ -402,19 +429,6 @@ function MarketPage() {
             </div>
           )}
         </section>
-
-        {/* Right sidebar — Market Selector + Account + Recent Trades */}
-        <aside className={`right-panel ${isMobile && mobileTab === 'trades' ? 'mobile-tab-active' : ''}`}>
-          {!isMobile && (
-            <MarketSelector
-              markets={MARKETS}
-              selectedMarket={selectedMarket}
-              onSelectMarket={handleMarketChange}
-            />
-          )}
-          {!isMobile && <AccountPanel />}
-          <TradeList trades={trades} />
-        </aside>
       </main>
 
       {/* Mobile Market Selector Overlay */}

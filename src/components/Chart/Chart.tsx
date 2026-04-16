@@ -55,13 +55,13 @@ interface MaValues {
 const INTERVALS: Interval[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 
 const MA_COLORS = {
-  ma7: '#f5c842',
-  ma25: '#d946ef',
-  ma99: '#22d3ee',
+  ma7: '#fbbf24',
+  ma25: '#c084fc',
+  ma99: '#818cf8',
 } as const;
 
-const UP_COLOR = '#0ecb81';
-const DOWN_COLOR = '#f6465d';
+const UP_COLOR = '#34d399';
+const DOWN_COLOR = '#f87171';
 
 // Throttle chart updates to avoid overwhelming the browser under high load
 const UPDATE_THROTTLE_MS = 100;
@@ -215,33 +215,33 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0b0e11' },
-        textColor: '#848e9c',
+        background: { type: ColorType.Solid, color: '#111118' },
+        textColor: '#7a7a8e',
         fontFamily: "'JetBrains Mono', 'SF Mono', Monaco, monospace",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: '#1e232918' },
-        horzLines: { color: '#1e232918' },
+        vertLines: { color: 'rgba(255,255,255,0.03)' },
+        horzLines: { color: 'rgba(255,255,255,0.03)' },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: '#848e9c40',
-          labelBackgroundColor: '#1e2329',
+          color: 'rgba(129,140,248,0.25)',
+          labelBackgroundColor: '#1c1c28',
         },
         horzLine: {
-          color: '#848e9c40',
-          labelBackgroundColor: '#1e2329',
+          color: 'rgba(129,140,248,0.25)',
+          labelBackgroundColor: '#1c1c28',
         },
       },
       rightPriceScale: {
-        borderColor: '#222730',
+        borderColor: 'rgba(255,255,255,0.06)',
         scaleMargins: { top: 0.05, bottom: 0.25 },
         autoScale: true,
       },
       timeScale: {
-        borderColor: '#222730',
+        borderColor: 'rgba(255,255,255,0.06)',
         timeVisible: true,
         secondsVisible: false,
         barSpacing: 8,
@@ -265,7 +265,7 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
 
     // Volume MA
     const volMa = chart.addSeries(LineSeries, {
-      color: '#848e9c',
+      color: '#7a7a8e',
       lineWidth: 1,
       priceScaleId: 'volume',
       lastValueVisible: false,

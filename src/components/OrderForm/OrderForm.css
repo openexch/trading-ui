@@ -19,14 +19,14 @@
   display: flex;
   gap: 0;
   padding: 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: var(--bg-tertiary);
+  background: transparent;
 }
 
 .type-tab {
   flex: 1;
-  padding: 8px 12px;
+  padding: 9px 12px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -58,6 +58,56 @@
   height: 2px;
   background: var(--accent-primary);
   border-radius: 1px 1px 0 0;
+}
+
+.order-type-tabs-advanced {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.type-tab-more {
+  font-style: italic;
+  font-size: 11px;
+}
+
+/* Time-in-Force selector */
+.tif-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.tif-tab {
+  flex: 1;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  position: relative;
+}
+
+.tif-tab:hover {
+  color: var(--text-primary);
+}
+
+.tif-tab.active {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.tif-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 25%;
+  right: 25%;
+  height: 1px;
+  background: var(--accent-primary);
 }
 
 /* ================================================================
@@ -281,45 +331,41 @@
   border: none;
   border-radius: var(--radius-sm);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-base);
   letter-spacing: 0.01em;
 }
 
 .submit-btn.buy {
-  background: var(--accent-green);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(14, 203, 129, 0.25);
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(52, 211, 153, 0.25);
 }
 
 .submit-btn.buy:hover:not(:disabled) {
-  background: var(--accent-green-hover);
-  box-shadow: 0 4px 16px rgba(14, 203, 129, 0.35);
-  transform: translateY(-1px);
+  background: rgba(52, 211, 153, 0.22);
+  border-color: rgba(52, 211, 153, 0.35);
 }
 
 .submit-btn.sell {
-  background: var(--accent-red);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(246, 70, 93, 0.25);
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--accent-red);
+  border: 1px solid rgba(248, 113, 113, 0.25);
 }
 
 .submit-btn.sell:hover:not(:disabled) {
-  background: var(--accent-red-hover);
-  box-shadow: 0 4px 16px rgba(246, 70, 93, 0.35);
-  transform: translateY(-1px);
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.35);
 }
 
 .submit-btn:active:not(:disabled) {
-  transform: translateY(0);
+  opacity: 0.8;
 }
 
 .submit-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.35;
   cursor: not-allowed;
-  transform: none !important;
-  box-shadow: none !important;
 }
 
 /* ================================================================
@@ -355,8 +401,8 @@
     display: flex;
     gap: 0;
     padding: 0;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-subtle);
+    background: transparent;
   }
 
   .side-toggle-btn {
