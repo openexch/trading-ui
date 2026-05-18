@@ -25,7 +25,7 @@ jobs:
           VITE_MARKET_WS_URL: ${{ vars.VITE_MARKET_WS_URL }}
           VITE_ADMIN_API_URL: ${{ vars.VITE_ADMIN_API_URL }}
 
-      - uses: cloudflare/wrangler-action@v3
+      - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
