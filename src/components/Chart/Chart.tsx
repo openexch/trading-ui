@@ -20,15 +20,17 @@ import type {
   IPriceLine,
 } from 'lightweight-charts';
 import type { CandleData } from '../../types/market';
-import './Chart.css';
 
 // ── Types ──────────────────────────────────────────────────────
+type Theme = 'light' | 'dark';
+
 interface ChartProps {
   candles: CandleData[];
   currentCandle: CandleData | null;
   symbol: string;
   onIntervalChange: (interval: string) => void;
   activeInterval: string;
+  theme: Theme;
 }
 
 type Interval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
@@ -60,8 +62,53 @@ const MA_COLORS = {
   ma99: '#818cf8',
 } as const;
 
-const UP_COLOR = '#34d399';
-const DOWN_COLOR = '#f87171';
+// ── Theme palettes ─────────────────────────────────────────────
+// lightweight-charts renders to canvas and cannot read CSS variables,
+// so the chart's colors live here as JS values mirroring the app tokens.
+interface ChartPalette {
+  background: string;
+  textColor: string;
+  gridLine: string;
+  border: string;
+  crosshair: string;
+  crosshairLabelBg: string;
+  up: string;
+  down: string;
+  upVol: string;
+  downVol: string;
+  volMa: string;
+}
+
+const PALETTES: Record<Theme, ChartPalette> = {
+  dark: {
+    background: '#181a1e',
+    textColor: '#8a8e99',
+    gridLine: 'rgba(255,255,255,0.05)',
+    border: 'rgba(255,255,255,0.07)',
+    crosshair: '#8a8e99',
+    crosshairLabelBg: '#282c34',
+    up: '#4fb286',
+    down: '#e06c5a',
+    upVol: 'rgba(79,178,134,0.25)',
+    downVol: 'rgba(224,108,90,0.25)',
+    volMa: '#8a8e99',
+  },
+  light: {
+    background: '#ffffff',
+    textColor: '#6b6256',
+    gridLine: 'rgba(20,17,14,0.06)',
+    border: '#e7e3d8',
+    crosshair: '#6b6256',
+    crosshairLabelBg: '#ece8de',
+    up: '#16a36a',
+    down: '#e5484d',
+    upVol: 'rgba(22,163,106,0.20)',
+    downVol: 'rgba(229,72,77,0.20)',
+    volMa: '#9b9182',
+  },
+};
+
+const ACCENT = '#ff5b35';
 
 // Throttle chart updates to avoid overwhelming the browser under high load
 const UPDATE_THROTTLE_MS = 100;
@@ -137,9 +184,15 @@ function isValidCandle(c: CandleData | null): c is CandleData {
 }
 
 // ── Component ──────────────────────────────────────────────────
-export function Chart({ candles, currentCandle, symbol, onIntervalChange, activeInterval }: ChartProps) {
+export function Chart({ candles, currentCandle, symbol, onIntervalChange, activeInterval, theme }: ChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+
+  // Live palette ref so data/update effects can color series without
+  // re-subscribing to `theme` (keeps the chart from being recreated).
+  const palette = PALETTES[theme];
+  const paletteRef = useRef<ChartPalette>(palette);
+  paletteRef.current = palette;
 
   // Main series refs
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -213,35 +266,36 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    const p = paletteRef.current;
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#111118' },
-        textColor: '#7a7a8e',
+        background: { type: ColorType.Solid, color: p.background },
+        textColor: p.textColor,
         fontFamily: "'JetBrains Mono', 'SF Mono', Monaco, monospace",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: 'rgba(255,255,255,0.03)' },
-        horzLines: { color: 'rgba(255,255,255,0.03)' },
+        vertLines: { color: p.gridLine },
+        horzLines: { color: p.gridLine },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: 'rgba(129,140,248,0.25)',
-          labelBackgroundColor: '#1c1c28',
+          color: p.crosshair,
+          labelBackgroundColor: p.crosshairLabelBg,
         },
         horzLine: {
-          color: 'rgba(129,140,248,0.25)',
-          labelBackgroundColor: '#1c1c28',
+          color: p.crosshair,
+          labelBackgroundColor: p.crosshairLabelBg,
         },
       },
       rightPriceScale: {
-        borderColor: 'rgba(255,255,255,0.06)',
+        borderColor: p.border,
         scaleMargins: { top: 0.05, bottom: 0.25 },
         autoScale: true,
       },
       timeScale: {
-        borderColor: 'rgba(255,255,255,0.06)',
+        borderColor: p.border,
         timeVisible: true,
         secondsVisible: false,
         barSpacing: 8,
@@ -265,7 +319,7 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
 
     // Volume MA
     const volMa = chart.addSeries(LineSeries, {
-      color: '#7a7a8e',
+      color: p.volMa,
       lineWidth: 1,
       priceScaleId: 'volume',
       lastValueVisible: false,
@@ -364,6 +418,74 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Re-apply theme colors without recreating the chart ──
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const p = PALETTES[theme];
+
+    chart.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: p.background },
+        textColor: p.textColor,
+      },
+      grid: {
+        vertLines: { color: p.gridLine },
+        horzLines: { color: p.gridLine },
+      },
+      crosshair: {
+        vertLine: { color: p.crosshair, labelBackgroundColor: p.crosshairLabelBg },
+        horzLine: { color: p.crosshair, labelBackgroundColor: p.crosshairLabelBg },
+      },
+      rightPriceScale: { borderColor: p.border },
+      timeScale: { borderColor: p.border },
+    });
+
+    // Recolor series (candle/volume/price-line) for the new theme.
+    if (candleSeriesRef.current) {
+      candleSeriesRef.current.applyOptions({
+        upColor: p.up,
+        downColor: p.down,
+        borderUpColor: p.up,
+        borderDownColor: p.down,
+        wickUpColor: p.up,
+        wickDownColor: p.down,
+      });
+    }
+    if (volMaRef.current) {
+      volMaRef.current.applyOptions({ color: p.volMa });
+    }
+    if (volumeSeriesRef.current) {
+      // Re-color each volume bar (per-bar color overrides series options).
+      const recolored = candles
+        .filter(c =>
+          c.time != null &&
+          c.close != null && !isNaN(c.close) && isFinite(c.close) &&
+          c.open != null && !isNaN(c.open) && isFinite(c.open) &&
+          c.volume != null && !isNaN(c.volume) && isFinite(c.volume)
+        )
+        .map(c => ({
+          time: c.time as Time,
+          value: Number(c.volume) || 0,
+          color: c.close >= c.open ? p.upVol : p.downVol,
+        }));
+      // Dedup + sort to satisfy lightweight-charts ordering invariant.
+      const m = new Map<number, HistogramData>();
+      for (const d of recolored) m.set(d.time as number, d);
+      volumeSeriesRef.current.setData(
+        Array.from(m.values()).sort((a, b) => (a.time as number) - (b.time as number))
+      );
+    }
+    if (priceLineRef.current) {
+      const last = candles[candles.length - 1];
+      if (last) {
+        priceLineRef.current.applyOptions({
+          color: last.close >= last.open ? p.up : p.down,
+        });
+      }
+    }
+  }, [theme, candles]);
+
   // ── Create/recreate main series when chart type changes ──
   useEffect(() => {
     const chart = chartRef.current;
@@ -391,30 +513,31 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
     priceLineRef.current = null;
 
     // Create new main series
+    const p = paletteRef.current;
     if (chartType === 'candle') {
       const s = chart.addSeries(CandlestickSeries, {
-        upColor: UP_COLOR,
-        downColor: DOWN_COLOR,
-        borderUpColor: UP_COLOR,
-        borderDownColor: DOWN_COLOR,
-        wickUpColor: UP_COLOR,
-        wickDownColor: DOWN_COLOR,
+        upColor: p.up,
+        downColor: p.down,
+        borderUpColor: p.up,
+        borderDownColor: p.down,
+        wickUpColor: p.up,
+        wickDownColor: p.down,
       });
       candleSeriesRef.current = s;
     } else if (chartType === 'line') {
       const s = chart.addSeries(LineSeries, {
-        color: '#2962ff',
+        color: ACCENT,
         lineWidth: 2,
         crosshairMarkerVisible: true,
         crosshairMarkerRadius: 4,
-        crosshairMarkerBackgroundColor: '#2962ff',
+        crosshairMarkerBackgroundColor: ACCENT,
       });
       lineSeriesRef.current = s;
     } else {
       const s = chart.addSeries(AreaSeries, {
-        topColor: 'rgba(41, 98, 255, 0.4)',
-        bottomColor: 'rgba(41, 98, 255, 0.02)',
-        lineColor: '#2962ff',
+        topColor: 'rgba(255, 91, 53, 0.30)',
+        bottomColor: 'rgba(255, 91, 53, 0.02)',
+        lineColor: ACCENT,
         lineWidth: 2,
         crosshairMarkerVisible: true,
       });
@@ -513,10 +636,11 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
       }
 
       // Volume data
+      const p = paletteRef.current;
       const volumeData: HistogramData[] = validCandles.map(c => ({
         time: c.time as Time,
         value: Number(c.volume) || 0,
-        color: c.close >= c.open ? 'rgba(14, 203, 129, 0.2)' : 'rgba(246, 70, 93, 0.2)',
+        color: c.close >= c.open ? p.upVol : p.downVol,
       }));
       volumeSeriesRef.current.setData(volumeData);
 
@@ -543,7 +667,7 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
         const isUp = lastCandle.close >= lastCandle.open;
         priceLineRef.current = candleSeriesRef.current.createPriceLine({
           price: lastCandle.close,
-          color: isUp ? UP_COLOR : DOWN_COLOR,
+          color: isUp ? p.up : p.down,
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
@@ -575,6 +699,7 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
     pendingUpdateRef.current = currentCandle;
 
     const applyUpdate = (candle: CandleData) => {
+      const p = paletteRef.current;
       try {
         // Update main series
         if (chartType === 'candle' && candleSeriesRef.current) {
@@ -602,9 +727,7 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
           volumeSeriesRef.current.update({
             time: candle.time as Time,
             value: Number(candle.volume) || 0,
-            color: candle.close >= candle.open
-              ? 'rgba(14, 203, 129, 0.2)'
-              : 'rgba(246, 70, 93, 0.2)',
+            color: candle.close >= candle.open ? p.upVol : p.downVol,
           });
         }
 
@@ -613,7 +736,7 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
           const isUp = candle.close >= candle.open;
           priceLineRef.current.applyOptions({
             price: Number(candle.close) || 0,
-            color: isUp ? UP_COLOR : DOWN_COLOR,
+            color: isUp ? p.up : p.down,
           });
         }
       } catch (err) {
@@ -666,56 +789,59 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
   }, []);
 
   // ── Render ──
+  const upDownClass = (isUp: boolean) =>
+    isUp ? 'text-buy font-medium' : 'text-sell font-medium';
+
   return (
-    <div className="chart-component">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="chart-toolbar">
-        <div className="chart-toolbar-left">
-          <div className="chart-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <div className="flex flex-shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-text">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-[15px] w-[15px] text-muted">
               <path d="M3 3v18h18"/>
               <path d="M7 14l4-4 4 4 5-5"/>
             </svg>
             <span>{symbol}</span>
           </div>
-          <div className="chart-type-selector">
+          <div className="flex gap-px rounded-md border border-hairline bg-surface-2 p-px max-md:hidden">
             <button
-              className={`chart-type-btn ${chartType === 'candle' ? 'active' : ''}`}
+              className={`flex h-[22px] w-[26px] items-center justify-center rounded-[5px] transition-colors ${chartType === 'candle' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-text'}`}
               onClick={() => handleChartTypeChange('candle')}
               title="Candlestick"
             >
               {/* Candlestick icon */}
-              <svg viewBox="0 0 16 16" fill="currentColor">
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                 <rect x="3" y="2" width="2" height="12" rx="0.5" opacity="0.7"/>
                 <rect x="7" y="4" width="2" height="8" rx="0.5" opacity="0.7"/>
                 <rect x="11" y="1" width="2" height="10" rx="0.5" opacity="0.7"/>
               </svg>
             </button>
             <button
-              className={`chart-type-btn ${chartType === 'line' ? 'active' : ''}`}
+              className={`flex h-[22px] w-[26px] items-center justify-center rounded-[5px] transition-colors ${chartType === 'line' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-text'}`}
               onClick={() => handleChartTypeChange('line')}
               title="Line"
             >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-3.5 w-3.5">
                 <path d="M1 12l4-5 4 3 6-8"/>
               </svg>
             </button>
             <button
-              className={`chart-type-btn ${chartType === 'area' ? 'active' : ''}`}
+              className={`flex h-[22px] w-[26px] items-center justify-center rounded-[5px] transition-colors ${chartType === 'area' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-text'}`}
               onClick={() => handleChartTypeChange('area')}
               title="Area"
             >
-              <svg viewBox="0 0 16 16" fill="currentColor" opacity="0.6">
+              <svg viewBox="0 0 16 16" fill="currentColor" opacity="0.6" className="h-3.5 w-3.5">
                 <path d="M1 14V12l4-5 4 3 6-8v12H1z"/>
               </svg>
             </button>
           </div>
         </div>
-        <div className="interval-tabs">
+        <div className="flex gap-0.5 rounded-md border border-hairline bg-surface-2 p-0.5">
           {INTERVALS.map(iv => (
             <button
               key={iv}
-              className={`interval-btn ${activeInterval === iv ? 'active' : ''}`}
+              className={`rounded px-2.5 py-[3px] font-mono text-[11px] font-semibold uppercase tracking-wide transition-colors ${activeInterval === iv ? 'bg-accent-soft text-accent' : 'text-muted hover:text-text'}`}
               onClick={() => handleIntervalChange(iv)}
             >
               {iv}
@@ -725,71 +851,71 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
       </div>
 
       {/* Chart area wrapper */}
-      <div className="chart-area">
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {/* OHLCV Legend Overlay */}
         {displayOhlcv && (
-          <div className="chart-ohlcv-legend">
-            <div className="ohlcv-row">
-              <span className="ohlcv-label">O</span>
-              <span className={displayOhlcv.isUp ? 'ohlcv-up' : 'ohlcv-down'}>
+          <div className="pointer-events-none absolute left-2.5 top-1.5 z-10 flex flex-col gap-px font-mono text-[11px] leading-normal">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-normal text-faint">O</span>
+              <span className={upDownClass(displayOhlcv.isUp)}>
                 {formatPrice(displayOhlcv.open)}
               </span>
-              <span className="ohlcv-label">H</span>
-              <span className={displayOhlcv.isUp ? 'ohlcv-up' : 'ohlcv-down'}>
+              <span className="text-[10px] font-normal text-faint">H</span>
+              <span className={upDownClass(displayOhlcv.isUp)}>
                 {formatPrice(displayOhlcv.high)}
               </span>
-              <span className="ohlcv-label">L</span>
-              <span className={displayOhlcv.isUp ? 'ohlcv-up' : 'ohlcv-down'}>
+              <span className="text-[10px] font-normal text-faint">L</span>
+              <span className={upDownClass(displayOhlcv.isUp)}>
                 {formatPrice(displayOhlcv.low)}
               </span>
-              <span className="ohlcv-label">C</span>
-              <span className={displayOhlcv.isUp ? 'ohlcv-up' : 'ohlcv-down'}>
+              <span className="text-[10px] font-normal text-faint">C</span>
+              <span className={upDownClass(displayOhlcv.isUp)}>
                 {formatPrice(displayOhlcv.close)}
               </span>
-              <span className={displayOhlcv.isUp ? 'ohlcv-change-up' : 'ohlcv-change-down'}>
+              <span className={`ml-0.5 text-[10px] font-medium ${displayOhlcv.isUp ? 'text-buy' : 'text-sell'}`}>
                 {displayOhlcv.change >= 0 ? '+' : ''}{formatPrice(displayOhlcv.change)}
                 ({(displayOhlcv.changePct ?? 0) >= 0 ? '+' : ''}{(displayOhlcv.changePct ?? 0).toFixed(2)}%)
               </span>
             </div>
-            <div className="ohlcv-row ohlcv-vol-row">
-              <span className="ohlcv-label">Vol</span>
-              <span className="ohlcv-vol">{formatVolume(displayOhlcv.volume)}</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-normal text-faint">Vol</span>
+              <span className="font-medium text-muted">{formatVolume(displayOhlcv.volume)}</span>
             </div>
           </div>
         )}
 
         {/* MA Legend Overlay */}
-        <div className="chart-ma-legend">
+        <div className="pointer-events-none absolute left-2.5 top-[38px] z-10 flex flex-wrap gap-3 font-mono text-[10px]">
           {displayMa.ma7 !== null && (
-            <span className="ma-label" style={{ color: MA_COLORS.ma7 }}>
+            <span className="whitespace-nowrap font-medium tracking-wide" style={{ color: MA_COLORS.ma7 }}>
               MA(7): {formatPrice(displayMa.ma7)}
             </span>
           )}
           {displayMa.ma25 !== null && (
-            <span className="ma-label" style={{ color: MA_COLORS.ma25 }}>
+            <span className="whitespace-nowrap font-medium tracking-wide" style={{ color: MA_COLORS.ma25 }}>
               MA(25): {formatPrice(displayMa.ma25)}
             </span>
           )}
           {displayMa.ma99 !== null && (
-            <span className="ma-label" style={{ color: MA_COLORS.ma99 }}>
+            <span className="whitespace-nowrap font-medium tracking-wide" style={{ color: MA_COLORS.ma99 }}>
               MA(99): {formatPrice(displayMa.ma99)}
             </span>
           )}
         </div>
 
         {/* Chart canvas */}
-        <div className="chart-container" ref={chartContainerRef} />
+        <div className="min-h-0 w-full flex-1" ref={chartContainerRef} />
 
         {/* Empty state */}
         {candles.length === 0 && !currentCandle && (
-          <div className="chart-empty">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-[1] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 text-muted">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-12 w-12 opacity-25">
               <path d="M3 3v18h18" strokeLinecap="round" strokeLinejoin="round"/>
               <rect x="7" y="8" width="2" height="8" rx="0.5" strokeLinejoin="round"/>
               <rect x="11" y="5" width="2" height="11" rx="0.5" strokeLinejoin="round"/>
               <rect x="15" y="10" width="2" height="6" rx="0.5" strokeLinejoin="round"/>
             </svg>
-            <span>Waiting for trade data...</span>
+            <span className="text-xs italic">Waiting for trade data...</span>
           </div>
         )}
       </div>

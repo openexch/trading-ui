@@ -65,6 +65,37 @@ export function useApi() {
     }
   }, []);
 
+  const replaceOrder = useCallback(async (orderId: number, price?: number, quantity?: number): Promise<ApiResponse> => {
+    setState({ loading: true, error: null });
+
+    const body: Record<string, number> = {};
+    if (price !== undefined && price > 0) body.price = price;
+    if (quantity !== undefined && quantity > 0) body.quantity = quantity;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (data.accepted) {
+        setState({ loading: false, error: null });
+        return { success: true, message: 'Order updated' };
+      } else {
+        const error = data.error || data.message || `Error: ${response.status}`;
+        setState({ loading: false, error });
+        return { success: false, message: error };
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Network error';
+      setState({ loading: false, error });
+      return { success: false, message: error };
+    }
+  }, []);
+
   const cancelOrder = useCallback(async (orderId: number, _userId: string, _market: string): Promise<ApiResponse> => {
     setState({ loading: true, error: null });
 
@@ -93,6 +124,7 @@ export function useApi() {
   return {
     ...state,
     submitOrder,
+    replaceOrder,
     cancelOrder,
   };
 }

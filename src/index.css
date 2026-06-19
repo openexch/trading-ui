@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: toggled by adding `.dark` on <html> (see useTheme.ts) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ================================================================
+   Open Exchange — Design Tokens
+   "Daylight + Dark" — editorial fintech, tangerine signature.
+   Semantic vars flip between themes; mapped into Tailwind below.
+   ================================================================ */
+:root {
+  /* Surfaces — Light (paper) */
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --surface-2: #f4f2ec;
+  --surface-3: #ece8de;
+  --text: #14110e;
+  --text-strong: #000000;
+  --muted: #6b6256;
+  --faint: #9b9182;
+  --hairline: #e7e3d8;
+  --hairline-strong: #d8d2c4;
+
+  /* Signature accent — tangerine (identical in both themes) */
+  --accent: #ff5b35;
+  --accent-hover: #e8430f;
+  --accent-soft: rgba(255, 91, 53, 0.12);
+  --accent-ring: rgba(255, 91, 53, 0.40);
+
+  /* Trade semantics */
+  --buy: #16a36a;
+  --buy-soft: rgba(22, 163, 106, 0.10);
+  --sell: #e5484d;
+  --sell-soft: rgba(229, 72, 77, 0.10);
+  --warn: #d98a1f;
+  --warn-soft: rgba(217, 138, 31, 0.12);
+
+  --elev-sm: 0 1px 2px rgba(20, 17, 14, 0.06);
+  --elev-md: 0 6px 20px rgba(20, 17, 14, 0.10);
+  --elev-lg: 0 18px 50px rgba(20, 17, 14, 0.16);
+
+  color-scheme: light;
+}
+
+.dark {
+  /* Surfaces — Dark (ink) */
+  --bg: #121316;
+  --surface: #181a1e;
+  --surface-2: #1f2228;
+  --surface-3: #282c34;
+  --text: #ededf0;
+  --text-strong: #ffffff;
+  --muted: #8a8e99;
+  --faint: #5e636e;
+  --hairline: rgba(255, 255, 255, 0.07);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+
+  --accent: #ff5b35;
+  --accent-hover: #ff7551;
+  --accent-soft: rgba(255, 91, 53, 0.16);
+  --accent-ring: rgba(255, 91, 53, 0.45);
+
+  --buy: #4fb286;
+  --buy-soft: rgba(79, 178, 134, 0.12);
+  --sell: #e06c5a;
+  --sell-soft: rgba(224, 108, 90, 0.12);
+  --warn: #e8a13c;
+  --warn-soft: rgba(232, 161, 60, 0.14);
+
+  --elev-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --elev-md: 0 6px 20px rgba(0, 0, 0, 0.40);
+  --elev-lg: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
+}
+
+/* ================================================================
+   Map tokens into Tailwind's theme (inline = utilities reference the
+   live var, so `.dark` swaps update every utility automatically).
+   ================================================================ */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-text: var(--text);
+  --color-text-strong: var(--text-strong);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-buy: var(--buy);
+  --color-buy-soft: var(--buy-soft);
+  --color-sell: var(--sell);
+  --color-sell-soft: var(--sell-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-sm: var(--elev-sm);
+  --shadow-md: var(--elev-md);
+  --shadow-lg: var(--elev-lg);
+
+  --animate-flash-buy: flashBuy 0.6s ease-out;
+  --animate-flash-sell: flashSell 0.6s ease-out;
+  --animate-pulse-soft: pulseSoft 2s ease-in-out infinite;
+  --animate-fade-in: fadeIn 0.18s ease-out;
+  --animate-sheet-up: sheetUp 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-overlay-in: overlayIn 0.18s ease-out;
+}
+
+/* ================================================================
+   Base layer
+   ================================================================ */
+@layer base {
+  * {
+    border-color: var(--hairline);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.55;
+    letter-spacing: -0.006em;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Tabular mono numerics wherever data is rendered */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Visible, on-brand keyboard focus */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--text-strong);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--hairline-strong);
+    border-radius: 9999px;
+  }
+}
+
+/* ================================================================
+   Keyframes
+   ================================================================ */
+@keyframes flashBuy {
+  0% { color: var(--buy); }
+  100% { color: inherit; }
+}
+@keyframes flashSell {
+  0% { color: var(--sell); }
+  100% { color: inherit; }
+}
+@keyframes pulseSoft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Respect reduced-motion globally */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
