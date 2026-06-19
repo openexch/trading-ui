@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { Market, OrderSide, OrderType, OrderRequest, TimeInForce } from '../../types/market';
 import { formatPrice } from '../../utils/formatters';
-import './OrderForm.css';
+import { DEMO_USER_ID } from '../../config';
 
 interface OrderFormProps {
   market: Market;
@@ -14,13 +14,33 @@ interface OrderFormProps {
   defaultSide?: 'BID' | 'ASK';
 }
 
-const USER_ID = '1';
+const USER_ID = String(DEMO_USER_ID);
 
 const SYNTHETIC_TYPES: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
 const needsStopPrice = (t: OrderType) => t === 'STOP_LOSS' || t === 'STOP_LIMIT';
 const needsTrailingDelta = (t: OrderType) => t === 'TRAILING_STOP';
 const needsDisplayQty = (t: OrderType) => t === 'ICEBERG';
 const needsPrice = (t: OrderType) => t !== 'MARKET' && t !== 'STOP_LOSS';
+
+const inputClass =
+  'w-full rounded-md border border-hairline bg-surface-2 px-2.5 py-2 pr-14 font-mono text-[13px] tabular-nums text-text placeholder:text-faint focus:border-accent focus:outline-none disabled:opacity-50';
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-[10px] font-medium uppercase tracking-wide text-faint">{label}</label>
+      <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+function Suffix({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[11px] text-faint">
+      {children}
+    </span>
+  );
+}
 
 function OrderSideForm({
   side,
@@ -118,143 +138,103 @@ function OrderSideForm({
     }
 
     setTimeout(() => setNotification(null), 3000);
-  }, [price, quantity, orderType, side, market.symbol, isBuy, total, onSubmitOrder]);
+  }, [price, quantity, orderType, side, market.symbol, isBuy, total, onSubmitOrder, stopPrice, trailingDelta, displayQuantity, timeInForce]);
 
   return (
-    <form onSubmit={handleSubmit} className={`order-side-form ${isBuy ? 'buy-form' : 'sell-form'}`}>
-      {/* Price Input — hidden for MARKET and STOP_LOSS */}
-      <div className={`form-group ${!needsPrice(orderType) ? 'form-group-hidden' : ''}`}>
-        <label>Price</label>
-        <div className="input-wrapper">
+    <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-3">
+      {needsPrice(orderType) && (
+        <Field label="Price">
           <input
             type="number"
-            value={!needsPrice(orderType) ? '' : price}
+            value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder={!needsPrice(orderType) ? 'Market' : '0.00'}
+            placeholder="0.00"
             step="0.01"
             min="0"
-            disabled={!needsPrice(orderType)}
-            tabIndex={!needsPrice(orderType) ? -1 : undefined}
+            className={inputClass}
           />
-          <span className="input-suffix">{market.quoteAsset}</span>
-        </div>
-      </div>
+          <Suffix>{market.quoteAsset}</Suffix>
+        </Field>
+      )}
 
-      {/* Stop Price — for STOP_LOSS, STOP_LIMIT */}
       {needsStopPrice(orderType) && (
-        <div className="form-group">
-          <label>Stop Price</label>
-          <div className="input-wrapper">
-            <input
-              type="number"
-              value={stopPrice}
-              onChange={(e) => setStopPrice(e.target.value)}
-              placeholder="0.00"
-              step="0.01"
-              min="0"
-            />
-            <span className="input-suffix">{market.quoteAsset}</span>
-          </div>
-        </div>
+        <Field label="Stop Price">
+          <input type="number" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} placeholder="0.00" step="0.01" min="0" className={inputClass} />
+          <Suffix>{market.quoteAsset}</Suffix>
+        </Field>
       )}
 
-      {/* Trailing Delta — for TRAILING_STOP */}
       {needsTrailingDelta(orderType) && (
-        <div className="form-group">
-          <label>Trailing Delta</label>
-          <div className="input-wrapper">
-            <input
-              type="number"
-              value={trailingDelta}
-              onChange={(e) => setTrailingDelta(e.target.value)}
-              placeholder="0.00"
-              step="0.01"
-              min="0"
-            />
-            <span className="input-suffix">{market.quoteAsset}</span>
-          </div>
-        </div>
+        <Field label="Trailing Delta">
+          <input type="number" value={trailingDelta} onChange={(e) => setTrailingDelta(e.target.value)} placeholder="0.00" step="0.01" min="0" className={inputClass} />
+          <Suffix>{market.quoteAsset}</Suffix>
+        </Field>
       )}
 
-      {/* Display Quantity — for ICEBERG */}
       {needsDisplayQty(orderType) && (
-        <div className="form-group">
-          <label>Visible Qty</label>
-          <div className="input-wrapper">
-            <input
-              type="number"
-              value={displayQuantity}
-              onChange={(e) => setDisplayQuantity(e.target.value)}
-              placeholder="0.00"
-              step="0.00000001"
-              min="0"
-            />
-            <span className="input-suffix">{market.baseAsset}</span>
-          </div>
-        </div>
+        <Field label="Visible Qty">
+          <input type="number" value={displayQuantity} onChange={(e) => setDisplayQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" className={inputClass} />
+          <Suffix>{market.baseAsset}</Suffix>
+        </Field>
       )}
 
-      {/* Amount Input */}
-      <div className="form-group">
-        <label>Amount</label>
-        <div className="input-wrapper">
-          <input
-            type="number"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            placeholder="0.00"
-            step="0.00000001"
-            min="0"
-          />
-          <span className="input-suffix">{market.baseAsset}</span>
-        </div>
-      </div>
+      <Field label="Amount">
+        <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" className={inputClass} />
+        <Suffix>{market.baseAsset}</Suffix>
+      </Field>
 
-      {/* Slider */}
-      <div className="slider-group">
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={sliderValue}
-          onChange={handleSlider}
-          className={`amount-slider ${isBuy ? 'buy-slider' : 'sell-slider'}`}
-        />
-        <div className="slider-marks">
-          {[0, 25, 50, 75, 100].map(pct => (
-            <button
-              key={pct}
-              type="button"
-              onClick={() => handlePercentage(pct)}
-              className={`slider-mark ${sliderValue >= pct ? 'active' : ''}`}
-            />
-          ))}
-        </div>
+      {/* Percentage quick-fills */}
+      <div className="flex gap-1">
+        {[25, 50, 75, 100].map(pct => (
+          <button
+            key={pct}
+            type="button"
+            onClick={() => handlePercentage(pct)}
+            className={`flex-1 rounded-sm border py-1 font-mono text-[11px] tabular-nums transition-colors ${
+              sliderValue === pct
+                ? 'border-accent bg-accent-soft text-accent'
+                : 'border-hairline text-muted hover:border-hairline-strong hover:text-text'
+            }`}
+          >
+            {pct}%
+          </button>
+        ))}
       </div>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={sliderValue}
+        onChange={handleSlider}
+        className={`h-1 w-full cursor-pointer appearance-none rounded-full bg-surface-3 ${isBuy ? 'accent-buy' : 'accent-sell'}`}
+        aria-label="Amount percentage"
+      />
 
-      {/* Total */}
-      <div className="form-group">
-        <label>Total</label>
-        <div className="total-display">
-          <span>{formatPrice(total)}</span>
-          <span className="input-suffix">{market.quoteAsset}</span>
+      <Field label="Total">
+        <div className="flex items-center justify-between rounded-md border border-hairline bg-surface-2 px-2.5 py-2">
+          <span className="font-mono text-[13px] tabular-nums text-text">{formatPrice(total)}</span>
+          <span className="font-mono text-[11px] text-faint">{market.quoteAsset}</span>
         </div>
-      </div>
+      </Field>
 
-      {/* Notification */}
       {notification && (
-        <div className={`notification ${notification.type}`}>
+        <div
+          className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium animate-fade-in ${
+            notification.type === 'success' ? 'bg-buy-soft text-buy' : 'bg-sell-soft text-sell'
+          }`}
+        >
           {notification.message}
         </div>
       )}
 
-      {/* Submit Button */}
       <button
         type="submit"
-        className={`submit-btn ${isBuy ? 'buy' : 'sell'}`}
         disabled={loading}
+        className={`mt-auto rounded-md py-2.5 text-[13px] font-bold text-white transition-[filter] hover:brightness-110 disabled:opacity-50 ${
+          isBuy ? 'bg-buy' : 'bg-sell'
+        }`}
       >
-        {loading ? '...' : `${isBuy ? 'Buy' : 'Sell'} ${market.baseAsset}`}
+        {loading ? '…' : `${isBuy ? 'Buy' : 'Sell'} ${market.baseAsset}`}
       </button>
     </form>
   );
@@ -270,12 +250,12 @@ const ORDER_TYPE_LABELS: Record<string, string> = {
   ICEBERG: 'Iceberg',
 };
 
-const TIF_LABELS: Record<TimeInForce, string> = {
-  GTC: 'GTC',
-  IOC: 'IOC',
-  FOK: 'FOK',
-  GTD: 'GTD',
-};
+const TIF_LABELS: Record<TimeInForce, string> = { GTC: 'GTC', IOC: 'IOC', FOK: 'FOK', GTD: 'GTD' };
+
+const typeTab = (active: boolean) =>
+  `rounded-sm px-2.5 py-1 text-[12px] font-medium transition-colors ${
+    active ? 'bg-surface-3 text-text-strong' : 'text-muted hover:text-text'
+  }`;
 
 export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMobile, defaultSide }: OrderFormProps) {
   const [orderType, setOrderType] = useState<OrderType>('LIMIT');
@@ -283,7 +263,6 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [mobileSide, setMobileSide] = useState<'BID' | 'ASK'>(defaultSide || 'BID');
 
-  // Sync mobileSide when defaultSide changes (e.g. opening from Buy/Sell button)
   useEffect(() => {
     if (defaultSide) setMobileSide(defaultSide);
   }, [defaultSide]);
@@ -291,19 +270,31 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
   const basicTypes: OrderType[] = ['LIMIT', 'MARKET', 'LIMIT_MAKER'];
   const advancedTypes: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
 
+  const sideForm = (side: OrderSide) => (
+    <OrderSideForm
+      side={side}
+      market={market}
+      orderType={orderType}
+      timeInForce={timeInForce}
+      onSubmitOrder={onSubmitOrder}
+      loading={loading}
+      externalPrice={externalPrice}
+    />
+  );
+
   return (
-    <div className="order-form-container">
-      {/* Mobile Buy/Sell side toggle */}
+    <div className="flex flex-col gap-3 p-4">
+      {/* Mobile Buy/Sell toggle */}
       {isMobile && (
-        <div className="mobile-side-toggle">
+        <div className="grid grid-cols-2 gap-1 rounded-md bg-surface-2 p-1">
           <button
-            className={`side-toggle-btn buy ${mobileSide === 'BID' ? 'active' : ''}`}
+            className={`rounded-sm py-2 text-[13px] font-bold transition-colors ${mobileSide === 'BID' ? 'bg-buy text-white' : 'text-buy'}`}
             onClick={() => setMobileSide('BID')}
           >
             Buy
           </button>
           <button
-            className={`side-toggle-btn sell ${mobileSide === 'ASK' ? 'active' : ''}`}
+            className={`rounded-sm py-2 text-[13px] font-bold transition-colors ${mobileSide === 'ASK' ? 'bg-sell text-white' : 'text-sell'}`}
             onClick={() => setMobileSide('ASK')}
           >
             Sell
@@ -311,38 +302,40 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
         </div>
       )}
 
-      {/* Order Type Tabs */}
-      <div className="order-type-tabs">
+      {/* Order type tabs */}
+      <div className="flex flex-wrap items-center gap-1">
         {basicTypes.map(t => (
-          <button key={t} className={`type-tab ${orderType === t ? 'active' : ''}`} onClick={() => setOrderType(t)}>
+          <button key={t} className={typeTab(orderType === t)} onClick={() => setOrderType(t)}>
             {ORDER_TYPE_LABELS[t]}
           </button>
         ))}
         <button
-          className={`type-tab type-tab-more ${showAdvanced || SYNTHETIC_TYPES.includes(orderType) ? 'active' : ''}`}
+          className={typeTab(showAdvanced || SYNTHETIC_TYPES.includes(orderType))}
           onClick={() => setShowAdvanced(!showAdvanced)}
         >
-          More
+          More ▾
         </button>
       </div>
 
-      {/* Advanced order types */}
       {showAdvanced && (
-        <div className="order-type-tabs order-type-tabs-advanced">
+        <div className="flex flex-wrap items-center gap-1 rounded-md bg-surface-2 p-1">
           {advancedTypes.map(t => (
-            <button key={t} className={`type-tab ${orderType === t ? 'active' : ''}`} onClick={() => { setOrderType(t); setShowAdvanced(false); }}>
+            <button key={t} className={typeTab(orderType === t)} onClick={() => { setOrderType(t); setShowAdvanced(false); }}>
               {ORDER_TYPE_LABELS[t]}
             </button>
           ))}
         </div>
       )}
 
-      {/* Time-in-Force selector */}
-      <div className="tif-tabs">
+      {/* Time-in-force */}
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-faint">TIF</span>
         {(Object.keys(TIF_LABELS) as TimeInForce[]).map(tif => (
           <button
             key={tif}
-            className={`tif-tab ${timeInForce === tif ? 'active' : ''}`}
+            className={`rounded-sm px-2 py-0.5 font-mono text-[11px] transition-colors ${
+              timeInForce === tif ? 'bg-accent-soft text-accent' : 'text-muted hover:text-text'
+            }`}
             onClick={() => setTimeInForce(tif)}
           >
             {TIF_LABELS[tif]}
@@ -350,28 +343,16 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
         ))}
       </div>
 
-      {/* Side-by-side Buy/Sell Forms (desktop) or single form (mobile) */}
-      <div className={`order-forms-row ${isMobile ? `mobile-side-${mobileSide === 'BID' ? 'buy' : 'sell'}` : ''}`}>
-        <OrderSideForm
-          side="BID"
-          market={market}
-          orderType={orderType}
-          timeInForce={timeInForce}
-          onSubmitOrder={onSubmitOrder}
-          loading={loading}
-          externalPrice={externalPrice}
-        />
-        <div className="form-divider" />
-        <OrderSideForm
-          side="ASK"
-          market={market}
-          orderType={orderType}
-          timeInForce={timeInForce}
-          onSubmitOrder={onSubmitOrder}
-          loading={loading}
-          externalPrice={externalPrice}
-        />
-      </div>
+      {/* Forms */}
+      {isMobile ? (
+        sideForm(mobileSide)
+      ) : (
+        <div className="flex gap-4">
+          {sideForm('BID')}
+          <div className="w-px flex-shrink-0 bg-hairline" />
+          {sideForm('ASK')}
+        </div>
+      )}
     </div>
   );
 }

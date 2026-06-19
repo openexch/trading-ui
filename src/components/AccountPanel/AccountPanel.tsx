@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { formatPrice } from '../../utils/formatters';
-import './AccountPanel.css';
+import { DEMO_USER_ID } from '../../config';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
-const USER_ID = 1;
+const USER_ID = DEMO_USER_ID;
 
 interface AssetBalance {
   asset: string;
@@ -104,40 +104,60 @@ export function AccountPanel() {
   ];
 
   return (
-    <div className="account-panel">
-      <div className="account-header">
-        <h3>Account</h3>
+    <div className="flex h-full flex-col">
+      <div className="flex items-center border-b border-hairline px-4 py-3.5">
+        <h3 className="text-[13px] font-medium tracking-tight text-text-strong">Account</h3>
       </div>
 
-      <div className="account-balances">
+      <div className="flex-1 overflow-y-auto py-2">
         {account && account.assets.length > 0 ? (
-          <table className="balance-table">
+          <table className="w-full border-collapse text-xs">
             <thead>
               <tr>
-                <th>Asset</th>
-                <th>Available</th>
-                <th>Locked</th>
-                <th>Total</th>
+                <th className="border-b border-hairline px-4 py-1.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted">
+                  Asset
+                </th>
+                <th className="border-b border-hairline px-4 py-1.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted">
+                  Available
+                </th>
+                <th className="border-b border-hairline px-4 py-1.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted">
+                  Locked
+                </th>
+                <th className="border-b border-hairline px-4 py-1.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted">
+                  Total
+                </th>
               </tr>
             </thead>
             <tbody>
               {account.assets.map(a => (
-                <tr key={a.assetId}>
-                  <td className="asset-name">{a.asset}</td>
-                  <td>{formatPrice(a.available)}</td>
-                  <td className="locked">{a.locked > 0 ? formatPrice(a.locked) : '-'}</td>
-                  <td>{formatPrice(a.total)}</td>
+                <tr key={a.assetId} className="hover:bg-surface-2">
+                  <td className="border-b border-hairline px-4 py-1.5 font-mono text-xs font-semibold text-text-strong">
+                    {a.asset}
+                  </td>
+                  <td className="border-b border-hairline px-4 py-1.5 font-mono text-xs tabular-nums text-buy">
+                    {formatPrice(a.available)}
+                  </td>
+                  <td className="border-b border-hairline px-4 py-1.5 font-mono text-xs tabular-nums text-warn">
+                    {a.locked > 0 ? formatPrice(a.locked) : <span className="text-faint">-</span>}
+                  </td>
+                  <td className="border-b border-hairline px-4 py-1.5 font-mono text-xs tabular-nums text-text">
+                    {formatPrice(a.total)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <div className="empty-state">No balances</div>
+          <div className="px-4 py-5 text-center text-xs italic text-muted">No balances</div>
         )}
       </div>
 
-      <div className="account-actions">
-        <select value={depositAsset} onChange={e => setDepositAsset(Number(e.target.value))}>
+      <div className="flex flex-col gap-2 border-t border-hairline px-4 py-3">
+        <select
+          value={depositAsset}
+          onChange={e => setDepositAsset(Number(e.target.value))}
+          className="rounded-md border border-hairline bg-surface-2 px-3 py-2 text-xs text-text outline-none focus:border-accent"
+        >
           {ASSETS.map(a => (
             <option key={a.id} value={a.id}>{a.name}</option>
           ))}
@@ -149,16 +169,29 @@ export function AccountPanel() {
           onChange={e => setDepositAmount(e.target.value)}
           min="0"
           step="any"
+          className="rounded-md border border-hairline bg-surface-2 px-3 py-2 font-mono text-xs text-text outline-none placeholder:text-faint focus:border-accent"
         />
-        <div className="action-buttons">
-          <button className="deposit-btn" onClick={handleDeposit} disabled={loading}>
+        <div className="flex gap-2">
+          <button
+            onClick={handleDeposit}
+            disabled={loading}
+            className="flex-1 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-35"
+          >
             Deposit
           </button>
-          <button className="withdraw-btn" onClick={handleWithdraw} disabled={loading}>
+          <button
+            onClick={handleWithdraw}
+            disabled={loading}
+            className="flex-1 rounded-md border border-hairline bg-surface-2 px-3 py-2 text-xs font-semibold text-sell transition-colors hover:border-hairline-strong hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-35"
+          >
             Withdraw
           </button>
         </div>
-        {actionMsg && <div className="action-msg">{actionMsg}</div>}
+        {actionMsg && (
+          <div className="animate-fade-in rounded-md px-2 py-1.5 text-center text-[11px] font-medium text-muted">
+            {actionMsg}
+          </div>
+        )}
       </div>
     </div>
   );

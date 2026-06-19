@@ -7,6 +7,7 @@ import { useMarketStats } from './hooks/useMarketStats';
 import { useClusterState } from './hooks/useClusterState';
 import { useApi } from './hooks/useApi';
 import { useOrders } from './hooks/useOrders';
+import { useTheme } from './hooks/useTheme';
 import { OrderBook } from './components/OrderBook/OrderBook';
 import { TradeList } from './components/Trades/TradeList';
 import { Chart } from './components/Chart/Chart';
@@ -15,11 +16,12 @@ import { MarketSelector } from './components/MarketSelector/MarketSelector';
 import { MarketStats } from './components/MarketStats/MarketStats';
 import { OrderForm } from './components/OrderForm/OrderForm';
 import { OpenOrders } from './components/OpenOrders/OpenOrders';
+import { OrderHistory } from './components/OrderHistory/OrderHistory';
 import { AccountPanel } from './components/AccountPanel/AccountPanel';
+import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { AdminPage } from './pages/AdminPage';
 import type { WebSocketMessage, Market, OrderRequest, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage, OrderStatusBatchMessage } from './types/market';
 import { MARKETS } from './types/market';
-import './App.css';
 
 // Mobile detection hook
 function useIsMobile(breakpoint = 768) {
@@ -37,27 +39,24 @@ function useIsMobile(breakpoint = 768) {
 // Icons
 const Icons = {
   settings: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="17" height="17">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   ),
-  activity: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-    </svg>
-  ),
-  openExchangeLogo: (
-    <svg viewBox="0 0 40 40" fill="none">
-      <polyline points="6,8 16,20 6,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-      <polyline points="14,8 24,20 14,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-      <polyline points="22,8 32,20 22,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  // Triple chevron — throughput / fast-forward, the Open Exchange mark
+  logo: (
+    <svg viewBox="0 0 40 40" fill="none" width="26" height="26">
+      <polyline points="6,8 16,20 6,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points="14,8 24,20 14,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points="22,8 32,20 22,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
 };
 
 function MarketPage() {
   const isMobile = useIsMobile();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [selectedMarket, setSelectedMarket] = useState<Market>(MARKETS[0]);
   const selectedMarketIdRef = useRef(selectedMarket.id);
 
@@ -79,7 +78,7 @@ function MarketPage() {
   const { trades, handleTradesBatch, resetTrades } = useTrades();
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
   const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
-  const { submitOrder, cancelOrder, loading: apiLoading } = useApi();
+  const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
   const { openOrders, handleOrderStatusBatch, resetOrders, removeOrder } = useOrders();
 
   const resetAllState = useCallback(() => {
@@ -258,33 +257,46 @@ function MarketPage() {
     }
   }, [cancelOrder, removeOrder, selectedMarket.symbol]);
 
+  const handleReplaceOrder = useCallback(async (orderId: number, price?: number, quantity?: number) => {
+    return await replaceOrder(orderId, price, quantity);
+  }, [replaceOrder]);
+
   // Order book price click → fills order form
   const handlePriceClick = useCallback((price: number) => {
     setClickedPrice(price);
   }, []);
 
   // Bottom section tab state
-  const [bottomTab, setBottomTab] = useState<'order' | 'orders' | 'trades' | 'account'>('order');
+  const [bottomTab, setBottomTab] = useState<'order' | 'orders' | 'history' | 'trades' | 'account'>('order');
 
   const bestBid = orderBook.bids.length > 0 ? orderBook.bids[0] : null;
   const bestAsk = orderBook.asks.length > 0 ? orderBook.asks[0] : null;
 
+  const tabClass = (active: boolean) =>
+    `relative px-4 py-2.5 text-[13px] font-medium transition-colors ${
+      active ? 'text-text' : 'text-faint hover:text-muted'
+    }`;
+
   return (
-    <div className={`app ${isMobile ? 'is-mobile' : ''}`}>
-      <header className="app-header">
-        <div className="header-left">
-          <div className="logo">
-            <span className="logo-icon">{Icons.openExchangeLogo}</span>
-            <span className="logo-text"><span className="open">Open</span> <span className="exchange">Exchange</span></span>
+    <div className="mx-auto flex h-screen max-w-[1920px] flex-col px-2">
+      {/* ── Header ── */}
+      <header className="flex flex-shrink-0 items-center justify-between border-b border-hairline py-2.5">
+        <div className="flex items-center gap-5">
+          <div className="flex select-none items-center gap-2.5">
+            <span className="text-accent">{Icons.logo}</span>
+            <span className="font-display text-[17px] font-bold leading-none tracking-tight">
+              <span className="text-accent">Open</span>{' '}
+              <span className="text-text-strong">Exchange</span>
+            </span>
           </div>
           {isMobile ? (
             <button
-              className="mobile-market-btn"
+              className="flex min-h-9 items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 font-mono text-[13px] font-medium text-text-strong"
               onClick={() => setShowMarketSelector(true)}
             >
               <span>{selectedMarket.symbol}</span>
-              <svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor">
-                <path d="M2 4l4 4 4-4"/>
+              <svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor" className="text-faint">
+                <path d="M2 4l4 4 4-4" />
               </svg>
             </button>
           ) : (
@@ -295,9 +307,14 @@ function MarketPage() {
             />
           )}
         </div>
-        <div className="header-right">
+        <div className="flex items-center gap-2.5">
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
           {!isMobile && (
-            <Link to="/admin" className="admin-btn" title="Cluster Admin">
+            <Link
+              to="/admin"
+              title="Cluster Admin"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-hairline bg-surface-2 text-muted transition-colors hover:border-hairline-strong hover:text-text"
+            >
               {Icons.settings}
             </Link>
           )}
@@ -305,125 +322,110 @@ function MarketPage() {
         </div>
       </header>
 
-      <div className="stats-bar">
+      {/* ── Ticker rail (signature) ── */}
+      <div className="flex-shrink-0 py-1.5">
         <MarketStats market={selectedMarket} stats={stats} orderBook={orderBook} />
       </div>
 
-      <main className="app-main">
-        {/* Left sidebar — Order Book (vertical) */}
-        <aside className={`left-panel ${isMobile && mobileTab === 'orderbook' ? 'mobile-tab-active' : ''}`}>
-          <OrderBook
-            orderBook={orderBook}
-            levelChanges={levelChanges}
-            onPriceClick={handlePriceClick}
-          />
-        </aside>
+      {/* ── Main grid ── */}
+      <main className="my-1.5 grid min-h-0 flex-1 grid-cols-1 gap-1.5 overflow-hidden lg:grid-cols-[300px_1fr] xl:grid-cols-[320px_1fr]">
+        {/* Left — Order Book (desktop) */}
+        {!isMobile && (
+          <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-hairline bg-surface">
+            <OrderBook orderBook={orderBook} levelChanges={levelChanges} onPriceClick={handlePriceClick} />
+          </aside>
+        )}
 
-        {/* Center — Chart + Bottom Tabbed Section */}
-        <section className="center-panel">
-          {/* Desktop: chart always visible */}
+        {/* Center — Chart + bottom tabs */}
+        <section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg border border-hairline bg-surface">
+          {/* Desktop chart */}
           {!isMobile && (
-            <div className="chart-area">
+            <div className="flex min-h-[200px] flex-1 flex-col border-b border-hairline [&>*]:min-h-0 [&>*]:flex-1">
               <Chart
                 candles={candles}
                 currentCandle={currentCandle}
                 symbol={selectedMarket.symbol}
+                theme={theme}
                 onIntervalChange={handleIntervalChange}
                 activeInterval={chartInterval}
               />
             </div>
           )}
 
-          {/* Mobile Tab Bar */}
+          {/* Mobile tab bar */}
           {isMobile && (
-            <div className="mobile-tab-bar">
-              <button
-                className={`mobile-tab ${mobileTab === 'chart' ? 'active' : ''}`}
-                onClick={() => setMobileTab('chart')}
-              >
-                Chart
-              </button>
-              <button
-                className={`mobile-tab ${mobileTab === 'orderbook' ? 'active' : ''}`}
-                onClick={() => setMobileTab('orderbook')}
-              >
-                Order Book
-              </button>
-              <button
-                className={`mobile-tab ${mobileTab === 'trades' ? 'active' : ''}`}
-                onClick={() => setMobileTab('trades')}
-              >
-                Trades
-              </button>
+            <div className="flex flex-shrink-0 border-b border-hairline">
+              {(['chart', 'orderbook', 'trades'] as const).map((t) => (
+                <button
+                  key={t}
+                  className={`relative min-h-11 flex-1 py-2.5 text-[13px] font-medium transition-colors ${
+                    mobileTab === t ? 'text-text-strong after:absolute after:inset-x-[20%] after:bottom-0 after:h-0.5 after:rounded-t after:bg-accent' : 'text-faint'
+                  }`}
+                  onClick={() => setMobileTab(t)}
+                >
+                  {t === 'chart' ? 'Chart' : t === 'orderbook' ? 'Order Book' : 'Trades'}
+                </button>
+              ))}
             </div>
           )}
 
-          {/* Mobile: show selected tab content */}
+          {/* Mobile tab content */}
           {isMobile && (
-            <div className="mobile-tab-content">
+            <div className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch]">
               {mobileTab === 'chart' && (
-                <Chart
-                  candles={candles}
-                  currentCandle={currentCandle}
-                  symbol={selectedMarket.symbol}
-                  onIntervalChange={handleIntervalChange}
-                  activeInterval={chartInterval}
-                />
+                <Chart candles={candles} currentCandle={currentCandle} symbol={selectedMarket.symbol} theme={theme} onIntervalChange={handleIntervalChange} activeInterval={chartInterval} />
               )}
               {mobileTab === 'orderbook' && (
-                <OrderBook
-                  orderBook={orderBook}
-                  levelChanges={levelChanges}
-                  onPriceClick={handlePriceClick}
-                />
+                <OrderBook orderBook={orderBook} levelChanges={levelChanges} onPriceClick={handlePriceClick} />
               )}
-              {mobileTab === 'trades' && (
-                <TradeList trades={trades} />
-              )}
+              {mobileTab === 'trades' && <TradeList trades={trades} />}
             </div>
           )}
 
-          {/* Desktop: bottom tabbed section */}
+          {/* Desktop bottom tabbed section */}
           {!isMobile ? (
-            <div className="bottom-section">
-              <div className="bottom-tabs">
-                <button className={`bottom-tab ${bottomTab === 'order' ? 'active' : ''}`} onClick={() => setBottomTab('order')}>Order</button>
-                <button className={`bottom-tab ${bottomTab === 'orders' ? 'active' : ''}`} onClick={() => setBottomTab('orders')}>Open Orders ({openOrders.length})</button>
-                <button className={`bottom-tab ${bottomTab === 'trades' ? 'active' : ''}`} onClick={() => setBottomTab('trades')}>Trades</button>
-                <button className={`bottom-tab ${bottomTab === 'account' ? 'active' : ''}`} onClick={() => setBottomTab('account')}>Account</button>
+            <div className="flex max-h-[340px] min-h-[200px] flex-col border-t border-hairline">
+              <div className="flex flex-shrink-0 gap-0 border-b border-hairline px-4">
+                <button className={tabClass(bottomTab === 'order')} onClick={() => setBottomTab('order')}>
+                  Order{bottomTab === 'order' && <Underline />}
+                </button>
+                <button className={tabClass(bottomTab === 'orders')} onClick={() => setBottomTab('orders')}>
+                  Open Orders ({openOrders.length}){bottomTab === 'orders' && <Underline />}
+                </button>
+                <button className={tabClass(bottomTab === 'history')} onClick={() => setBottomTab('history')}>
+                  History{bottomTab === 'history' && <Underline />}
+                </button>
+                <button className={tabClass(bottomTab === 'trades')} onClick={() => setBottomTab('trades')}>
+                  Trades{bottomTab === 'trades' && <Underline />}
+                </button>
+                <button className={tabClass(bottomTab === 'account')} onClick={() => setBottomTab('account')}>
+                  Account{bottomTab === 'account' && <Underline />}
+                </button>
               </div>
-              <div className="bottom-tab-content">
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 {bottomTab === 'order' && (
-                  <OrderForm
-                    market={selectedMarket}
-                    bestBid={bestBid}
-                    bestAsk={bestAsk}
-                    onSubmitOrder={handleSubmitOrder}
-                    loading={apiLoading}
-                    externalPrice={clickedPrice}
-                  />
+                  <OrderForm market={selectedMarket} bestBid={bestBid} bestAsk={bestAsk} onSubmitOrder={handleSubmitOrder} loading={apiLoading} externalPrice={clickedPrice} />
                 )}
                 {bottomTab === 'orders' && (
-                  <OpenOrders
-                    orders={openOrders}
-                    onCancelOrder={handleCancelOrder}
-                    loading={apiLoading}
-                  />
+                  <OpenOrders orders={openOrders} onCancelOrder={handleCancelOrder} onReplaceOrder={handleReplaceOrder} loading={apiLoading} />
                 )}
-                {bottomTab === 'trades' && (
-                  <TradeList trades={trades} />
-                )}
-                {bottomTab === 'account' && (
-                  <AccountPanel />
-                )}
+                {bottomTab === 'history' && <OrderHistory market={selectedMarket} />}
+                {bottomTab === 'trades' && <TradeList trades={trades} />}
+                {bottomTab === 'account' && <AccountPanel />}
               </div>
             </div>
           ) : (
-            <div className="mobile-order-buttons">
-              <button className="mobile-buy-btn" onClick={() => setMobileOrderSide('BID')}>
+            <div className="flex flex-shrink-0 gap-2.5 border-t border-hairline bg-surface px-3 py-2">
+              <button
+                className="min-h-12 flex-1 rounded-md border border-buy/30 bg-buy-soft py-3 text-[15px] font-bold text-buy active:brightness-95"
+                onClick={() => setMobileOrderSide('BID')}
+              >
                 Buy
               </button>
-              <button className="mobile-sell-btn" onClick={() => setMobileOrderSide('ASK')}>
+              <button
+                className="min-h-12 flex-1 rounded-md border border-sell/30 bg-sell-soft py-3 text-[15px] font-bold text-sell active:brightness-95"
+                onClick={() => setMobileOrderSide('ASK')}
+              >
                 Sell
               </button>
             </div>
@@ -431,31 +433,38 @@ function MarketPage() {
         </section>
       </main>
 
-      {/* Mobile Market Selector Overlay */}
+      {/* Mobile Market Selector overlay */}
       {isMobile && showMarketSelector && (
         <MarketSelector
           markets={MARKETS}
           selectedMarket={selectedMarket}
           onSelectMarket={handleMarketChange}
-          isOverlay={true}
+          isOverlay
           onClose={() => setShowMarketSelector(false)}
         />
       )}
 
-      {/* Mobile Order Form Overlay */}
+      {/* Mobile Order Form bottom sheet */}
       {isMobile && mobileOrderSide && (
-        <div className="mobile-order-overlay" onClick={(e) => {
-          if (e.target === e.currentTarget) setMobileOrderSide(null);
-        }}>
-          <div className="mobile-order-sheet">
-            <div className="mobile-order-sheet-header">
-              <span className="mobile-order-sheet-title">
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 animate-overlay-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setMobileOrderSide(null);
+          }}
+        >
+          <div className="max-h-[85vh] overflow-y-auto rounded-t-2xl bg-surface animate-sheet-up [-webkit-overflow-scrolling:touch]">
+            <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl bg-surface px-4 pb-2 pt-4">
+              <span className="font-display text-lg font-bold text-text-strong">
                 {mobileOrderSide === 'BID' ? 'Buy' : 'Sell'} {selectedMarket.baseAsset}
               </span>
-              <button className="mobile-order-sheet-close" onClick={() => setMobileOrderSide(null)}>
+              <button
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-muted active:bg-surface-3"
+                onClick={() => setMobileOrderSide(null)}
+                aria-label="Close"
+              >
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </div>
@@ -470,27 +479,39 @@ function MarketPage() {
               }}
               loading={apiLoading}
               externalPrice={clickedPrice}
-              isMobile={true}
+              isMobile
               defaultSide={mobileOrderSide}
             />
           </div>
         </div>
       )}
 
-      <footer className="app-footer">
-        <div className="footer-left">
-          <span className="footer-icon">{Icons.activity}</span>
-          <span>Open Exchange Trading Engine</span>
-          <span className="separator">|</span>
-          <span className="version">v1.0.0</span>
-        </div>
-        <div className="footer-right">
-          <span className="update-indicator" />
-          <span className="update-rate">Live updates</span>
-        </div>
-      </footer>
+      {/* ── Footer ── */}
+      {!isMobile && (
+        <footer className="flex flex-shrink-0 items-center justify-between border-t border-hairline py-2 text-[11px] font-medium text-faint">
+          <div className="flex items-center gap-2">
+            <span className="text-accent">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </span>
+            <span>Open Exchange Trading Engine</span>
+            <span className="text-hairline-strong">|</span>
+            <span className="font-mono text-[10px] text-muted">v1.0.0</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse-soft" />
+            <span className="text-accent">Live updates</span>
+          </div>
+        </footer>
+      )}
     </div>
   );
+}
+
+/** Active-tab underline accent. */
+function Underline() {
+  return <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-t bg-accent" />;
 }
 
 function App() {
