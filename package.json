@@ -11,12 +11,12 @@
   "dependencies": {
     "lightweight-charts": "^5.2.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react-dom": "^19.2.7",
     "react-router-dom": "^7.17.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
-    "@types/react-dom": "^18.2.17",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.2.1",
     "typescript": "^6.0.3",
     "vite": "^5.0.10"
