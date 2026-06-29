@@ -15,12 +15,9 @@ import '@fontsource/jetbrains-mono/600.css'
 
 import './index.css'
 import App from './App'
-import { initialTheme } from './hooks/useTheme'
 
-// Apply persisted theme before first paint to avoid a flash.
-const t = initialTheme()
-document.documentElement.classList.toggle('dark', t === 'dark')
-document.documentElement.style.colorScheme = t
+// Theme is applied pre-paint by the inline no-flash script in index.html;
+// useTheme() then owns it (OS-aware, persists on explicit override).
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <BrowserRouter>

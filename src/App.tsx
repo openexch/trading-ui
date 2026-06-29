@@ -19,6 +19,8 @@ import { OpenOrders } from './components/OpenOrders/OpenOrders';
 import { OrderHistory } from './components/OrderHistory/OrderHistory';
 import { AccountPanel } from './components/AccountPanel/AccountPanel';
 import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
+import { LogoMark } from './components/LogoMark';
+import { BackgroundFX } from './components/BackgroundFX';
 import { AdminPage } from './pages/AdminPage';
 import type { WebSocketMessage, Market, OrderRequest, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage, OrderStatusBatchMessage } from './types/market';
 import { MARKETS } from './types/market';
@@ -42,14 +44,6 @@ const Icons = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="17" height="17">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  ),
-  // Triple chevron — throughput / fast-forward, the Open Exchange mark
-  logo: (
-    <svg viewBox="0 0 40 40" fill="none" width="26" height="26">
-      <polyline points="6,8 16,20 6,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-      <polyline points="14,8 24,20 14,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-      <polyline points="22,8 32,20 22,32" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
 };
@@ -280,10 +274,11 @@ function MarketPage() {
   return (
     <div className="mx-auto flex h-screen max-w-[1920px] flex-col px-2">
       {/* ── Header ── */}
-      <header className="flex flex-shrink-0 items-center justify-between border-b border-hairline py-2.5">
+      <header className="relative isolate flex flex-shrink-0 items-center justify-between overflow-hidden border-b border-hairline py-2.5">
+        <BackgroundFX />
         <div className="flex items-center gap-5">
           <div className="flex select-none items-center gap-2.5">
-            <span className="text-accent">{Icons.logo}</span>
+            <LogoMark />
             <span className="font-display text-[17px] font-bold leading-none tracking-tight">
               <span className="text-accent">Open</span>{' '}
               <span className="text-text-strong">Exchange</span>
@@ -516,10 +511,15 @@ function Underline() {
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<MarketPage />} />
-      <Route path="/admin" element={<AdminPage />} />
-    </Routes>
+    <>
+      {/* App-wide faint engineering dot-grid; opaque panels cover it, so it only
+          shows through the chrome/gutters. Decorative. */}
+      <div aria-hidden className="bg-dotgrid pointer-events-none fixed inset-0 -z-10" />
+      <Routes>
+        <Route path="/" element={<MarketPage />} />
+        <Route path="/admin" element={<AdminPage />} />
+      </Routes>
+    </>
   );
 }
 

@@ -10,7 +10,7 @@ interface MarketStatsProps {
 
 /**
  * Ticker rail — the page's signature element. The symbol is set in the display
- * grotesk against a thin tangerine rule; the live price flashes on each tick.
+ * grotesk against a thin accent rule; the live price flashes on each tick.
  */
 export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
   const spread = orderBook.bids.length > 0 && orderBook.asks.length > 0
@@ -39,7 +39,7 @@ export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
 
   return (
     <div className="flex items-stretch gap-0 overflow-x-auto rounded-lg border border-hairline bg-surface">
-      {/* Signature block: symbol + live price against a tangerine rule */}
+      {/* Signature block: symbol + live price against an accent rule */}
       <div className="flex flex-shrink-0 items-center gap-4 border-l-2 border-accent px-4 py-2">
         <div className="flex flex-col">
           <span className="font-display text-base font-bold leading-tight tracking-tight text-text-strong">

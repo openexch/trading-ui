@@ -77,6 +77,9 @@ interface ChartPalette {
   upVol: string;
   downVol: string;
   volMa: string;
+  accent: string;
+  accentArea0: string;
+  accentArea1: string;
 }
 
 const PALETTES: Record<Theme, ChartPalette> = {
@@ -92,6 +95,9 @@ const PALETTES: Record<Theme, ChartPalette> = {
     upVol: 'rgba(79,178,134,0.25)',
     downVol: 'rgba(224,108,90,0.25)',
     volMa: '#8a8e99',
+    accent: '#5b9bff',
+    accentArea0: 'rgba(91,155,255,0.30)',
+    accentArea1: 'rgba(91,155,255,0.02)',
   },
   light: {
     background: '#ffffff',
@@ -105,10 +111,11 @@ const PALETTES: Record<Theme, ChartPalette> = {
     upVol: 'rgba(22,163,106,0.20)',
     downVol: 'rgba(229,72,77,0.20)',
     volMa: '#9b9182',
+    accent: '#1f63d6',
+    accentArea0: 'rgba(31,99,214,0.28)',
+    accentArea1: 'rgba(31,99,214,0.02)',
   },
 };
-
-const ACCENT = '#ff5b35';
 
 // Throttle chart updates to avoid overwhelming the browser under high load
 const UPDATE_THROTTLE_MS = 100;
@@ -526,18 +533,18 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
       candleSeriesRef.current = s;
     } else if (chartType === 'line') {
       const s = chart.addSeries(LineSeries, {
-        color: ACCENT,
+        color: p.accent,
         lineWidth: 2,
         crosshairMarkerVisible: true,
         crosshairMarkerRadius: 4,
-        crosshairMarkerBackgroundColor: ACCENT,
+        crosshairMarkerBackgroundColor: p.accent,
       });
       lineSeriesRef.current = s;
     } else {
       const s = chart.addSeries(AreaSeries, {
-        topColor: 'rgba(255, 91, 53, 0.30)',
-        bottomColor: 'rgba(255, 91, 53, 0.02)',
-        lineColor: ACCENT,
+        topColor: p.accentArea0,
+        bottomColor: p.accentArea1,
+        lineColor: p.accent,
         lineWidth: 2,
         crosshairMarkerVisible: true,
       });

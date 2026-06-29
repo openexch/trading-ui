@@ -5,7 +5,7 @@
 
 /* ================================================================
    Open Exchange — Design Tokens
-   "Daylight + Dark" — editorial fintech, tangerine signature.
+   "Daylight + Dark" — editorial fintech, logo-blue signature (theme-aware for AA).
    Semantic vars flip between themes; mapped into Tailwind below.
    ================================================================ */
 :root {
@@ -17,15 +17,21 @@
   --text: #14110e;
   --text-strong: #000000;
   --muted: #6b6256;
-  --faint: #9b9182;
+  --faint: #7a7164;
   --hairline: #e7e3d8;
   --hairline-strong: #d8d2c4;
 
-  /* Signature accent — tangerine (identical in both themes) */
-  --accent: #ff5b35;
-  --accent-hover: #e8430f;
-  --accent-soft: rgba(255, 91, 53, 0.12);
-  --accent-ring: rgba(255, 91, 53, 0.40);
+  /* Signature accent — logo blue, theme-aware for WCAG AA (deep in light,
+     bright in dark). --on-accent is the readable text color on a solid fill. */
+  --accent: #1f63d6;
+  --accent-hover: #184fb0;
+  --accent-soft: rgba(31, 99, 214, 0.12);
+  --accent-ring: rgba(31, 99, 214, 0.40);
+  --on-accent: #ffffff;
+
+  /* Decorative background FX (subtle, derived from accent) */
+  --glow: color-mix(in srgb, var(--accent) 16%, transparent);
+  --grid-dot: rgba(20, 17, 14, 0.05);
 
   /* Trade semantics */
   --buy: #16a36a;
@@ -51,14 +57,19 @@
   --text: #ededf0;
   --text-strong: #ffffff;
   --muted: #8a8e99;
-  --faint: #5e636e;
+  --faint: #82868f;
   --hairline: rgba(255, 255, 255, 0.07);
   --hairline-strong: rgba(255, 255, 255, 0.14);
 
-  --accent: #ff5b35;
-  --accent-hover: #ff7551;
-  --accent-soft: rgba(255, 91, 53, 0.16);
-  --accent-ring: rgba(255, 91, 53, 0.45);
+  --accent: #5b9bff;
+  --accent-hover: #87b4ff;
+  --accent-soft: rgba(91, 155, 255, 0.16);
+  --accent-ring: rgba(91, 155, 255, 0.45);
+  --on-accent: #0b1220;
+
+  /* Decorative background FX (subtle, derived from accent) */
+  --glow: color-mix(in srgb, var(--accent) 24%, transparent);
+  --grid-dot: rgba(255, 255, 255, 0.05);
 
   --buy: #4fb286;
   --buy-soft: rgba(79, 178, 134, 0.12);
@@ -93,6 +104,7 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
 
   --color-buy: var(--buy);
   --color-buy-soft: var(--buy-soft);
@@ -119,6 +131,7 @@
   --animate-fade-in: fadeIn 0.18s ease-out;
   --animate-sheet-up: sheetUp 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-overlay-in: overlayIn 0.18s ease-out;
+  --animate-drift: drift 18s ease-in-out infinite;
 }
 
 /* ================================================================
@@ -151,6 +164,28 @@
   .tnum {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
+  }
+
+  /* Faint engineering dot-grid; fades toward edges via mask. Decorative. */
+  .bg-dotgrid {
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.5px);
+    background-size: 22px 22px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 75%);
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 75%);
+  }
+
+  /* High-velocity light tracer (comet: faded tail -> bright head + glow). */
+  .beam {
+    position: absolute;
+    left: 0;
+    height: 1.5px;
+    width: var(--len, 16rem);
+    border-radius: 9999px;
+    background: linear-gradient(90deg, transparent, var(--beam, var(--accent)));
+    box-shadow: 0 0 8px 0 var(--beam, var(--accent));
+    opacity: 0;
+    will-change: transform, opacity;
+    animation: streak var(--dur, 6s) var(--delay, 0s) linear infinite;
   }
 
   /* Visible, on-brand keyboard focus */
@@ -204,6 +239,18 @@
 @keyframes overlayIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+/* Decorative FX — transform/opacity only (GPU-friendly, reduced-motion safe) */
+@keyframes drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(3%, -4%, 0) scale(1.08); }
+}
+@keyframes streak {
+  0%   { transform: translateX(calc(-1 * var(--len, 16rem) - 2rem)); opacity: 0; }
+  3%   { opacity: var(--max, 0.5); }
+  15%  { opacity: var(--max, 0.5); }
+  18%  { transform: translateX(calc(100vw + 2rem)); opacity: 0; }
+  100% { transform: translateX(calc(100vw + 2rem)); opacity: 0; }
 }
 
 /* Respect reduced-motion globally */
