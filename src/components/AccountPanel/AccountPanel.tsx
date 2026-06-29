@@ -175,7 +175,7 @@ export function AccountPanel() {
           <button
             onClick={handleDeposit}
             disabled={loading}
-            className="flex-1 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-35"
+            className="flex-1 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-35"
           >
             Deposit
           </button>

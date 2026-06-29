@@ -105,7 +105,7 @@ export function BackupOps() {
               <button
                 onClick={() => { const n = Number(interval); if (n > 0) run(() => enableAutoSnapshot(n)); else flash(false, 'Interval must be > 0'); }}
                 disabled={busy}
-                className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40"
+                className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-40"
               >
                 {autoSnapshot?.enabled ? 'Update' : 'Enable'}
               </button>

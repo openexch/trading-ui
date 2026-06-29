@@ -46,8 +46,8 @@ export function ConfirmModal({
           <button
             onClick={onConfirm}
             disabled={busy}
-            className={`rounded-md px-3 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50 ${
-              tone === 'danger' ? 'bg-sell hover:brightness-110' : 'bg-accent hover:bg-accent-hover'
+            className={`rounded-md px-3 py-1.5 text-[13px] font-semibold disabled:opacity-50 ${
+              tone === 'danger' ? 'bg-sell text-white hover:brightness-110' : 'bg-accent text-on-accent hover:bg-accent-hover'
             }`}
           >
             {busy ? 'Working…' : confirmLabel}

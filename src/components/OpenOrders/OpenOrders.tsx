@@ -146,7 +146,7 @@ export function OpenOrders({ orders, onCancelOrder, onReplaceOrder, loading }: O
                           <button
                             onClick={() => saveEdit(order.orderId)}
                             disabled={saving}
-                            className="rounded-sm bg-accent px-2 py-1 text-[11px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+                            className="rounded-sm bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-50"
                           >
                             {saving ? 'Saving…' : 'Save'}
                           </button>

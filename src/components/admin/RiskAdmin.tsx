@@ -134,7 +134,7 @@ function RiskMarketCard({
         <button
           onClick={save}
           disabled={!dirty || saving}
-          className="rounded-md bg-accent px-3.5 py-1.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40"
+          className="rounded-md bg-accent px-3.5 py-1.5 text-[13px] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-40"
         >
           {saving ? 'Saving…' : 'Save changes'}
         </button>
