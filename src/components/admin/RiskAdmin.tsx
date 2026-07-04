@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useState } from 'react';
 import { MARKETS } from '../../types/market';
 import { useRiskConfig, FP_SCALE, FP_FIELDS, type RiskConfig } from '../../hooks/useRiskConfig';

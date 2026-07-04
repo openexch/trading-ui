@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { OrderBook, BookSnapshotMessage, BookDeltaMessage, BookLevel } from '../types/market';
 

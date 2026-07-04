@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useState } from 'react';
 
 const ADMIN_BASE = import.meta.env.VITE_ADMIN_API_URL || '';

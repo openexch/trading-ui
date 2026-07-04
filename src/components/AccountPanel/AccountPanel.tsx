@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useState, useEffect, useCallback } from 'react';
 import { formatPrice } from '../../utils/formatters';
 import { AUTH_HEADERS, DEMO_USER_ID } from '../../config';

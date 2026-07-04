@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useState, useCallback } from 'react';
 import type { UserOrder, OrderStatusMessage, OrderStatusBatchMessage, OrderStatus } from '../types/market';
 

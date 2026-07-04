@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Brand mark — the three-chevron motif from the logo, blue→cyan gradient.
 // Uses its own gradient stroke (not currentColor) so it stays on-brand in any theme.
 import type { SVGProps } from 'react';

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import {
   createChart,
