@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import type { OrderRequest } from '../types/market';
 import { MARKETS } from '../types/market';
 import { AUTH_HEADERS } from '../config';
-import { parseJsonSafeIds } from '../utils/safeJson';
+import { toWireMoney } from '../utils/money';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
@@ -26,12 +26,13 @@ function toOmsRequest(order: OrderRequest) {
     side: SIDE_MAP[order.orderSide] ?? order.orderSide,
     orderType: order.orderType,
     timeInForce: order.timeInForce ?? 'GTC',
-    price: order.price,
-    quantity: order.quantity,
+    // Money as exact decimal strings (oms#39)
+    price: toWireMoney(order.price),
+    quantity: toWireMoney(order.quantity),
   };
-  if (order.stopPrice) req.stopPrice = order.stopPrice;
-  if (order.trailingDelta) req.trailingDelta = order.trailingDelta;
-  if (order.displayQuantity) req.displayQuantity = order.displayQuantity;
+  if (order.stopPrice) req.stopPrice = toWireMoney(order.stopPrice);
+  if (order.trailingDelta) req.trailingDelta = toWireMoney(order.trailingDelta);
+  if (order.displayQuantity) req.displayQuantity = toWireMoney(order.displayQuantity);
   return req;
 }
 
@@ -51,7 +52,8 @@ export function useApi() {
         body: JSON.stringify(toOmsRequest(order)),
       });
 
-      const data = parseJsonSafeIds(await response.text()) as Record<string, any>;
+      // ids arrive as JSON strings natively now (oms#39)
+      const data = await response.json() as Record<string, any>;
 
       if (data.accepted) {
         setState({ loading: false, error: null });
@@ -71,9 +73,9 @@ export function useApi() {
   const replaceOrder = useCallback(async (omsOrderId: string, price?: number, quantity?: number): Promise<ApiResponse> => {
     setState({ loading: true, error: null });
 
-    const body: Record<string, number> = {};
-    if (price !== undefined && price > 0) body.price = price;
-    if (quantity !== undefined && quantity > 0) body.quantity = quantity;
+    const body: Record<string, string> = {};
+    if (price !== undefined && price > 0) body.price = toWireMoney(price);
+    if (quantity !== undefined && quantity > 0) body.quantity = toWireMoney(quantity);
 
     try {
       const response = await fetch(`${API_BASE}/api/v1/orders/${omsOrderId}`, {

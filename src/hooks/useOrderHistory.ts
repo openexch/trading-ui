@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AUTH_HEADERS } from '../config';
-import { parseJsonSafeIds } from '../utils/safeJson';
+import { fromWireMoney } from '../utils/money';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
-/** Shape returned by GET /api/v1/orders (OMS OrderResponse — decimal doubles). */
+/** GET /api/v1/orders entries; wire money strings parsed to numbers for display. */
 export interface OrderHistoryEntry {
-  /** String via parseJsonSafeIds — Snowflake ids overflow JS numbers (#25). */
+  /** JSON string on the wire — Snowflake ids overflow JS numbers (oms#39). */
   omsOrderId: string;
   clientOrderId: string;
   userId: number;
@@ -41,8 +41,17 @@ export function useOrderHistory() {
       // No userId param: the OMS scopes the query to the token's principal.
       const res = await fetch(`${API_BASE}/api/v1/orders`, { headers: AUTH_HEADERS });
       if (!res.ok) throw new Error(`Error ${res.status}`);
-      const data = parseJsonSafeIds(await res.text()) as any;
-      const orders: OrderHistoryEntry[] = Array.isArray(data) ? data : data.orders ?? [];
+      const data = await res.json() as any;
+      const raw: any[] = Array.isArray(data) ? data : data.orders ?? [];
+      // Money crosses as exact decimal strings (oms#39); numbers for display
+      const orders: OrderHistoryEntry[] = raw.map(o => ({
+        ...o,
+        price: fromWireMoney(o.price),
+        quantity: fromWireMoney(o.quantity),
+        filledQty: fromWireMoney(o.filledQty),
+        remainingQty: fromWireMoney(o.remainingQty),
+        stopPrice: fromWireMoney(o.stopPrice),
+      }));
       orders.sort((a, b) => b.createdAtMs - a.createdAtMs);
       setState({ orders, loading: false, error: null });
     } catch (err) {

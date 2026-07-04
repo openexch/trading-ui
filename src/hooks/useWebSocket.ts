@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ConnectionStatus, WebSocketMessage } from '../types/market';
-import { parseJsonSafeIds } from '../utils/safeJson';
 import { MessageConflator } from '../utils/conflation';
 
 interface UseWebSocketOptions {
@@ -185,7 +184,8 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
             lastMessageLogTime = now;
             messageCount = 0;
           }
-          const message = parseJsonSafeIds(event.data) as WebSocketMessage;
+          // omsOrderId arrives as a JSON string natively now (match#65)
+          const message = JSON.parse(event.data) as WebSocketMessage;
           // Buffer + flush once per frame instead of dispatching synchronously
           conflatorRef.current!.push(message);
           scheduleFlush();

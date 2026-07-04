@@ -30,7 +30,17 @@ export function AccountPanel() {
     try {
       const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}`, { headers: AUTH_HEADERS });
       if (res.ok) {
-        setAccount(await res.json());
+        const data = await res.json();
+        // Balances cross as exact decimal strings (oms#39)
+        if (Array.isArray(data?.assets)) {
+          data.assets = data.assets.map((a: any) => ({
+            ...a,
+            available: Number(a.available),
+            locked: Number(a.locked),
+            total: Number(a.total),
+          }));
+        }
+        setAccount(data);
       }
     } catch (e) {
       console.error('Failed to fetch account:', e);
@@ -53,7 +63,7 @@ export function AccountPanel() {
       const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}/deposit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
-        body: JSON.stringify({ assetId: depositAsset, amount }),
+        body: JSON.stringify({ assetId: depositAsset, amount: amount.toFixed(8) }),
       });
       if (res.ok) {
         setActionMsg('Deposit successful');
@@ -79,7 +89,7 @@ export function AccountPanel() {
       const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
-        body: JSON.stringify({ assetId: depositAsset, amount }),
+        body: JSON.stringify({ assetId: depositAsset, amount: amount.toFixed(8) }),
       });
       if (res.ok) {
         setActionMsg('Withdrawal successful');

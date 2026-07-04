@@ -73,7 +73,7 @@ export interface OrderStatusMessage {
   market?: string;
   orderId: number;
   /** OMS order id — the id the OMS REST API keys on (cancel/replace).
-   *  String via parseJsonSafeIds: Snowflake ids overflow JS numbers (#25). */
+   *  JSON string on the wire: Snowflake ids overflow JS numbers (#25/oms#39). */
   omsOrderId?: string | number;
   userId: number;
   status: OrderStatus;
