@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useState } from 'react';
 import { useBackupOps, type RecoverResult } from '../../hooks/useBackupOps';
 import { ConfirmModal } from './ConfirmModal';

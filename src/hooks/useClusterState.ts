@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useState, useCallback } from 'react';
 import type { ClusterState, ClusterStatusMessage, ClusterEventMessage, ClusterNode } from '../types/market';
 

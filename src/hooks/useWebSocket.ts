@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ConnectionStatus, WebSocketMessage } from '../types/market';
 import { MessageConflator } from '../utils/conflation';

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Decorative background system for the terminal's chrome (NOT behind live data).
 // Faint dot-grid + soft accent glow + high-velocity light tracers that streak
 // across, then rest — the still-then-zip cadence reads as speed. Purely

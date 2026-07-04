@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useEffect, useRef, useState } from 'react';
 import type { MarketStats as Stats, Market, OrderBook } from '../../types/market';
 import { formatPrice, formatQuantity } from '../../utils/formatters';

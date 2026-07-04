@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import type { AggregatedTrade } from '../../types/market';
 import { formatPrice, formatQuantity, formatTime } from '../../utils/formatters';
 

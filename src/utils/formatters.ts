@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 export function formatPrice(price: number | undefined | null): string {
   const val = price ?? 0;
   // Use appropriate precision based on price magnitude

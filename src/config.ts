@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Dev bearer token for the OMS dev auth provider (oms#36). The backend derives
 // the caller's identity from it; request bodies and query strings no longer
 // carry a userId. Point VITE_AUTH_TOKEN at a real API key / JWT when the OMS

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Market definitions
 export interface Market {
   id: number;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { useMemo, useState } from 'react';
 import type { OrderBook as OrderBookType } from '../../types/market';
 import { type LevelChange, priceKey } from '../../hooks/useOrderBook';
