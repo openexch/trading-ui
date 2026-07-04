@@ -4,8 +4,8 @@ import { formatPrice, formatQuantity, formatTime } from '../../utils/formatters'
 
 interface OpenOrdersProps {
   orders: UserOrder[];
-  onCancelOrder: (orderId: number) => void;
-  onReplaceOrder: (orderId: number, price?: number, quantity?: number) => Promise<{ success: boolean; message: string }>;
+  onCancelOrder: (order: UserOrder) => void;
+  onReplaceOrder: (order: UserOrder, price?: number, quantity?: number) => Promise<{ success: boolean; message: string }>;
   loading: boolean;
 }
 
@@ -44,7 +44,7 @@ export function OpenOrders({ orders, onCancelOrder, onReplaceOrder, loading }: O
     setEditError(null);
   };
 
-  const saveEdit = async (orderId: number) => {
+  const saveEdit = async (order: UserOrder) => {
     const price = editPrice.trim() ? Number(editPrice) : undefined;
     const quantity = editQty.trim() ? Number(editQty) : undefined;
     if ((price === undefined || price <= 0) && (quantity === undefined || quantity <= 0)) {
@@ -53,7 +53,7 @@ export function OpenOrders({ orders, onCancelOrder, onReplaceOrder, loading }: O
     }
     setSaving(true);
     setEditError(null);
-    const result = await onReplaceOrder(orderId, price, quantity);
+    const result = await onReplaceOrder(order, price, quantity);
     setSaving(false);
     if (result.success) {
       setEditingId(null);
@@ -144,7 +144,7 @@ export function OpenOrders({ orders, onCancelOrder, onReplaceOrder, loading }: O
                         <div className="flex items-center justify-end gap-1.5">
                           {editError && <span className="mr-1 text-[10px] text-sell">{editError}</span>}
                           <button
-                            onClick={() => saveEdit(order.orderId)}
+                            onClick={() => saveEdit(order)}
                             disabled={saving}
                             className="rounded-sm bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-50"
                           >
@@ -171,7 +171,7 @@ export function OpenOrders({ orders, onCancelOrder, onReplaceOrder, loading }: O
                             </button>
                           )}
                           <button
-                            onClick={() => onCancelOrder(order.orderId)}
+                            onClick={() => onCancelOrder(order)}
                             disabled={loading}
                             title="Cancel order"
                             className="rounded-sm border border-hairline px-2 py-1 text-[11px] text-muted hover:border-sell hover:text-sell disabled:opacity-50"

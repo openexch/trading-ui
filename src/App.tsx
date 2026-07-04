@@ -22,7 +22,7 @@ import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
 import { BackgroundFX } from './components/BackgroundFX';
 import { AdminPage } from './pages/AdminPage';
-import type { WebSocketMessage, Market, OrderRequest, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage, OrderStatusBatchMessage } from './types/market';
+import type { WebSocketMessage, Market, OrderRequest, UserOrder, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage, OrderStatusBatchMessage } from './types/market';
 import { MARKETS } from './types/market';
 
 // Mobile detection hook
@@ -244,15 +244,20 @@ function MarketPage() {
     return await submitOrder(order);
   }, [submitOrder]);
 
-  const handleCancelOrder = useCallback(async (orderId: number) => {
-    const result = await cancelOrder(orderId, '1', selectedMarket.symbol);
+  // OMS REST keys on omsOrderId, NOT the engine orderId the WS feed uses (#25)
+  const handleCancelOrder = useCallback(async (order: UserOrder) => {
+    if (!order.omsOrderId) return; // not OMS-managed; nothing we can cancel
+    const result = await cancelOrder(order.omsOrderId);
     if (result.success) {
-      removeOrder(orderId);
+      removeOrder(order.orderId);
     }
-  }, [cancelOrder, removeOrder, selectedMarket.symbol]);
+  }, [cancelOrder, removeOrder]);
 
-  const handleReplaceOrder = useCallback(async (orderId: number, price?: number, quantity?: number) => {
-    return await replaceOrder(orderId, price, quantity);
+  const handleReplaceOrder = useCallback(async (order: UserOrder, price?: number, quantity?: number) => {
+    if (!order.omsOrderId) {
+      return { success: false, message: 'Order is not OMS-managed' };
+    }
+    return await replaceOrder(order.omsOrderId, price, quantity);
   }, [replaceOrder]);
 
   // Order book price click → fills order form
