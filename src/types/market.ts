@@ -241,8 +241,8 @@ export interface UserOrder {
   timestamp: number;
 }
 
+// No userId: identity comes from the auth token; the OMS derives it (oms#36).
 export interface OrderRequest {
-  userId: string;
   market: string;
   orderType: OrderType;
   orderSide: OrderSide;

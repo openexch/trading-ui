@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { Market, OrderSide, OrderType, OrderRequest, TimeInForce } from '../../types/market';
 import { formatPrice } from '../../utils/formatters';
-import { DEMO_USER_ID } from '../../config';
 
 interface OrderFormProps {
   market: Market;
@@ -13,8 +12,6 @@ interface OrderFormProps {
   isMobile?: boolean;
   defaultSide?: 'BID' | 'ASK';
 }
-
-const USER_ID = String(DEMO_USER_ID);
 
 const SYNTHETIC_TYPES: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
 const needsStopPrice = (t: OrderType) => t === 'STOP_LOSS' || t === 'STOP_LIMIT';
@@ -112,7 +109,6 @@ function OrderSideForm({
     }
 
     const order: OrderRequest = {
-      userId: USER_ID,
       market: market.symbol,
       orderType,
       orderSide: side,
