@@ -18,8 +18,15 @@ export function useOrders() {
       return prev;
     }
 
+    // Engine orderId keys this list; omsOrderId is what OMS REST wants (#25).
+    // Kept as a string (Snowflake ids overflow JS numbers); 0/'0' = unknown.
+    const incomingOmsId = message.omsOrderId && message.omsOrderId !== 0 && message.omsOrderId !== '0'
+      ? String(message.omsOrderId)
+      : (existingIndex >= 0 ? prev[existingIndex].omsOrderId : '');
+
     const updatedOrder: UserOrder = {
       orderId: message.orderId,
+      omsOrderId: incomingOmsId,
       marketId: message.marketId ?? marketId ?? 1,
       market: message.market ?? market ?? 'BTC-USD',
       userId: message.userId,

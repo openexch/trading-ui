@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import type { OrderRequest } from '../types/market';
 import { MARKETS } from '../types/market';
 import { AUTH_HEADERS } from '../config';
+import { parseJsonSafeIds } from '../utils/safeJson';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
@@ -50,7 +51,7 @@ export function useApi() {
         body: JSON.stringify(toOmsRequest(order)),
       });
 
-      const data = await response.json();
+      const data = parseJsonSafeIds(await response.text()) as Record<string, any>;
 
       if (data.accepted) {
         setState({ loading: false, error: null });
@@ -67,7 +68,7 @@ export function useApi() {
     }
   }, []);
 
-  const replaceOrder = useCallback(async (orderId: number, price?: number, quantity?: number): Promise<ApiResponse> => {
+  const replaceOrder = useCallback(async (omsOrderId: string, price?: number, quantity?: number): Promise<ApiResponse> => {
     setState({ loading: true, error: null });
 
     const body: Record<string, number> = {};
@@ -75,7 +76,7 @@ export function useApi() {
     if (quantity !== undefined && quantity > 0) body.quantity = quantity;
 
     try {
-      const response = await fetch(`${API_BASE}/api/v1/orders/${orderId}`, {
+      const response = await fetch(`${API_BASE}/api/v1/orders/${omsOrderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
         body: JSON.stringify(body),
@@ -98,11 +99,11 @@ export function useApi() {
     }
   }, []);
 
-  const cancelOrder = useCallback(async (orderId: number, _userId: string, _market: string): Promise<ApiResponse> => {
+  const cancelOrder = useCallback(async (omsOrderId: string): Promise<ApiResponse> => {
     setState({ loading: true, error: null });
 
     try {
-      const response = await fetch(`${API_BASE}/api/v1/orders/${orderId}`, {
+      const response = await fetch(`${API_BASE}/api/v1/orders/${omsOrderId}`, {
         method: 'DELETE',
         headers: AUTH_HEADERS,
       });

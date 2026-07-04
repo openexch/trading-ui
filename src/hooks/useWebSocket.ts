@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ConnectionStatus, WebSocketMessage } from '../types/market';
+import { parseJsonSafeIds } from '../utils/safeJson';
 
 interface UseWebSocketOptions {
   marketId: number;
@@ -117,7 +118,7 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
             lastMessageLogTime = now;
             messageCount = 0;
           }
-          const message = JSON.parse(event.data) as WebSocketMessage;
+          const message = parseJsonSafeIds(event.data) as WebSocketMessage;
           // Use ref to always call latest handler without causing reconnects
           onMessageRef.current(message);
         } catch (e) {

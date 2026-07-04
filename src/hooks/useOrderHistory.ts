@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AUTH_HEADERS } from '../config';
+import { parseJsonSafeIds } from '../utils/safeJson';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
 /** Shape returned by GET /api/v1/orders (OMS OrderResponse — decimal doubles). */
 export interface OrderHistoryEntry {
-  omsOrderId: number;
+  /** String via parseJsonSafeIds — Snowflake ids overflow JS numbers (#25). */
+  omsOrderId: string;
   clientOrderId: string;
   userId: number;
   marketId: number;
@@ -39,7 +41,7 @@ export function useOrderHistory() {
       // No userId param: the OMS scopes the query to the token's principal.
       const res = await fetch(`${API_BASE}/api/v1/orders`, { headers: AUTH_HEADERS });
       if (!res.ok) throw new Error(`Error ${res.status}`);
-      const data = await res.json();
+      const data = parseJsonSafeIds(await res.text()) as any;
       const orders: OrderHistoryEntry[] = Array.isArray(data) ? data : data.orders ?? [];
       orders.sort((a, b) => b.createdAtMs - a.createdAtMs);
       setState({ orders, loading: false, error: null });
