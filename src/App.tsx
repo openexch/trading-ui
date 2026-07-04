@@ -38,6 +38,10 @@ function useIsMobile(breakpoint = 768) {
   return isMobile;
 }
 
+// Cap on the live 1m candle array: 1440 buckets = 24h. Older history for
+// wider intervals comes from REST, so the WS-fed array never needs more.
+const MAX_LIVE_CANDLES = 1440;
+
 // Icons
 const Icons = {
   settings: (
@@ -156,8 +160,12 @@ function MarketPage() {
                 if (prev.length === 0) return [candleUpd.candle];
                 const last = prev[prev.length - 1];
                 if (candleUpd.candle.time > last.time) {
-                  // New candle bucket — append and shift
-                  return [...prev, candleUpd.candle];
+                  // New candle bucket — append, capped so the live array
+                  // cannot grow without bound (trading-ui#24)
+                  const next = [...prev, candleUpd.candle];
+                  return next.length > MAX_LIVE_CANDLES
+                    ? next.slice(next.length - MAX_LIVE_CANDLES)
+                    : next;
                 }
                 // Same bucket — history will be updated via currentCandle overlay
                 return prev;
