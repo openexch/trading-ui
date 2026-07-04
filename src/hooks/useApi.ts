@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { OrderRequest } from '../types/market';
 import { MARKETS } from '../types/market';
+import { AUTH_HEADERS } from '../config';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
@@ -18,8 +19,8 @@ const SIDE_MAP: Record<string, string> = { BID: 'BUY', ASK: 'SELL' };
 
 function toOmsRequest(order: OrderRequest) {
   const market = MARKETS.find(m => m.symbol === order.market);
+  // No userId: the OMS derives it from the auth token (oms#36).
   const req: Record<string, unknown> = {
-    userId: Number(order.userId),
     marketId: market?.id ?? 1,
     side: SIDE_MAP[order.orderSide] ?? order.orderSide,
     orderType: order.orderType,
@@ -44,6 +45,7 @@ export function useApi() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...AUTH_HEADERS,
         },
         body: JSON.stringify(toOmsRequest(order)),
       });
@@ -75,7 +77,7 @@ export function useApi() {
     try {
       const response = await fetch(`${API_BASE}/api/v1/orders/${orderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
         body: JSON.stringify(body),
       });
 
@@ -102,6 +104,7 @@ export function useApi() {
     try {
       const response = await fetch(`${API_BASE}/api/v1/orders/${orderId}`, {
         method: 'DELETE',
+        headers: AUTH_HEADERS,
       });
 
       const data = await response.json();

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { formatPrice } from '../../utils/formatters';
-import { DEMO_USER_ID } from '../../config';
+import { AUTH_HEADERS, DEMO_USER_ID } from '../../config';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
+// Path segment only — identity is enforced from the auth token (oms#36).
 const USER_ID = DEMO_USER_ID;
 
 interface AssetBalance {
@@ -27,7 +28,7 @@ export function AccountPanel() {
 
   const fetchAccount = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}`);
+      const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}`, { headers: AUTH_HEADERS });
       if (res.ok) {
         setAccount(await res.json());
       }
@@ -51,7 +52,7 @@ export function AccountPanel() {
     try {
       const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}/deposit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
         body: JSON.stringify({ assetId: depositAsset, amount }),
       });
       if (res.ok) {
@@ -77,7 +78,7 @@ export function AccountPanel() {
     try {
       const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}/withdraw`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
         body: JSON.stringify({ assetId: depositAsset, amount }),
       });
       if (res.ok) {

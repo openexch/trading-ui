@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { DEMO_USER_ID } from '../config';
+import { AUTH_HEADERS } from '../config';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
@@ -29,14 +29,15 @@ interface State {
   error: string | null;
 }
 
-/** Fetches the user's full order history from the OMS REST API. */
-export function useOrderHistory(userId: number = DEMO_USER_ID) {
+/** Fetches the authenticated user's full order history from the OMS REST API. */
+export function useOrderHistory() {
   const [state, setState] = useState<State>({ orders: [], loading: false, error: null });
 
   const refresh = useCallback(async () => {
     setState(s => ({ ...s, loading: true, error: null }));
     try {
-      const res = await fetch(`${API_BASE}/api/v1/orders?userId=${userId}`);
+      // No userId param: the OMS scopes the query to the token's principal.
+      const res = await fetch(`${API_BASE}/api/v1/orders`, { headers: AUTH_HEADERS });
       if (!res.ok) throw new Error(`Error ${res.status}`);
       const data = await res.json();
       const orders: OrderHistoryEntry[] = Array.isArray(data) ? data : data.orders ?? [];
@@ -45,7 +46,7 @@ export function useOrderHistory(userId: number = DEMO_USER_ID) {
     } catch (err) {
       setState({ orders: [], loading: false, error: err instanceof Error ? err.message : 'Failed to load orders' });
     }
-  }, [userId]);
+  }, []);
 
   useEffect(() => {
     refresh();

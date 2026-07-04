@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { AUTH_HEADERS } from '../config';
 
 const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
@@ -38,7 +39,7 @@ export function useRiskConfig() {
   const refresh = useCallback(async () => {
     setState(s => ({ ...s, loading: true, error: null }));
     try {
-      const res = await fetch(`${API_BASE}/api/v1/admin/risk/config`);
+      const res = await fetch(`${API_BASE}/api/v1/admin/risk/config`, { headers: AUTH_HEADERS });
       if (!res.ok) throw new Error(`Error ${res.status}`);
       const configs = (await res.json()) as Record<string, RiskConfig>;
       setState({ configs, loading: false, error: null });
@@ -53,7 +54,7 @@ export function useRiskConfig() {
     try {
       const res = await fetch(`${API_BASE}/api/v1/admin/risk/config/${marketId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
         body: JSON.stringify(patch),
       });
       const data = await res.json();
@@ -69,7 +70,10 @@ export function useRiskConfig() {
 
   const circuitBreaker = useCallback(async (marketId: number, action: 'trip' | 'reset'): Promise<{ success: boolean; message: string }> => {
     try {
-      const res = await fetch(`${API_BASE}/api/v1/admin/risk/circuit-breaker/${marketId}/${action}`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/api/v1/admin/risk/circuit-breaker/${marketId}/${action}`, {
+        method: 'POST',
+        headers: AUTH_HEADERS,
+      });
       const data = await res.json();
       if (data.success) return { success: true, message: `Circuit breaker ${action === 'trip' ? 'tripped' : 'reset'}` };
       return { success: false, message: data.error || `Error ${res.status}` };
