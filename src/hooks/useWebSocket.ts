@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ConnectionStatus, WebSocketMessage } from '../types/market';
 import { parseJsonSafeIds } from '../utils/safeJson';
+import { MessageConflator } from '../utils/conflation';
 
 interface UseWebSocketOptions {
   marketId: number;
@@ -13,6 +14,10 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 const PING_INTERVAL = 30000;
+// Fallback flush cadence for when requestAnimationFrame is suspended
+// (hidden tab). Browsers clamp background timers to >=1s, which still bounds
+// the buffer to about a second of (conflated) messages.
+const HIDDEN_FLUSH_INTERVAL = 250;
 
 // Message counter for diagnostics
 let messageCount = 0;
@@ -38,6 +43,59 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
 
   // Use ref for marketId to send subscribe without reconnecting
   const marketIdRef = useRef(marketId);
+
+  // Conflation buffer (trading-ui#24): messages accumulate here and are
+  // dispatched once per animation frame so all setStates batch into one
+  // render. See utils/conflation.ts for the per-type collapse rules.
+  const conflatorRef = useRef<MessageConflator | null>(null);
+  if (conflatorRef.current === null) {
+    conflatorRef.current = new MessageConflator();
+  }
+  const flushRafRef = useRef<number | null>(null);
+  const flushTimerRef = useRef<number | null>(null);
+
+  const cancelFlush = useCallback(() => {
+    if (flushRafRef.current !== null) {
+      cancelAnimationFrame(flushRafRef.current);
+      flushRafRef.current = null;
+    }
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+  }, []);
+
+  const flushMessages = useCallback(() => {
+    cancelFlush();
+    const { messages, refreshMarketIds } = conflatorRef.current!.drain();
+    for (const message of messages) {
+      onMessageRef.current(message);
+    }
+    // A market's book backlog overflowed and was dropped: skip to current
+    // state by requesting a fresh snapshot instead of replaying history.
+    for (const refreshMarketId of refreshMarketIds) {
+      console.warn('[WS] Book backlog dropped for market', refreshMarketId, '- requesting refresh');
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ action: 'refresh', marketId: refreshMarketId }));
+      }
+    }
+  }, [cancelFlush]);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushRafRef.current !== null || flushTimerRef.current !== null) {
+      return; // a flush is already scheduled
+    }
+    flushRafRef.current = requestAnimationFrame(() => {
+      flushRafRef.current = null;
+      flushMessages();
+    });
+    // rAF does not fire in hidden tabs; the timer keeps the buffer bounded
+    // there. Whichever fires first flushes and cancels the other.
+    flushTimerRef.current = window.setTimeout(() => {
+      flushTimerRef.current = null;
+      flushMessages();
+    }, HIDDEN_FLUSH_INTERVAL);
+  }, [flushMessages]);
 
   const getWebSocketUrl = useCallback(() => {
     // Use environment variable if set (for cloudflared deployment)
@@ -73,6 +131,10 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
     }
 
     clearTimers();
+    // Discard any buffered backlog from the previous socket: after a
+    // reconnect the server replays fresh state via {action:'refresh'}.
+    cancelFlush();
+    conflatorRef.current!.clear();
     setStatus('connecting');
 
     try {
@@ -112,15 +174,21 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
         try {
           messageCount++;
           const now = Date.now();
-          // Log message rate every 5 seconds
+          // Log message + conflation rate every 5 seconds
           if (now - lastMessageLogTime >= 5000) {
-            console.log('[WS] Messages received:', messageCount, '(+' + messageCount + ' in last 5s)');
+            const s = conflatorRef.current!.stats;
+            console.log(
+              `[WS] +${messageCount} msgs in last 5s | conflation totals:`,
+              `delivered ${s.delivered}, coalesced ${s.coalesced},`,
+              `droppedDeltas ${s.droppedBookDeltas}, refreshes ${s.bookRefreshes}`
+            );
             lastMessageLogTime = now;
             messageCount = 0;
           }
           const message = parseJsonSafeIds(event.data) as WebSocketMessage;
-          // Use ref to always call latest handler without causing reconnects
-          onMessageRef.current(message);
+          // Buffer + flush once per frame instead of dispatching synchronously
+          conflatorRef.current!.push(message);
+          scheduleFlush();
         } catch (e) {
           console.error('Failed to parse WebSocket message:', e);
         }
@@ -154,17 +222,19 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
       console.error('Failed to create WebSocket:', e);
       setStatus('error');
     }
-  }, [getWebSocketUrl, clearTimers]);
+  }, [getWebSocketUrl, clearTimers, cancelFlush, scheduleFlush]);
 
   const disconnect = useCallback(() => {
     clearTimers();
+    cancelFlush();
+    conflatorRef.current!.clear();
     reconnectAttemptRef.current = MAX_RECONNECT_ATTEMPTS; // Prevent reconnect
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
     setStatus('disconnected');
-  }, [clearTimers]);
+  }, [clearTimers, cancelFlush]);
 
   // Connect on mount, disconnect on unmount
   useEffect(() => {
