@@ -17,7 +17,7 @@ Web-based trading interface for the Open Exchange ultra-low-latency matching eng
 
 ## Tech Stack
 
-- **React 18** + **TypeScript**
+- **React 19** + **TypeScript**
 - **Vite** — dev server and build tooling
 - **lightweight-charts** — financial charting
 - **WebSocket** — real-time market data streaming
@@ -26,7 +26,7 @@ Web-based trading interface for the Open Exchange ultra-low-latency matching eng
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - Running backend services (matching engine, OMS, market gateway)
 
 ### Install & Run
@@ -36,13 +36,15 @@ npm install
 npm run dev
 ```
 
-The dev server starts on port 80 with proxies configured for:
+The dev server starts on port 80 (override with `npm run dev -- --port 5173`
+if you cannot bind privileged ports) with proxies configured for:
 
 | Path | Target |
 |------|--------|
 | `/ws` | `ws://localhost:8081` (market data) |
-| `/order` | `http://localhost:8080` (order API) |
+| `/api/v1` | `http://localhost:8080` (order API) |
 | `/api/admin` | `http://localhost:8082` (admin gateway) |
+| `/api/candles` | `http://localhost:8081` (candles) |
 
 ### Build
 
