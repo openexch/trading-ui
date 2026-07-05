@@ -188,12 +188,26 @@ function MarketPage() {
      handleOrderStatusBatch]
   );
 
-  const { status, forceReconnect } = useWebSocket({
+  const { status, forceReconnect, requestRefresh } = useWebSocket({
     marketId: selectedMarket.id,
     onMessage: handleMessage,
     onReconnecting: handleReconnecting,
     onReconnected: handleReconnected,
   });
+
+  // Self-heal a thin book: with delta-fed state, drops or seams can leave
+  // the rendered book short; if either side stays under 18 levels for 5s
+  // while connected, pull a fresh snapshot (no-op when the market is
+  // genuinely thin — the refresh just confirms it).
+  const bidDepth = orderBook.bids.length;
+  const askDepth = orderBook.asks.length;
+  useEffect(() => {
+    if (status !== 'connected') return;
+    if (bidDepth === 0 && askDepth === 0) return; // pre-snapshot
+    if (bidDepth >= 18 && askDepth >= 18) return;
+    const t = window.setTimeout(() => requestRefresh(), 5000);
+    return () => window.clearTimeout(t);
+  }, [status, bidDepth, askDepth, requestRefresh]);
 
   // Fetch candles from REST API for non-1m intervals
   const fetchCandles = useCallback(async (marketId: number, interval: string, limit: number = 200) => {

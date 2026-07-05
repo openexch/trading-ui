@@ -133,8 +133,13 @@ export function useOrderBook() {
             timestamp: now,
           });
 
-          // Keep max 20 levels
-          if (levels.length > 20) {
+          // Retention cap. Must be DEEPER than the rendered depth (20):
+          // the server diffs top-of-book windows, so after a DELETE the
+          // backfill level arrives as NEW_LEVEL — with a cap equal to the
+          // render depth, that entrant sorted last and was popped right
+          // back off, so the rendered book decayed below 20 until the next
+          // full snapshot (trading-ui#34).
+          if (levels.length > 64) {
             levels.pop();
           }
         }
