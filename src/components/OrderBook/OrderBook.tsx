@@ -12,6 +12,10 @@ interface OrderBookProps {
   onPriceClick?: (price: number) => void;
 }
 
+// Rows rendered per side; the book state retains more (64) so deletes
+// backfill from below instead of shrinking the display.
+const RENDER_DEPTH = 20;
+
 export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookProps) {
   const { bids, asks } = orderBook;
   const [viewMode, setViewMode] = useState<ViewMode>('vertical');
@@ -21,13 +25,13 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
     let bidCum = 0;
 
     // Asks: lowest price first, cumulative from lowest
-    const askLevels = asks.map(level => {
+    const askLevels = asks.slice(0, RENDER_DEPTH).map(level => {
       askCum += level.quantity;
       return { ...level, cumulative: askCum };
     });
 
     // Bids: highest price first, cumulative from highest
-    const bidLevels = bids.map(level => {
+    const bidLevels = bids.slice(0, RENDER_DEPTH).map(level => {
       bidCum += level.quantity;
       return { ...level, cumulative: bidCum };
     });

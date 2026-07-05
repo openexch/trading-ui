@@ -245,6 +245,40 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
     };
   }, [connect, disconnect]);
 
+  // Returning to a background tab: the browser may have frozen us, and the
+  // gateway conflates or kicks stalled clients (match#37) — whatever is on
+  // screen can be stale or partially resynced. On becoming visible, either
+  // request a fresh snapshot (socket alive) or reconnect immediately with
+  // the backoff reset (socket died while hidden).
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const ws = wsRef.current;
+      if (ws?.readyState === WebSocket.OPEN) {
+        console.log('[WS] Tab visible - requesting fresh snapshot for market', marketIdRef.current);
+        ws.send(JSON.stringify({ action: 'refresh', marketId: marketIdRef.current }));
+      } else if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
+        console.log('[WS] Tab visible with dead socket - reconnecting now');
+        reconnectAttemptRef.current = 0;
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        connect();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [connect]);
+
+  // requestRefresh lets consumers self-heal (e.g. the book rendering thin
+  // for several seconds) by pulling a fresh snapshot.
+  const requestRefresh = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ action: 'refresh', marketId: marketIdRef.current }));
+    }
+  }, []);
+
   // Handle market changes by re-subscribing (without reconnecting)
   useEffect(() => {
     marketIdRef.current = marketId;
@@ -267,5 +301,5 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
     connect();
   }, [connect]);
 
-  return { status, reconnect: connect, disconnect, forceReconnect };
+  return { status, reconnect: connect, disconnect, forceReconnect, requestRefresh };
 }
