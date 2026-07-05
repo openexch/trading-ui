@@ -48,6 +48,8 @@ export interface BookSnapshotMessage {
   asks: BookLevel[];
   timestamp: number;
   version?: number;
+  /** v4: single monotonic book version this snapshot represents (chains with deltas). */
+  bookVersion?: number;
 }
 
 export interface BookDeltaChange {
@@ -66,6 +68,9 @@ export interface BookDeltaMessage {
   bidVersion: number;
   askVersion: number;
   timestamp: number;
+  /** v4 chain: this delta advances the book fromVersion -> bookVersion. */
+  bookVersion?: number;
+  fromVersion?: number;
 }
 
 export interface OrderStatusMessage {

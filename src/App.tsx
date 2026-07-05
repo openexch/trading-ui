@@ -73,7 +73,12 @@ function MarketPage() {
   const [chartInterval, setChartInterval] = useState<string>('1m');
   const chartIntervalRef = useRef<string>('1m');
 
-  const { orderBook, levelChanges, handleBookSnapshot, handleBookDelta, resetOrderBook } = useOrderBook();
+  // The book requests a fresh snapshot itself when it detects a version gap
+  // (v4 chain); the ref indirection breaks the hook-order cycle with
+  // useWebSocket, which is created below.
+  const requestRefreshRef = useRef<() => void>(() => {});
+  const { orderBook, levelChanges, handleBookSnapshot, handleBookDelta, resetOrderBook } =
+    useOrderBook(() => requestRefreshRef.current());
   const { trades, handleTradesBatch, resetTrades } = useTrades();
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
   const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
@@ -194,6 +199,7 @@ function MarketPage() {
     onReconnecting: handleReconnecting,
     onReconnected: handleReconnected,
   });
+  requestRefreshRef.current = requestRefresh;
 
   // Self-heal a thin book: with delta-fed state, drops or seams can leave
   // the rendered book short; if either side stays under 18 levels for 5s
