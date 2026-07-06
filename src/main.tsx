@@ -17,6 +17,7 @@ import '@fontsource/jetbrains-mono/600.css'
 import './index.css'
 import App from './App'
 import { AuthProvider } from './auth/AuthContext'
+import { BalancesProvider } from './hooks/useBalances'
 
 // Theme is applied pre-paint by the inline no-flash script in index.html;
 // useTheme() then owns it (OS-aware, persists on explicit override).
@@ -24,7 +25,9 @@ import { AuthProvider } from './auth/AuthContext'
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
     <AuthProvider>
-      <App />
+      <BalancesProvider>
+        <App />
+      </BalancesProvider>
     </AuthProvider>
   </BrowserRouter>
 )

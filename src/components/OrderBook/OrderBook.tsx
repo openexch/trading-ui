@@ -16,6 +16,25 @@ interface OrderBookProps {
 // backfill from below instead of shrinking the display.
 const RENDER_DEPTH = 20;
 
+// Skeleton widths (%) cycled per row — organic, not a flat block.
+const SKELETON_WIDTHS = [55, 70, 45, 65, 50, 75, 60, 40];
+
+/** Pulsing placeholder rows for the awaiting-snapshot window (market switch /
+ *  reconnect) — the book resets, but a shimmer reads as "loading", not empty. */
+function SkeletonRows({ rows = 8 }: { rows?: number }) {
+  return (
+    <div aria-hidden className="animate-pulse">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="grid grid-cols-3 gap-1 px-4 py-[5px]">
+          <span className="h-3 rounded-sm bg-surface-2" style={{ width: `${SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]}%` }} />
+          <span className="h-3 justify-self-end rounded-sm bg-surface-2" style={{ width: `${SKELETON_WIDTHS[(i + 3) % SKELETON_WIDTHS.length]}%` }} />
+          <span className="h-3 justify-self-end rounded-sm bg-surface-2" style={{ width: `${SKELETON_WIDTHS[(i + 5) % SKELETON_WIDTHS.length]}%` }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookProps) {
   const { bids, asks } = orderBook;
   const [viewMode, setViewMode] = useState<ViewMode>('vertical');
@@ -171,9 +190,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                   <span className={`${cellNum} text-right text-muted`}>{formatQuantity(level.cumulative)}</span>
                 </div>
               ))}
-              {displayAsks.length === 0 && (
-                <div className="p-5 text-center text-[11px] italic text-muted">No asks</div>
-              )}
+              {displayAsks.length === 0 && <SkeletonRows />}
             </div>
           )}
 
@@ -204,9 +221,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                   <span className={`${cellNum} text-right text-muted`}>{formatQuantity(level.cumulative)}</span>
                 </div>
               ))}
-              {bidLevels.length === 0 && (
-                <div className="p-5 text-center text-[11px] italic text-muted">No bids</div>
-              )}
+              {bidLevels.length === 0 && <SkeletonRows />}
             </div>
           )}
         </div>
@@ -248,7 +263,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                     <span className={`${cellNum} text-right font-medium text-buy`}>${formatPrice(level.price)}</span>
                   </div>
                 ))}
-                {bidLevels.length === 0 && <div className="p-5 text-center text-[11px] italic text-muted">No bids</div>}
+                {bidLevels.length === 0 && <SkeletonRows />}
               </div>
             </div>
 
@@ -275,7 +290,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                     <span className={`${cellNum} text-right text-muted`}>{formatQuantity(level.cumulative)}</span>
                   </div>
                 ))}
-                {askLevels.length === 0 && <div className="p-5 text-center text-[11px] italic text-muted">No asks</div>}
+                {askLevels.length === 0 && <SkeletonRows />}
               </div>
             </div>
           </div>

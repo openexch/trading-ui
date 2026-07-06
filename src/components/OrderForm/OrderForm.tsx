@@ -3,16 +3,19 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { Market, OrderSide, OrderType, OrderRequest, TimeInForce } from '../../types/market';
 import { formatPrice } from '../../utils/formatters';
 import { snapPrice, isInPriceRange, tickLabel, priceRangeLabel } from '../../utils/ticks';
+import { useBalances } from '../../hooks/useBalances';
 
 interface OrderFormProps {
   market: Market;
-  bestBid?: unknown;
-  bestAsk?: unknown;
   onSubmitOrder: (order: OrderRequest) => Promise<{ success: boolean; message: string }>;
   loading: boolean;
   externalPrice?: number | null;
-  isMobile?: boolean;
+  /** Densified paddings for the desktop right rail. */
+  compact?: boolean;
   defaultSide?: 'BID' | 'ASK';
+  /** Last trade price for the market — the % sizing fallback when the price
+   *  field is empty (market orders, untouched form). */
+  lastPrice?: number | null;
   /** When false the form is disabled and submit becomes "Sign in to trade". */
   signedIn: boolean;
   onRequestSignIn: () => void;
@@ -60,6 +63,8 @@ function OrderSideForm({
   onSubmitOrder,
   loading,
   externalPrice,
+  lastPrice,
+  compact,
   signedIn,
   onRequestSignIn,
 }: {
@@ -70,6 +75,8 @@ function OrderSideForm({
   onSubmitOrder: (order: OrderRequest) => Promise<{ success: boolean; message: string }>;
   loading: boolean;
   externalPrice?: number | null;
+  lastPrice?: number | null;
+  compact?: boolean;
   signedIn: boolean;
   onRequestSignIn: () => void;
 }) {
@@ -82,6 +89,14 @@ function OrderSideForm({
   const [sliderValue, setSliderValue] = useState(0);
 
   const isBuy = side === 'BID';
+
+  // Real balances for Avbl + % sizing (buy spends quote, sell spends base)
+  const { assets, refresh: refreshBalances } = useBalances();
+  const availableAsset = isBuy ? market.quoteAsset : market.baseAsset;
+  const available = useMemo(
+    () => assets.find(a => a.asset === availableAsset)?.available ?? 0,
+    [assets, availableAsset]
+  );
 
   // Sync external price from order book click (book prices are on-tick, but
   // snap anyway so a stale/legacy value can never produce an off-tick order)
@@ -105,18 +120,32 @@ function OrderSideForm({
     return p * q;
   }, [price, quantity]);
 
+  // pct% of the real balance: buy = quote balance / price (form price, else
+  // last trade price), sell = base balance. 8 dp, floored at 0 when there is
+  // no balance or no usable price.
+  const sizeForPercent = useCallback((percent: number) => {
+    let qty = 0;
+    if (isBuy) {
+      const formPrice = parseFloat(price);
+      const p = formPrice > 0 ? formPrice : (lastPrice ?? 0);
+      qty = p > 0 ? (available * percent / 100) / p : 0;
+    } else {
+      qty = available * percent / 100;
+    }
+    if (!isFinite(qty) || qty < 0) qty = 0;
+    return qty.toFixed(8);
+  }, [isBuy, available, price, lastPrice]);
+
   const handlePercentage = useCallback((percent: number) => {
     setSliderValue(percent);
-    const baseQty = 1;
-    setQuantity((baseQty * percent / 100).toFixed(8));
-  }, []);
+    setQuantity(sizeForPercent(percent));
+  }, [sizeForPercent]);
 
   const handleSlider = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const pct = parseInt(e.target.value);
     setSliderValue(pct);
-    const baseQty = 1;
-    setQuantity((baseQty * pct / 100).toFixed(8));
-  }, []);
+    setQuantity(sizeForPercent(pct));
+  }, [sizeForPercent]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,15 +203,16 @@ function OrderSideForm({
       setPrice('');
       setQuantity('');
       setSliderValue(0);
+      refreshBalances(); // the hold/spend shows up immediately, not at the next poll
     } else {
       setNotification({ type: 'error', message: result.message });
     }
 
     setTimeout(() => setNotification(null), 3000);
-  }, [price, quantity, orderType, side, market, isBuy, total, onSubmitOrder, stopPrice, trailingDelta, displayQuantity, timeInForce]);
+  }, [price, quantity, orderType, side, market, isBuy, total, onSubmitOrder, stopPrice, trailingDelta, displayQuantity, timeInForce, refreshBalances]);
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-3">
+    <form onSubmit={handleSubmit} className={`flex flex-1 flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
       {needsPrice(orderType) && (
         <Field label={`Price · tick ${tickLabel(market)}`}>
           <input
@@ -221,6 +251,21 @@ function OrderSideForm({
           <input type="number" onWheel={blurOnWheel} value={displayQuantity} onChange={(e) => setDisplayQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" disabled={!signedIn} className={inputClass} />
           <Suffix>{market.baseAsset}</Suffix>
         </Field>
+      )}
+
+      {/* Available balance — click to size the order to 100% of it */}
+      {signedIn && (
+        <button
+          type="button"
+          onClick={() => handlePercentage(100)}
+          title="Use full available balance"
+          className="-mb-1 flex items-center justify-between text-[11px] transition-colors hover:text-text"
+        >
+          <span className="font-medium uppercase tracking-wide text-faint">Avbl</span>
+          <span className="font-mono tabular-nums text-muted">
+            {formatPrice(available)} {availableAsset}
+          </span>
+        </button>
       )}
 
       <Field label="Amount">
@@ -314,35 +359,25 @@ const typeTab = (active: boolean) =>
     active ? 'bg-surface-3 text-text-strong' : 'text-muted hover:text-text'
   }`;
 
-export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMobile, defaultSide, signedIn, onRequestSignIn, rejectNotice }: OrderFormProps) {
+/**
+ * Single-side order form (Buy/Sell segmented toggle + one side form) — used
+ * by both the desktop right rail (`compact`) and the mobile bottom sheet.
+ */
+export function OrderForm({ market, onSubmitOrder, loading, externalPrice, compact, defaultSide, lastPrice, signedIn, onRequestSignIn, rejectNotice }: OrderFormProps) {
   const [orderType, setOrderType] = useState<OrderType>('LIMIT');
   const [timeInForce, setTimeInForce] = useState<TimeInForce>('GTC');
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [mobileSide, setMobileSide] = useState<'BID' | 'ASK'>(defaultSide || 'BID');
+  const [side, setSide] = useState<'BID' | 'ASK'>(defaultSide || 'BID');
 
   useEffect(() => {
-    if (defaultSide) setMobileSide(defaultSide);
+    if (defaultSide) setSide(defaultSide);
   }, [defaultSide]);
 
   const basicTypes: OrderType[] = ['LIMIT', 'MARKET', 'LIMIT_MAKER'];
   const advancedTypes: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
 
-  const sideForm = (side: OrderSide) => (
-    <OrderSideForm
-      side={side}
-      market={market}
-      orderType={orderType}
-      timeInForce={timeInForce}
-      onSubmitOrder={onSubmitOrder}
-      loading={loading}
-      externalPrice={externalPrice}
-      signedIn={signedIn}
-      onRequestSignIn={onRequestSignIn}
-    />
-  );
-
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className={`flex flex-col ${compact ? 'gap-2 p-3' : 'gap-3 p-4'}`}>
       {/* Async order rejection (user's order stream) — never silent */}
       {rejectNotice && (
         <div className="rounded-md bg-sell-soft px-2.5 py-1.5 text-[11px] font-medium text-sell animate-fade-in">
@@ -350,23 +385,21 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
         </div>
       )}
 
-      {/* Mobile Buy/Sell toggle */}
-      {isMobile && (
-        <div className="grid grid-cols-2 gap-1 rounded-md bg-surface-2 p-1">
-          <button
-            className={`rounded-sm py-2 text-[13px] font-bold transition-colors ${mobileSide === 'BID' ? 'bg-buy text-white' : 'text-buy'}`}
-            onClick={() => setMobileSide('BID')}
-          >
-            Buy
-          </button>
-          <button
-            className={`rounded-sm py-2 text-[13px] font-bold transition-colors ${mobileSide === 'ASK' ? 'bg-sell text-white' : 'text-sell'}`}
-            onClick={() => setMobileSide('ASK')}
-          >
-            Sell
-          </button>
-        </div>
-      )}
+      {/* Buy/Sell toggle */}
+      <div className="grid grid-cols-2 gap-1 rounded-md bg-surface-2 p-1">
+        <button
+          className={`rounded-sm py-2 text-[13px] font-bold transition-colors ${side === 'BID' ? 'bg-buy text-white' : 'text-buy'}`}
+          onClick={() => setSide('BID')}
+        >
+          Buy
+        </button>
+        <button
+          className={`rounded-sm py-2 text-[13px] font-bold transition-colors ${side === 'ASK' ? 'bg-sell text-white' : 'text-sell'}`}
+          onClick={() => setSide('ASK')}
+        >
+          Sell
+        </button>
+      </div>
 
       {/* Order type tabs */}
       <div className="flex flex-wrap items-center gap-1">
@@ -409,16 +442,20 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
         ))}
       </div>
 
-      {/* Forms */}
-      {isMobile ? (
-        sideForm(mobileSide)
-      ) : (
-        <div className="flex gap-4">
-          {sideForm('BID')}
-          <div className="w-px flex-shrink-0 bg-hairline" />
-          {sideForm('ASK')}
-        </div>
-      )}
+      {/* Form */}
+      <OrderSideForm
+        side={side}
+        market={market}
+        orderType={orderType}
+        timeInForce={timeInForce}
+        onSubmitOrder={onSubmitOrder}
+        loading={loading}
+        externalPrice={externalPrice}
+        lastPrice={lastPrice}
+        compact={compact}
+        signedIn={signedIn}
+        onRequestSignIn={onRequestSignIn}
+      />
     </div>
   );
 }

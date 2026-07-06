@@ -19,6 +19,7 @@ vi.mock('../components/Chart/Chart', () => ({
 
 import App from '../App';
 import { AuthProvider } from '../auth/AuthContext';
+import { BalancesProvider } from '../hooks/useBalances';
 
 // ---- jsdom gaps -----------------------------------------------------------
 
@@ -115,13 +116,21 @@ describe('App smoke', () => {
     render(
       <MemoryRouter>
         <AuthProvider>
-          <App />
+          <BalancesProvider>
+            <App />
+          </BalancesProvider>
         </AuthProvider>
       </MemoryRouter>
     );
 
-    // Order form is up for the default market (BTC-USD)
+    // Order form is always up in the right rail for the default market (BTC-USD)
     expect(await screen.findByRole('button', { name: /buy btc/i })).toBeTruthy();
+    // Bottom strip is reduced to Open Orders | History (Order/Trades/Account
+    // tabs are gone — the form lives in the rail, account in the drawer)
+    expect(screen.getByRole('button', { name: /open orders/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^history$/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^order$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^account$/i })).toBeNull();
     // Market-data WS was opened, plus the user-scoped OMS socket (oms#72)
     const urls = MockWebSocket.instances.map((ws) => ws.url);
     expect(urls.some((u) => u.endsWith('/ws'))).toBe(true);
@@ -131,11 +140,31 @@ describe('App smoke', () => {
     expect(oms!.protocols).toEqual(['bearer', 'smoketoken1']);
   });
 
+  it('opens the account drawer from the header username pill', async () => {
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <BalancesProvider>
+            <App />
+          </BalancesProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /^dev$/i }));
+    // Drawer content: balances + transfer + sign out
+    expect(await screen.findByRole('button', { name: /sign out/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /deposit/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /withdraw/i })).toBeTruthy();
+  });
+
   it('submits a limit order to the OMS with exact money strings and no userId', async () => {
     const { container } = render(
       <MemoryRouter>
         <AuthProvider>
-          <App />
+          <BalancesProvider>
+            <App />
+          </BalancesProvider>
         </AuthProvider>
       </MemoryRouter>
     );

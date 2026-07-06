@@ -32,6 +32,10 @@ interface ChartProps {
   onIntervalChange: (interval: string) => void;
   activeInterval: string;
   theme: Theme;
+  /** Market switch / interval fetch in flight: the previous candles stay
+   *  mounted (no blank flash) under a dimming overlay until the new data
+   *  replaces them. */
+  loading?: boolean;
 }
 
 type Interval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
@@ -192,7 +196,7 @@ function isValidCandle(c: CandleData | null): c is CandleData {
 }
 
 // ── Component ──────────────────────────────────────────────────
-export function Chart({ candles, currentCandle, symbol, onIntervalChange, activeInterval, theme }: ChartProps) {
+export function Chart({ candles, currentCandle, symbol, onIntervalChange, activeInterval, theme, loading }: ChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -782,11 +786,13 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
     };
   }, []);
 
-  // ── Reset fit on interval change ──
+  // ── Reset fit on interval or market change ──
+  // On a market switch the old candles stay mounted (loading overlay dims
+  // them); resetting here makes the replacing history get its fitContent.
   useEffect(() => {
     hasInitialFitRef.current = false;
     lastCandleCountRef.current = 0;
-  }, [activeInterval]);
+  }, [activeInterval, symbol]);
 
   const handleIntervalChange = useCallback((newInterval: Interval) => {
     onIntervalChange(newInterval);
@@ -915,7 +921,7 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
         <div className="min-h-0 w-full flex-1" ref={chartContainerRef} />
 
         {/* Empty state */}
-        {candles.length === 0 && !currentCandle && (
+        {candles.length === 0 && !currentCandle && !loading && (
           <div className="pointer-events-none absolute left-1/2 top-1/2 z-[1] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 text-muted">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-12 w-12 opacity-25">
               <path d="M3 3v18h18" strokeLinecap="round" strokeLinejoin="round"/>
@@ -924,6 +930,20 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
               <rect x="15" y="10" width="2" height="6" rx="0.5" strokeLinejoin="round"/>
             </svg>
             <span className="text-xs italic">Waiting for trade data...</span>
+          </div>
+        )}
+
+        {/* Loading overlay — dims the outgoing candles during a market or
+            interval switch instead of blanking the chart */}
+        {loading && (
+          <div className="pointer-events-none absolute inset-0 z-[2] flex flex-col items-center justify-center gap-3 bg-surface/60 text-muted animate-fade-in">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-12 w-12 animate-pulse opacity-25">
+              <path d="M3 3v18h18" strokeLinecap="round" strokeLinejoin="round"/>
+              <rect x="7" y="8" width="2" height="8" rx="0.5" strokeLinejoin="round"/>
+              <rect x="11" y="5" width="2" height="11" rx="0.5" strokeLinejoin="round"/>
+              <rect x="15" y="10" width="2" height="6" rx="0.5" strokeLinejoin="round"/>
+            </svg>
+            <span className="text-xs italic">Loading {symbol}…</span>
           </div>
         )}
       </div>

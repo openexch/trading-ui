@@ -26,18 +26,16 @@ export function TradeList({ trades }: TradeListProps) {
 
       <div className="flex-1 overflow-y-auto">
         {trades.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 px-5 py-10 text-muted">
-            <svg
-              className="h-9 w-9 opacity-25"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M3 3v18h18" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M7 14l4-4 4 4 5-5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span className="text-xs italic">Waiting for trades...</span>
+          /* Awaiting-tape window (market switch / reconnect): pulsing
+             placeholder rows instead of an empty-looking panel */
+          <div aria-hidden className="animate-pulse">
+            {Array.from({ length: 9 }, (_, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_70px] gap-1.5 px-4 py-[7px]">
+                <span className="h-3 rounded-sm bg-surface-2" style={{ width: `${[60, 45, 70, 50, 65, 40, 75, 55, 62][i]}%` }} />
+                <span className="h-3 justify-self-end rounded-sm bg-surface-2" style={{ width: `${[50, 65, 40, 70, 45, 60, 42, 68, 52][i]}%` }} />
+                <span className="h-3 w-full justify-self-end rounded-sm bg-surface-2" />
+              </div>
+            ))}
           </div>
         ) : (
           trades.map((trade, index) => {
