@@ -139,19 +139,32 @@ describe('AdminPage smoke', () => {
     localStorage.clear();
   });
 
-  it('renders the cluster tab: status bar, node cards with roles, services', async () => {
+  it('renders the cluster tab: rail, node cards with roles, services', async () => {
     renderAdmin();
 
-    // Status bar reflects the canned healthy cluster
+    // Cluster rail reflects the canned healthy cluster
     expect(await screen.findByText('Cluster Healthy')).toBeTruthy();
     expect(screen.getByText('Node 0 is leader')).toBeTruthy();
 
-    // Node cards with role badges
-    expect(screen.getByText('Node 0')).toBeTruthy();
+    // Rail stat tiles: nodes, leader, services, memory, commit
+    expect(screen.getByText('3/3')).toBeTruthy();
+    expect(screen.getByText('7/7')).toBeTruthy();
+    expect(screen.getByText('1.8 GB')).toBeTruthy();
+    // Rail commit tile + the three node cards' commit fields
+    expect(screen.getAllByText('41.2M')).toHaveLength(4);
+
+    // Node cards with role badges — followers read healthy, never warn.
+    // "Node 0" appears twice: the rail's Leader tile + the card title.
+    expect(screen.getAllByText('Node 0')).toHaveLength(2);
     expect(screen.getByText('Node 1')).toBeTruthy();
     expect(screen.getByText('Node 2')).toBeTruthy();
     expect(screen.getByText('LEADER')).toBeTruthy();
-    expect(screen.getAllByText('FOLLOWER')).toHaveLength(2);
+    const followers = screen.getAllByText('FOLLOWER');
+    expect(followers).toHaveLength(2);
+    for (const badge of followers) {
+      expect(badge.className).toContain('text-buy');
+      expect(badge.className).not.toContain('warn');
+    }
 
     // Services (non-cluster processes only — node0-2/backup are cluster-role)
     expect(await screen.findByText('Order Management')).toBeTruthy();
@@ -160,7 +173,17 @@ describe('AdminPage smoke', () => {
     expect(screen.queryByText('Cluster Node 0')).toBeNull();
 
     // Log viewer placeholder before any source is selected
+    expect(screen.getByText(/Select a service or node/i)).toBeTruthy();
     expect(screen.getByText(/Click a log button/i)).toBeTruthy();
+  });
+
+  it('renders pending dashes in the rail before data arrives', () => {
+    // fetch never resolves — the rail chrome must still mount with dashes
+    globalThis.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch;
+    renderAdmin();
+    expect(screen.getByText('Connecting to gateway…')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(5);
+    expect(screen.queryByText('Cluster Healthy')).toBeNull();
   });
 
   it('switches to the Risk and Backup tabs', async () => {
@@ -207,7 +230,8 @@ describe('AdminPage smoke', () => {
 
     fireEvent.click(screen.getAllByTitle('View Logs')[0]);
     expect(await screen.findByText('[INFO] node ready')).toBeTruthy();
-    // Header shows the selected source
-    expect(screen.getByRole('heading', { name: 'Node 0' })).toBeTruthy();
+    // Heading is micro-caps "Logs"; the selected source renders as a chip
+    expect(screen.getByRole('heading', { name: 'Logs' })).toBeTruthy();
+    expect(screen.getAllByText('Node 0').length).toBeGreaterThanOrEqual(2);
   });
 });

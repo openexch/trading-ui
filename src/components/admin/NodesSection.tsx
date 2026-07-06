@@ -68,8 +68,8 @@ export function NodesSection({
   onViewLogs,
 }: NodesSectionProps) {
   return (
-    <section className="rounded-lg border border-hairline bg-surface p-6">
-      <div className="mb-5 flex flex-wrap items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
+    <section>
+      <div className="mb-3.5 flex flex-wrap items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
         {Icons.server}
         <h2 className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Cluster Nodes</h2>
         <div className="flex flex-wrap gap-1.5">

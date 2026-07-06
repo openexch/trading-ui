@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Theme-aware semantic styling per cluster/node/process state — the single
 // source for the admin state→color mapping.
-// LEADER / running / healthy -> buy; OFFLINE / failed -> sell;
-// FOLLOWER / transitional / electing -> warn; updating -> accent.
+// LEADER / FOLLOWER / running / healthy -> buy (followers quiet: buy dot,
+// hairline card rule — a healthy cluster must read all-green at a glance);
+// OFFLINE / stopped -> faint; failed / stopping -> sell; updating -> accent;
+// warn is reserved for genuinely transitional states (starting / rejoining /
+// election).
 import type { AdminProgress } from '../../hooks/useAdminEvents';
 import type { NodeStatus } from './types';
 
@@ -22,7 +25,7 @@ export const STATUS_DOT_COLOR: Record<string, string> = {
   leader: 'bg-buy',
   online: 'bg-buy',
   running: 'bg-buy',
-  follower: 'bg-warn',
+  follower: 'bg-buy',
   offline: 'bg-faint',
   stopped: 'bg-faint',
   stopping: 'bg-sell',
@@ -34,7 +37,7 @@ export const STATUS_DOT_COLOR: Record<string, string> = {
 
 export const NODE_CARD_BORDER: Record<string, string> = {
   leader: 'border-l-buy',
-  follower: 'border-l-warn',
+  follower: 'border-l-hairline-strong',
   offline: 'border-l-faint opacity-70',
   stopping: 'border-l-sell',
   starting: 'border-l-warn',
@@ -44,7 +47,7 @@ export const NODE_CARD_BORDER: Record<string, string> = {
 
 export const NODE_ROLE_BADGE: Record<string, string> = {
   leader: 'bg-buy-soft text-buy',
-  follower: 'bg-warn-soft text-warn',
+  follower: 'bg-buy-soft text-buy',
   offline: 'bg-surface-2 text-muted',
   stopping: 'bg-sell-soft text-sell',
   starting: 'bg-warn-soft text-warn',

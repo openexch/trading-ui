@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
 import { ThemeToggle } from '../components/ThemeToggle/ThemeToggle';
+import { LogoMark } from '../components/LogoMark';
 import { Icons } from '../components/Icons';
 import { RiskAdmin } from '../components/admin/RiskAdmin';
 import { BackupOps } from '../components/admin/BackupOps';
@@ -538,9 +539,12 @@ function AdminConsole() {
           <span>Trading</span>
         </Link>
         <div className="h-5 w-px bg-hairline" />
-        <h1 className="font-display text-[17px] font-semibold tracking-tight text-text-strong">
-          <span className="text-accent">Open</span> Exchange — Admin
-        </h1>
+        <div className="flex select-none items-center gap-2.5">
+          <LogoMark className="h-[22px] w-[22px]" />
+          <h1 className="font-display text-[17px] font-semibold leading-none tracking-tight text-text-strong">
+            <span className="text-accent">Open</span> Exchange — Admin
+          </h1>
+        </div>
         <div className="ml-auto">
           <ThemeToggle theme={theme} onToggle={toggle} />
         </div>
@@ -577,6 +581,7 @@ function AdminConsole() {
           <>
             <ClusterStatusBar
               status={status}
+              processSummary={processSummary}
               clusterStatus={clusterStatus}
               isOperationRunning={isOperationRunning}
               operationProgress={operationProgress}
@@ -584,7 +589,7 @@ function AdminConsole() {
               onHousekeeping={requestHousekeeping}
             />
 
-            <main className="flex flex-col gap-7">
+            <main className="flex flex-col gap-8">
               <NodesSection
                 status={status}
                 processes={processes}
@@ -601,7 +606,6 @@ function AdminConsole() {
 
               <ServicesSection
                 processes={processes}
-                processSummary={processSummary}
                 operatingServices={operatingServices}
                 snapshotOp={snapshotOp}
                 isOperationRunning={isOperationRunning}

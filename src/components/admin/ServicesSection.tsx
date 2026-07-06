@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Process-manager service cards (everything that isn't a cluster node):
-// summary strip, per-service stats, and lifecycle actions.
+// per-service stats and lifecycle actions. Fleet-level counts live in the
+// cluster rail, not here.
 import { Icons } from '../Icons';
 import { STATUS_DOT_COLOR } from './status';
 import { formatBytes, formatUptime, isSameLogSource, processToLogName } from './format';
 import { iconBtnStop, iconBtnRestart, iconBtnStart, iconBtnAccent, iconBtnLogs } from './buttonStyles';
-import type { LogSource, ProcessInfo, ProcessSummary } from './types';
+import type { LogSource, ProcessInfo } from './types';
 
 interface ServicesSectionProps {
   processes: ProcessInfo[];
-  processSummary: ProcessSummary | null;
   operatingServices: Set<string>;
   snapshotOp: boolean;
   isOperationRunning: boolean;
@@ -33,7 +33,6 @@ function getProcessIcon(name: string) {
 
 export function ServicesSection({
   processes,
-  processSummary,
   operatingServices,
   snapshotOp,
   isOperationRunning,
@@ -46,37 +45,11 @@ export function ServicesSection({
   const serviceProcesses = processes.filter(p => p.role !== 'cluster');
 
   return (
-    <section className="rounded-lg border border-hairline bg-surface p-6">
-      <div className="mb-5 flex items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
+    <section>
+      <div className="mb-3.5 flex items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
         {Icons.server}
         <h2 className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Services</h2>
       </div>
-      {processSummary && (
-        <div className="mb-4 flex flex-wrap gap-6 rounded-md border border-hairline bg-surface-2 px-5 py-3">
-          <div className="flex min-w-[50px] flex-col items-center gap-0.5">
-            <span className="font-mono text-[16px] font-semibold tabular-nums text-buy">{processSummary.running}</span>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-faint">Running</span>
-          </div>
-          <div className="flex min-w-[50px] flex-col items-center gap-0.5">
-            <span className="font-mono text-[16px] font-semibold tabular-nums text-muted">{processSummary.stopped}</span>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-faint">Stopped</span>
-          </div>
-          {processSummary.failed > 0 && (
-            <div className="flex min-w-[50px] flex-col items-center gap-0.5">
-              <span className="font-mono text-[16px] font-semibold tabular-nums text-sell">{processSummary.failed}</span>
-              <span className="text-[10px] font-medium uppercase tracking-wide text-faint">Failed</span>
-            </div>
-          )}
-          <div className="flex min-w-[50px] flex-col items-center gap-0.5">
-            <span className="font-mono text-[13px] font-semibold tabular-nums text-accent">
-              {processSummary.totalMemoryMB > 1024
-                ? `${(processSummary.totalMemoryMB / 1024).toFixed(1)} GB`
-                : `${Math.round(processSummary.totalMemoryMB)} MB`}
-            </span>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-faint">Total Memory</span>
-          </div>
-        </div>
-      )}
       <div className="grid gap-4 lg:grid-cols-2">
         {processes.length === 0 ? (
           <>
