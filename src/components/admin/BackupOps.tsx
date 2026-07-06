@@ -3,10 +3,15 @@ import { useState } from 'react';
 import { useBackupOps, type RecoverResult } from '../../hooks/useBackupOps';
 import { ConfirmModal } from './ConfirmModal';
 
-function Pill({ ok, label }: { ok: boolean; label: string }) {
+function Pill({ ok, label, title, alert }: { ok: boolean; label: string; title?: string; alert?: boolean }) {
+  // alert renders the not-ok state as a genuine warning (sell tint) instead
+  // of the neutral "absent" gray — used for freshness, where stale is a
+  // problem rather than a missing feature.
+  const off = alert ? 'bg-sell-soft text-sell' : 'bg-surface-2 text-faint';
+  const dot = alert ? 'bg-sell' : 'bg-faint';
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${ok ? 'bg-buy-soft text-buy' : 'bg-surface-2 text-faint'}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-buy' : 'bg-faint'}`} />
+    <span title={title} className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${ok ? 'bg-buy-soft text-buy' : off}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-buy' : dot}`} />
       {label}
     </span>
   );
@@ -138,6 +143,12 @@ export function BackupOps() {
                   <span className="break-all font-mono text-[11px] text-text">{backupInfo.backupDir || '—'}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <Pill
+                    ok={backupInfo.fresh}
+                    alert
+                    label={backupInfo.fresh ? 'Fresh' : 'Stale'}
+                    title={backupInfo.freshReason}
+                  />
                   <Pill ok={backupInfo.hasRecordingLog} label="Recording log" />
                   <Pill ok={backupInfo.hasArchive} label="Archive" />
                   <span className="flex flex-col"><span className={labelCls}>Recordings</span><span className={valueCls}>{backupInfo.recordingCount}</span></span>

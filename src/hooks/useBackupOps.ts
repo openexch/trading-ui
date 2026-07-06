@@ -14,6 +14,11 @@ export interface BackupInfo {
   hasRecordingLog: boolean;
   hasArchive: boolean;
   recordingCount: number;
+  // Freshness (match#36 doctrine): trust `fresh`, never "running" alone —
+  // the backup agent once wedged silently for days while looking healthy.
+  fresh: boolean;
+  freshReason: string;
+  recordingLogBytes: number;
 }
 
 export interface RecoverResult {
