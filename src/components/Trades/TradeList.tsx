@@ -47,10 +47,13 @@ export function TradeList({ trades }: TradeListProps) {
             const isBuy = trade.side != null
               ? trade.side === 'BUY'
               : prev == null || trade.price >= prev.price;
+            // No per-row mount animation: batches prepend every second, so
+            // index-shifted keys remounted every row and restarted its
+            // fade-in — the whole tape rendered permanently half-faded.
             return (
               <div
-                key={`${trade.timestamp}-${index}`}
-                className="grid animate-fade-in grid-cols-[1fr_1fr_70px] gap-1.5 px-4 py-1 font-mono text-[11.5px] leading-[1.9] tabular-nums transition-colors hover:bg-surface-2"
+                key={`${trade.timestamp}-${trade.price}-${trade.quantity}-${index}`}
+                className="grid grid-cols-[1fr_1fr_70px] gap-1.5 px-4 py-1 font-mono text-[11.5px] leading-[1.9] tabular-nums transition-colors hover:bg-surface-2"
               >
                 <span
                   className={`font-medium ${isBuy ? 'text-buy' : 'text-sell'}`}
