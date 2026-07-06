@@ -79,7 +79,7 @@ export function AccountDrawer({ onClose }: AccountDrawerProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex bg-black/60 animate-overlay-in"
+      className="fixed inset-0 z-50 flex bg-black/65 backdrop-blur-[2px] animate-overlay-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

@@ -10,7 +10,7 @@ export function TradeList({ trades }: TradeListProps) {
   return (
     <div className="flex h-full flex-col font-sans">
       <div className="flex flex-shrink-0 items-center justify-between px-4 py-3.5">
-        <h3 className="font-display text-[13px] font-medium tracking-tight text-text-strong">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">
           Recent Trades
         </h3>
         <span className="rounded-full bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-muted">

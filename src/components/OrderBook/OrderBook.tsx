@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { OrderBook as OrderBookType } from '../../types/market';
 import { type LevelChange, priceKey } from '../../hooks/useOrderBook';
 import { formatPrice, formatQuantity } from '../../utils/formatters';
@@ -96,6 +96,20 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
   // For vertical mode, reverse asks so lowest price is at bottom (near spread)
   const displayAsks = isVertical ? [...askLevels].reverse() : askLevels;
 
+  // Directional tick on the mid price — the spread row is where the two
+  // sides of the market meet, so it carries the same live pulse as the rail.
+  const prevMidRef = useRef(0);
+  const [midTick, setMidTick] = useState<'up' | 'down' | null>(null);
+  useEffect(() => {
+    if (midPrice > 0 && prevMidRef.current > 0) {
+      if (midPrice > prevMidRef.current) setMidTick('up');
+      else if (midPrice < prevMidRef.current) setMidTick('down');
+    }
+    prevMidRef.current = midPrice;
+    const id = window.setTimeout(() => setMidTick(null), 500);
+    return () => window.clearTimeout(id);
+  }, [midPrice]);
+
   const colHead = 'text-[10px] font-medium uppercase tracking-wider text-muted';
   const cellNum = 'relative z-[1] overflow-hidden text-ellipsis whitespace-nowrap font-mono tabular-nums';
 
@@ -108,7 +122,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
             <path d="M3 3v18h18" />
             <path d="M18 9l-5 5-4-4-3 3" />
           </svg>
-          <h3 className="m-0 font-display text-[13px] font-medium tracking-tight text-text-strong">Order Book</h3>
+          <h3 className="m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">Order Book</h3>
         </div>
         <div className="flex gap-0.5 rounded-md border border-hairline bg-surface-2 p-0.5">
           <button
@@ -201,11 +215,25 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
             </div>
           )}
 
-          {/* Spread indicator */}
-          <div className="flex flex-shrink-0 items-center justify-between border-y border-hairline px-4 py-1.5">
-            <span className="font-mono text-sm font-semibold tabular-nums tracking-tight text-text-strong">${formatPrice(midPrice)}</span>
+          {/* Spread row — the signature: sell pressure bleeds in from the ask
+              side above, buy pressure from the bid side below, and the mid
+              price ticks with the market. */}
+          <div
+            className="relative flex flex-shrink-0 items-center justify-between border-y border-hairline px-4 py-1.5"
+            style={{ background: 'linear-gradient(180deg, var(--sell-soft), transparent 42%, transparent 58%, var(--buy-soft))' }}
+          >
+            <span
+              className={`flex items-baseline gap-1 font-mono text-[15px] font-bold tabular-nums tracking-tight transition-colors ${
+                midTick === 'up' ? 'text-buy' : midTick === 'down' ? 'text-sell' : 'text-text-strong'
+              }`}
+            >
+              {midTick && (
+                <span aria-hidden className="text-[9px] leading-none">{midTick === 'up' ? '\u25b2' : '\u25bc'}</span>
+              )}
+              ${formatPrice(midPrice)}
+            </span>
             <span className="font-mono text-[10px] tabular-nums text-muted">
-              Spread: ${formatPrice(spread)} ({spreadPercent.toFixed(3)}%)
+              Spread ${formatPrice(spread)} ({spreadPercent.toFixed(3)}%)
             </span>
           </div>
 
