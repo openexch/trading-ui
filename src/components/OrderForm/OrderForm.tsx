@@ -2,6 +2,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { Market, OrderSide, OrderType, OrderRequest, TimeInForce } from '../../types/market';
 import { formatPrice } from '../../utils/formatters';
+import { snapPrice, isInPriceRange, tickLabel, priceRangeLabel } from '../../utils/ticks';
 
 interface OrderFormProps {
   market: Market;
@@ -15,6 +16,10 @@ interface OrderFormProps {
   /** When false the form is disabled and submit becomes "Sign in to trade". */
   signedIn: boolean;
   onRequestSignIn: () => void;
+  /** Async rejection of a previously accepted order (from the user's order
+   *  stream) — surfaced here so a rejected order never just silently
+   *  disappears. */
+  rejectNotice?: string | null;
 }
 
 const SYNTHETIC_TYPES: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
@@ -74,12 +79,21 @@ function OrderSideForm({
 
   const isBuy = side === 'BID';
 
-  // Sync external price from order book click
+  // Sync external price from order book click (book prices are on-tick, but
+  // snap anyway so a stale/legacy value can never produce an off-tick order)
   useEffect(() => {
     if (externalPrice !== null && externalPrice !== undefined) {
-      setPrice(externalPrice.toString());
+      setPrice(snapPrice(market, externalPrice).toString());
     }
-  }, [externalPrice]);
+  }, [externalPrice, market]);
+
+  // Snap the typed price onto the engine grid when leaving the field
+  const handlePriceBlur = useCallback(() => {
+    const p = parseFloat(price);
+    if (p > 0 && isInPriceRange(market, p)) {
+      setPrice(snapPrice(market, p).toString());
+    }
+  }, [price, market]);
 
   const total = useMemo(() => {
     const p = parseFloat(price) || 0;
@@ -116,15 +130,34 @@ function OrderSideForm({
       return;
     }
 
+    // Engine price grid: out-of-range prices are a hard error; anything else
+    // is snapped to the tick so the engine can never reject on PRICE_OFF_TICK.
+    let submitPrice = priceNum;
+    if (needsPrice(orderType)) {
+      if (!isInPriceRange(market, priceNum)) {
+        setNotification({
+          type: 'error',
+          message: `Price must be within ${priceRangeLabel(market)} for ${market.symbol}`,
+        });
+        return;
+      }
+      submitPrice = snapPrice(market, priceNum);
+      if (submitPrice !== priceNum) setPrice(submitPrice.toString());
+    }
+    const stopNum = parseFloat(stopPrice);
+    const submitStop = needsStopPrice(orderType) && stopNum > 0
+      ? snapPrice(market, stopNum)
+      : undefined;
+
     const order: OrderRequest = {
       market: market.symbol,
       orderType,
       orderSide: side,
-      price: !needsPrice(orderType) ? 0 : priceNum,
+      price: !needsPrice(orderType) ? 0 : submitPrice,
       quantity: quantityNum,
       totalPrice: orderType === 'MARKET' && isBuy ? total : undefined,
       timeInForce,
-      stopPrice: needsStopPrice(orderType) ? parseFloat(stopPrice) || undefined : undefined,
+      stopPrice: submitStop,
       trailingDelta: needsTrailingDelta(orderType) ? parseFloat(trailingDelta) || undefined : undefined,
       displayQuantity: needsDisplayQty(orderType) ? parseFloat(displayQuantity) || undefined : undefined,
       timestamp: Date.now(),
@@ -133,7 +166,7 @@ function OrderSideForm({
     const result = await onSubmitOrder(order);
 
     if (result.success) {
-      setNotification({ type: 'success', message: `${isBuy ? 'Buy' : 'Sell'} order placed` });
+      setNotification({ type: 'success', message: `${isBuy ? 'Buy' : 'Sell'} order submitted` });
       setPrice('');
       setQuantity('');
       setSliderValue(0);
@@ -142,19 +175,21 @@ function OrderSideForm({
     }
 
     setTimeout(() => setNotification(null), 3000);
-  }, [price, quantity, orderType, side, market.symbol, isBuy, total, onSubmitOrder, stopPrice, trailingDelta, displayQuantity, timeInForce]);
+  }, [price, quantity, orderType, side, market, isBuy, total, onSubmitOrder, stopPrice, trailingDelta, displayQuantity, timeInForce]);
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-3">
       {needsPrice(orderType) && (
-        <Field label="Price">
+        <Field label={`Price · tick ${tickLabel(market)}`}>
           <input
             type="number"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
+            onBlur={handlePriceBlur}
             placeholder="0.00"
-            step="0.01"
-            min="0"
+            step={market.tickSize}
+            min={market.minPrice}
+            max={market.maxPrice}
             disabled={!signedIn}
             className={inputClass}
           />
@@ -274,7 +309,7 @@ const typeTab = (active: boolean) =>
     active ? 'bg-surface-3 text-text-strong' : 'text-muted hover:text-text'
   }`;
 
-export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMobile, defaultSide, signedIn, onRequestSignIn }: OrderFormProps) {
+export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMobile, defaultSide, signedIn, onRequestSignIn, rejectNotice }: OrderFormProps) {
   const [orderType, setOrderType] = useState<OrderType>('LIMIT');
   const [timeInForce, setTimeInForce] = useState<TimeInForce>('GTC');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -303,6 +338,13 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
 
   return (
     <div className="flex flex-col gap-3 p-4">
+      {/* Async order rejection (user's order stream) — never silent */}
+      {rejectNotice && (
+        <div className="rounded-md bg-sell-soft px-2.5 py-1.5 text-[11px] font-medium text-sell animate-fade-in">
+          {rejectNotice}
+        </div>
+      )}
+
       {/* Mobile Buy/Sell toggle */}
       {isMobile && (
         <div className="grid grid-cols-2 gap-1 rounded-md bg-surface-2 p-1">

@@ -37,11 +37,17 @@ export function mapOrderEvent(event: OmsOrderEvent): UserOrder {
  * market-plane ORDER_STATUS_BATCH path (global broadcast, being removed from
  * the gateway).
  */
-export function useOrders() {
+export function useOrders(onRejected?: (event: OmsOrderEvent) => void) {
   const [orders, setOrders] = useState<UserOrder[]>([]);
 
   // WS event: terminal status removes the entry, anything else upserts.
   const handleOrderEvent = useCallback((event: OmsOrderEvent) => {
+    // An accepted-then-rejected order must never vanish silently: the engine
+    // rejects async (off-tick/out-of-range prices, full book) and the only
+    // signal is this event. Surface it before dropping the row.
+    if (event.status === 'REJECTED') {
+      onRejected?.(event);
+    }
     setOrders(prev => {
       if (TERMINAL.has(event.status)) {
         return prev.some(o => o.omsOrderId === event.omsOrderId)
@@ -57,7 +63,7 @@ export function useOrders() {
       }
       return [mapped, ...prev].slice(0, MAX_ORDERS);
     });
-  }, []);
+  }, [onRejected]);
 
   // REST seed of the caller's ACTIVE orders. Merge where the WS wins: an
   // entry already present (live-updated) is never overwritten by the
