@@ -1,29 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+
+export type ConfirmTone = 'danger' | 'warning' | 'primary';
+
+// The tri-tone soft treatment: tinted surface + toned text, matching the
+// node/service action buttons. Never a solid fill — destructive intent is
+// carried by tone, not shouting.
+const CONFIRM_BTN: Record<ConfirmTone, string> = {
+  danger: 'border border-sell/40 bg-sell-soft text-sell hover:brightness-105',
+  warning: 'border border-warn/40 bg-warn-soft text-warn hover:brightness-105',
+  primary: 'border border-buy/40 bg-buy-soft text-buy hover:brightness-105',
+};
 
 interface ConfirmModalProps {
   title: string;
   body: ReactNode;
+  /** danger = destructive, warning = disruptive-but-recoverable, primary = additive. */
+  tone: ConfirmTone;
   confirmLabel?: string;
   cancelLabel?: string;
-  /** 'danger' styles the confirm button as destructive. */
-  tone?: 'default' | 'danger';
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-/** Reusable confirm dialog for admin actions (risk + backup ops). */
+/** The one confirm dialog for all admin actions (cluster + risk + backup). */
 export function ConfirmModal({
   title,
   body,
+  tone,
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
-  tone = 'default',
   busy = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onCancel();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, onCancel]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-overlay-in"
@@ -40,16 +59,14 @@ export function ConfirmModal({
           <button
             onClick={onCancel}
             disabled={busy}
-            className="rounded-md border border-hairline px-3 py-1.5 text-[13px] text-muted hover:border-hairline-strong hover:text-text disabled:opacity-50"
+            className="rounded-md border border-hairline px-3 py-1.5 text-[13px] text-muted transition-colors hover:border-hairline-strong hover:text-text disabled:opacity-50"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
             disabled={busy}
-            className={`rounded-md px-3 py-1.5 text-[13px] font-semibold disabled:opacity-50 ${
-              tone === 'danger' ? 'bg-sell text-white hover:brightness-110' : 'bg-accent text-on-accent hover:bg-accent-hover'
-            }`}
+            className={`rounded-md px-3 py-1.5 text-[13px] font-semibold transition-[filter] disabled:opacity-50 ${CONFIRM_BTN[tone]}`}
           >
             {busy ? 'Working…' : confirmLabel}
           </button>

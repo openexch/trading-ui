@@ -7,6 +7,8 @@ import { Icons } from '../components/Icons';
 import { RiskAdmin } from '../components/admin/RiskAdmin';
 import { BackupOps } from '../components/admin/BackupOps';
 import { EventFeed } from '../components/admin/EventFeed';
+import { ConfirmModal } from '../components/admin/ConfirmModal';
+import { ToastProvider, useToast } from '../components/admin/Toasts';
 import { ClusterStatusBar } from '../components/admin/ClusterStatusBar';
 import { NodesSection } from '../components/admin/NodesSection';
 import { ServicesSection } from '../components/admin/ServicesSection';
@@ -25,7 +27,16 @@ import type {
 const ADMIN_BASE = import.meta.env.VITE_ADMIN_API_URL || '';
 
 export function AdminPage() {
+  return (
+    <ToastProvider>
+      <AdminConsole />
+    </ToastProvider>
+  );
+}
+
+function AdminConsole() {
   const { theme, toggle } = useTheme();
+  const toast = useToast();
   const [tab, setTab] = useState<AdminTab>('cluster');
   const [status, setStatus] = useState<ClusterStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -246,7 +257,7 @@ export function AdminPage() {
         body: JSON.stringify({ nodeId }),
       });
     } catch {
-      setError(`Failed to ${action.replace('-', ' ')}`);
+      toast({ tone: 'error', text: `Failed to ${action.replace('-', ' ')}`, sticky: true });
     }
   };
 
@@ -311,7 +322,7 @@ export function AdminPage() {
         fetchProcesses();
       }, timeout);
     } catch {
-      setError(`Failed to ${action} ${service}`);
+      toast({ tone: 'error', text: `Failed to ${action} ${service}`, sticky: true });
       setOperatingServices(prev => {
         const next = new Set(prev);
         next.delete(service);
@@ -339,7 +350,7 @@ export function AdminPage() {
       await fetch(`${ADMIN_BASE}/api/admin/rebuild-admin`, { method: 'POST' });
       // Admin will restart automatically — connection will drop
     } catch {
-      setError('Failed to trigger self-update');
+      toast({ tone: 'error', text: 'Failed to trigger self-update', sticky: true });
       setOperatingServices(prev => {
         const next = new Set(prev);
         next.delete('admin');
@@ -357,7 +368,7 @@ export function AdminPage() {
       await fetch(`${ADMIN_BASE}/api/admin/snapshot`, { method: 'POST' });
       setTimeout(() => { setSnapshotOp(false); }, 5000);
     } catch {
-      setError('Failed to take snapshot');
+      toast({ tone: 'error', text: 'Failed to take snapshot', sticky: true });
       setSnapshotOp(false);
     }
   };
@@ -380,10 +391,10 @@ export function AdminPage() {
       const response = await fetch(`${ADMIN_BASE}/api/admin/rolling-update`, { method: 'POST' });
       if (!response.ok) {
         const data = await response.json();
-        setError(data.error || 'Rolling update failed');
+        toast({ tone: 'error', text: data.error || 'Rolling update failed', sticky: true });
       }
     } catch {
-      setError('Failed to trigger rolling update');
+      toast({ tone: 'error', text: 'Failed to trigger rolling update', sticky: true });
     }
   };
 
@@ -419,10 +430,10 @@ export function AdminPage() {
           });
           return;
         }
-        setError(data.error || 'Housekeeping failed');
+        toast({ tone: 'error', text: data.error || 'Housekeeping failed', sticky: true });
       }
     } catch {
-      setError('Failed to trigger housekeeping');
+      toast({ tone: 'error', text: 'Failed to trigger housekeeping', sticky: true });
     }
   };
 
@@ -430,7 +441,7 @@ export function AdminPage() {
     try {
       await fetch(`${ADMIN_BASE}/api/admin/stop-all-nodes`, { method: 'POST' });
     } catch {
-      setError('Failed to stop all nodes');
+      toast({ tone: 'error', text: 'Failed to stop all nodes', sticky: true });
     }
   };
 
@@ -438,7 +449,7 @@ export function AdminPage() {
     try {
       await fetch(`${ADMIN_BASE}/api/admin/start-all-nodes`, { method: 'POST' });
     } catch {
-      setError('Failed to start all nodes');
+      toast({ tone: 'error', text: 'Failed to start all nodes', sticky: true });
     }
   };
 
@@ -451,10 +462,10 @@ export function AdminPage() {
       });
       const data = await response.json();
       if (!data.success) {
-        setError(data.error || 'Cleanup failed');
+        toast({ tone: 'error', text: data.error || 'Cleanup failed', sticky: true });
       }
     } catch {
-      setError('Failed to cleanup state');
+      toast({ tone: 'error', text: 'Failed to cleanup state', sticky: true });
     }
   };
 
@@ -514,18 +525,6 @@ export function AdminPage() {
         ? 'border-accent text-accent'
         : 'border-transparent text-muted hover:text-text'
     }`;
-
-  // Per-tone styling for confirm modal buttons + node action buttons.
-  const confirmBtnClass = (style: 'danger' | 'warning' | 'primary') => {
-    switch (style) {
-      case 'danger':
-        return 'border border-sell/40 bg-sell-soft text-sell hover:brightness-105';
-      case 'warning':
-        return 'border border-warn/40 bg-warn-soft text-warn hover:brightness-105';
-      case 'primary':
-        return 'border border-buy/40 bg-buy-soft text-buy hover:brightness-105';
-    }
-  };
 
   return (
     <div className="min-h-screen bg-bg text-text">
@@ -639,34 +638,14 @@ export function AdminPage() {
 
       {/* Confirmation Modal (cluster actions) */}
       {pendingAction && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-overlay-in"
-          onClick={() => setPendingAction(null)}
-        >
-          <div
-            className="w-full max-w-md rounded-lg border border-hairline bg-surface shadow-lg animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="border-b border-hairline px-5 py-3.5">
-              <h3 className="font-display text-[15px] font-semibold text-text-strong">{pendingAction.title}</h3>
-            </div>
-            <p className="px-5 py-4 text-[13px] leading-relaxed text-muted">{pendingAction.message}</p>
-            <div className="flex justify-end gap-2 border-t border-hairline px-5 py-3">
-              <button
-                className="rounded-md border border-hairline px-3 py-1.5 text-[13px] text-muted transition-colors hover:border-hairline-strong hover:text-text"
-                onClick={() => setPendingAction(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className={`rounded-md px-3 py-1.5 text-[13px] font-semibold transition-[filter] ${confirmBtnClass(pendingAction.confirmStyle)}`}
-                onClick={confirmAction}
-              >
-                {pendingAction.confirmLabel}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title={pendingAction.title}
+          body={pendingAction.message}
+          tone={pendingAction.confirmStyle}
+          confirmLabel={pendingAction.confirmLabel}
+          onConfirm={confirmAction}
+          onCancel={() => setPendingAction(null)}
+        />
       )}
     </div>
   );

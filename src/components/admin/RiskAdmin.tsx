@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { MARKETS } from '../../types/market';
 import { useRiskConfig, FP_SCALE, FP_FIELDS, type RiskConfig } from '../../hooks/useRiskConfig';
 import { ConfirmModal } from './ConfirmModal';
+import { useToast } from './Toasts';
 
 function symbolFor(marketId: number): string {
   return MARKETS.find(m => m.id === marketId)?.symbol ?? `Market #${marketId}`;
@@ -63,13 +64,21 @@ function RiskMarketCard({
   onSave: (marketId: number, patch: Partial<RiskConfig>) => Promise<{ success: boolean; message: string }>;
   onBreaker: (marketId: number, action: 'trip' | 'reset') => void;
 }) {
-  const [draft, setDraft] = useState<Record<string, string>>(() => {
+  const toast = useToast();
+  const [draft, setDraftState] = useState<Record<string, string>>(() => {
     const d: Record<string, string> = {};
     GROUPS.forEach(g => g.fields.forEach(f => { d[f.key] = toDisplay(f.key, config[f.key] as number); }));
     return d;
   });
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Field-validation message: inline next to Save (field-proximate errors
+  // beat toasts), persistent until the draft changes.
+  const [invalidMsg, setInvalidMsg] = useState<string | null>(null);
+
+  const setDraft = (updater: (d: Record<string, string>) => Record<string, string>) => {
+    setInvalidMsg(null);
+    setDraftState(updater);
+  };
 
   const dirty = GROUPS.some(g => g.fields.some(f => draft[f.key] !== toDisplay(f.key, config[f.key] as number)));
 
@@ -78,15 +87,14 @@ function RiskMarketCard({
     for (const g of GROUPS) {
       for (const f of g.fields) {
         const raw = toRaw(f.key, draft[f.key]);
-        if (raw === null) { setMsg({ ok: false, text: `Invalid ${f.label}` }); return; }
+        if (raw === null) { setInvalidMsg(`Invalid ${f.label}`); return; }
         patch[f.key] = raw as never;
       }
     }
     setSaving(true);
     const res = await onSave(config.marketId, patch);
     setSaving(false);
-    setMsg({ ok: res.success, text: res.message });
-    setTimeout(() => setMsg(null), 3000);
+    toast({ tone: res.success ? 'success' : 'error', text: res.message });
   };
 
   return (
@@ -131,7 +139,7 @@ function RiskMarketCard({
       </div>
 
       <div className="mt-4 flex items-center justify-end gap-3">
-        {msg && <span className={`text-[12px] ${msg.ok ? 'text-buy' : 'text-sell'}`}>{msg.text}</span>}
+        {invalidMsg && <span className="text-[12px] text-sell">{invalidMsg}</span>}
         <button
           onClick={save}
           disabled={!dirty || saving}
@@ -146,9 +154,9 @@ function RiskMarketCard({
 
 export function RiskAdmin() {
   const { configs, loading, error, updateConfig, circuitBreaker } = useRiskConfig();
+  const toast = useToast();
   const [pending, setPending] = useState<{ marketId: number; action: 'trip' | 'reset' } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
 
   const entries = Object.values(configs).sort((a, b) => a.marketId - b.marketId);
 
@@ -158,18 +166,11 @@ export function RiskAdmin() {
     const res = await circuitBreaker(pending.marketId, pending.action);
     setBusy(false);
     setPending(null);
-    setBanner({ ok: res.success, text: res.message });
-    setTimeout(() => setBanner(null), 4000);
+    toast({ tone: res.success ? 'success' : 'error', text: res.message });
   };
 
   return (
     <div className="flex flex-col gap-4">
-      {banner && (
-        <div className={`rounded-md px-3 py-2 text-[13px] ${banner.ok ? 'bg-buy-soft text-buy' : 'bg-sell-soft text-sell'}`}>
-          {banner.text}
-        </div>
-      )}
-
       {loading && entries.length === 0 && <div className="text-[13px] text-muted">Loading risk config…</div>}
       {error && <div className="rounded-md bg-sell-soft px-3 py-2 text-[13px] text-sell">{error}</div>}
       {!loading && !error && entries.length === 0 && (
@@ -188,7 +189,7 @@ export function RiskAdmin() {
       {pending && (
         <ConfirmModal
           title={pending.action === 'trip' ? 'Trip circuit breaker?' : 'Reset circuit breaker?'}
-          tone={pending.action === 'trip' ? 'danger' : 'default'}
+          tone={pending.action === 'trip' ? 'danger' : 'primary'}
           confirmLabel={pending.action === 'trip' ? 'Trip breaker' : 'Reset breaker'}
           busy={busy}
           body={
