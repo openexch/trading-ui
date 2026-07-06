@@ -19,3 +19,8 @@ dist/
 .DS_Store
 Thumbs.db
 *.tsbuildinfo
+
+# tsc emit artifacts (build is noEmit + vite)
+vite.config.js
+vite.config.d.ts
+*.tsbuildinfo
