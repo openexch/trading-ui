@@ -5,6 +5,8 @@ import { useTheme } from '../hooks/useTheme';
 import { ThemeToggle } from '../components/ThemeToggle/ThemeToggle';
 import { RiskAdmin } from '../components/admin/RiskAdmin';
 import { BackupOps } from '../components/admin/BackupOps';
+import { EventFeed } from '../components/admin/EventFeed';
+import { useAdminEvents, type AdminProgress } from '../hooks/useAdminEvents';
 
 const ADMIN_BASE = import.meta.env.VITE_ADMIN_API_URL || '';
 
@@ -45,17 +47,6 @@ interface ClusterStatus {
   // Archive is now per-node (in NodeStatus), these are deprecated
   archiveBytes?: number;
   archiveDiskBytes?: number;
-}
-
-interface OperationProgress {
-  operation: string | null;
-  status: string | null;
-  progress: number;
-  currentStep: number;
-  totalSteps: number;
-  complete: boolean;
-  error: boolean;
-  elapsedMs: number;
 }
 
 interface ProcessInfo {
@@ -263,7 +254,7 @@ const NODE_ROLE_BADGE: Record<string, string> = {
   election: 'bg-warn-soft text-warn',
 };
 
-function getClusterStatus(progress: OperationProgress | null, nodes: NodeStatus[]): {
+function getClusterStatus(progress: AdminProgress | null, nodes: NodeStatus[]): {
   status: 'healthy' | 'electing' | 'unstable' | 'updating';
   title: string;
   detail: string;
@@ -361,7 +352,7 @@ export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('cluster');
   const [status, setStatus] = useState<ClusterStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<OperationProgress | null>(null);
+  const [progress, setProgress] = useState<AdminProgress | null>(null);
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [processSummary, setProcessSummary] = useState<ProcessSummary | null>(null);
   const [operatingServices, setOperatingServices] = useState<Set<string>>(new Set());
@@ -370,7 +361,7 @@ export function AdminPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [logFilters, setLogFilters] = useState({ error: true, warn: true, info: true, debug: true });
   const [pendingAction, setPendingAction] = useState<ConfirmAction | null>(null);
-  const statusPollRef = useRef<number | null>(null);
+  const [feedOpen, setFeedOpen] = useState(false);
   const logsRef = useRef<HTMLDivElement>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -390,7 +381,7 @@ export function AdminPage() {
     try {
       const response = await fetch(`${ADMIN_BASE}/api/admin/progress`);
       if (response.ok) {
-        const data = await response.json() as OperationProgress;
+        const data = await response.json() as AdminProgress;
         if (data.operation || data.currentStep > 0) {
           setProgress(data);
           if (data.complete) {
@@ -442,30 +433,47 @@ export function AdminPage() {
     }
   }, []);
 
+  // Live event stream: process lifecycle events feed the Activity panel and
+  // trigger an immediate process-list refresh; progress arrives pushed on
+  // change, replacing the old 50ms HTTP fast-poll during operations.
+  const {
+    events: feedEntries,
+    progress: sseProgress,
+    connected: eventsConnected,
+    unseen: feedUnseen,
+    markSeen: markFeedSeen,
+  } = useAdminEvents(() => { fetchProcesses(); });
+  const eventsConnectedRef = useRef(eventsConnected);
+  eventsConnectedRef.current = eventsConnected;
+
+  // Events arriving while the panel is open are already "seen".
   useEffect(() => {
-    if (progress?.operation && !progress.complete) {
-      // Fast polling (50ms) during active operations for accurate progress display
-      statusPollRef.current = window.setInterval(() => {
-        fetchStatus();
-        fetchProgress();
-      }, 50);
-    } else if (statusPollRef.current) {
-      clearInterval(statusPollRef.current);
-      statusPollRef.current = null;
-    }
-    return () => {
-      if (statusPollRef.current) {
-        clearInterval(statusPollRef.current);
+    if (feedOpen) markFeedSeen();
+  }, [feedOpen, feedEntries, markFeedSeen]);
+
+  useEffect(() => {
+    if (!sseProgress) return;
+    if (sseProgress.operation || sseProgress.currentStep > 0) {
+      setProgress(sseProgress);
+      if (sseProgress.complete) {
+        setTimeout(async () => {
+          await fetch(`${ADMIN_BASE}/api/admin/progress?reset=true`);
+          setProgress(null);
+        }, 3000);
       }
-    };
-  }, [progress?.operation, progress?.complete, fetchStatus, fetchProgress]);
+    }
+  }, [sseProgress]);
 
   useEffect(() => {
     fetchStatus();
     fetchProgress();
     const interval = setInterval(() => {
       fetchStatus();
-      fetchProgress();
+      // Progress rides the event stream; poll it only as a fallback while
+      // the stream is down.
+      if (!eventsConnectedRef.current) {
+        fetchProgress();
+      }
     }, 3000);
     return () => clearInterval(interval);
   }, [fetchStatus, fetchProgress]);
@@ -1276,6 +1284,20 @@ export function AdminPage() {
                   )}
                 </div>
               </section>
+
+              {/* Live activity feed (SSE) */}
+              <EventFeed
+                entries={feedEntries}
+                connected={eventsConnected}
+                open={feedOpen}
+                unseen={feedUnseen}
+                onToggle={() => {
+                  setFeedOpen((o) => {
+                    if (!o) markFeedSeen();
+                    return !o;
+                  });
+                }}
+              />
 
               {/* Log Viewer */}
               <section className="rounded-lg border border-hairline bg-surface p-6">
