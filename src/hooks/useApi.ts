@@ -2,10 +2,8 @@
 import { useState, useCallback } from 'react';
 import type { OrderRequest } from '../types/market';
 import { MARKETS } from '../types/market';
-import { AUTH_HEADERS } from '../config';
+import { API_BASE, getAuthHeaders } from '../config';
 import { toWireMoney } from '../utils/money';
-
-const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
 
 interface ApiState {
   loading: boolean;
@@ -48,7 +46,7 @@ export function useApi() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...AUTH_HEADERS,
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(toOmsRequest(order)),
       });
@@ -81,7 +79,7 @@ export function useApi() {
     try {
       const response = await fetch(`${API_BASE}/api/v1/orders/${omsOrderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify(body),
       });
 
@@ -108,7 +106,7 @@ export function useApi() {
     try {
       const response = await fetch(`${API_BASE}/api/v1/orders/${omsOrderId}`, {
         method: 'DELETE',
-        headers: AUTH_HEADERS,
+        headers: getAuthHeaders(),
       });
 
       const data = await response.json();

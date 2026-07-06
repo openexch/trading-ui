@@ -27,8 +27,9 @@ export interface AggregatedTrade {
   price: number;
   quantity: number;
   tradeCount: number;
-  buyCount: number;
-  sellCount: number;
+  /** Taker side (market WS v5+). Absent/null on older gateway data — the UI
+   *  falls back to a tick test against the previous trade. */
+  side?: 'BUY' | 'SELL' | null;
   timestamp: number;
 }
 
@@ -71,32 +72,6 @@ export interface BookDeltaMessage {
   /** v4 chain: this delta advances the book fromVersion -> bookVersion. */
   bookVersion?: number;
   fromVersion?: number;
-}
-
-export interface OrderStatusMessage {
-  type?: 'ORDER_STATUS';
-  marketId?: number;
-  market?: string;
-  orderId: number;
-  /** OMS order id — the id the OMS REST API keys on (cancel/replace).
-   *  JSON string on the wire: Snowflake ids overflow JS numbers (#25/oms#39). */
-  omsOrderId?: string | number;
-  userId: number;
-  status: OrderStatus;
-  price: number;
-  remainingQuantity: number;
-  filledQuantity: number;
-  side: 'BID' | 'ASK';
-  timestamp: number;
-}
-
-export interface OrderStatusBatchMessage {
-  type: 'ORDER_STATUS_BATCH';
-  marketId: number;
-  market: string;
-  orders: OrderStatusMessage[];
-  count: number;
-  timestamp: number;
 }
 
 export interface SubscriptionConfirmMessage {
@@ -208,8 +183,6 @@ export type WebSocketMessage =
   | TradesBatchMessage
   | BookSnapshotMessage
   | BookDeltaMessage
-  | OrderStatusMessage
-  | OrderStatusBatchMessage
   | SubscriptionConfirmMessage
   | PongMessage
   | ErrorMessage
@@ -233,7 +206,42 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'er
 export type OrderSide = 'BID' | 'ASK';
 export type OrderType = 'LIMIT' | 'MARKET' | 'LIMIT_MAKER' | 'STOP_LOSS' | 'STOP_LIMIT' | 'TRAILING_STOP' | 'ICEBERG';
 export type TimeInForce = 'GTC' | 'GTD' | 'IOC' | 'FOK';
-export type OrderStatus = 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'REJECTED';
+// PENDING_* are the OMS's pre-engine states (oms#72); FILLED/CANCELLED/REJECTED are terminal.
+export type OrderStatus =
+  | 'PENDING_RISK'
+  | 'PENDING_HOLD'
+  | 'PENDING_NEW'
+  | 'PENDING_TRIGGER'
+  | 'NEW'
+  | 'PARTIALLY_FILLED'
+  | 'FILLED'
+  | 'CANCELLED'
+  | 'REJECTED';
+
+/** Bare OrderResponse from the user-scoped OMS WS (/ws/v1) and the scoped
+ *  REST reads (oms#72). NO `type` field on the wire — the presence of
+ *  omsOrderId is what distinguishes an order event from acks/pongs. Money
+ *  crosses as exact decimal strings, ids as strings (Snowflake ids overflow
+ *  JS numbers, oms#39). */
+export interface OmsOrderEvent {
+  omsOrderId: string;
+  /** Engine order id; '0' until the engine acks. */
+  clusterOrderId: string;
+  userId: number;
+  marketId: number;
+  side: 'BUY' | 'SELL';
+  orderType: string;
+  timeInForce: string;
+  price: string;
+  quantity: string;
+  filledQty: string;
+  remainingQty: string;
+  stopPrice: string | null;
+  status: string;
+  rejectReason: string | null;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
 
 export interface UserOrder {
   orderId: number;

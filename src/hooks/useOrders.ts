@@ -1,84 +1,99 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState, useCallback } from 'react';
-import type { UserOrder, OrderStatusMessage, OrderStatusBatchMessage, OrderStatus } from '../types/market';
+import type { UserOrder, OmsOrderEvent, OrderStatus, OrderType } from '../types/market';
+import { MARKETS } from '../types/market';
+import { API_BASE, getAuthHeaders } from '../config';
+import { fromWireMoney } from '../utils/money';
 
 const MAX_ORDERS = 100;
+const TERMINAL: ReadonlySet<string> = new Set(['FILLED', 'CANCELLED', 'REJECTED']);
 
+/** Map a wire OrderResponse (OMS /ws/v1 event or GET /api/v1/orders row) to
+ *  UI state. Exported for tests. */
+export function mapOrderEvent(event: OmsOrderEvent): UserOrder {
+  return {
+    // Engine ids are small sequential longs — safe as a JS number. Display
+    // only: REST cancel/replace keys on omsOrderId, never this (#25).
+    orderId: Number(event.clusterOrderId),
+    omsOrderId: event.omsOrderId,
+    marketId: event.marketId,
+    market: MARKETS.find(m => m.id === event.marketId)?.symbol ?? `#${event.marketId}`,
+    userId: event.userId,
+    side: event.side === 'BUY' ? 'BID' : 'ASK',
+    type: event.orderType as OrderType,
+    price: fromWireMoney(event.price),
+    originalQuantity: fromWireMoney(event.quantity),
+    remainingQuantity: fromWireMoney(event.remainingQty),
+    filledQuantity: fromWireMoney(event.filledQty),
+    status: event.status as OrderStatus,
+    timestamp: event.createdAtMs,
+  };
+}
+
+/**
+ * The signed-in user's working orders, fed by the user-scoped OMS surfaces
+ * (oms#72): OrderResponse events from /ws/v1 keyed by omsOrderId, seeded from
+ * GET /api/v1/orders on (re)connect and session change. Replaces the old
+ * market-plane ORDER_STATUS_BATCH path (global broadcast, being removed from
+ * the gateway).
+ */
 export function useOrders() {
   const [orders, setOrders] = useState<UserOrder[]>([]);
 
-  // Process a single order status entry
-  const processOrderStatus = useCallback((message: OrderStatusMessage, prev: UserOrder[], marketId?: number, market?: string): UserOrder[] => {
-    const existingIndex = prev.findIndex(o => o.orderId === message.orderId);
-
-    // Terminal states - remove from open orders
-    if (message.status === 'FILLED' || message.status === 'CANCELLED' || message.status === 'REJECTED') {
-      if (existingIndex >= 0) {
-        return prev.filter(o => o.orderId !== message.orderId);
+  // WS event: terminal status removes the entry, anything else upserts.
+  const handleOrderEvent = useCallback((event: OmsOrderEvent) => {
+    setOrders(prev => {
+      if (TERMINAL.has(event.status)) {
+        return prev.some(o => o.omsOrderId === event.omsOrderId)
+          ? prev.filter(o => o.omsOrderId !== event.omsOrderId)
+          : prev;
       }
-      return prev;
-    }
-
-    // Engine orderId keys this list; omsOrderId is what OMS REST wants (#25).
-    // Kept as a string (Snowflake ids overflow JS numbers); 0/'0' = unknown.
-    const incomingOmsId = message.omsOrderId && message.omsOrderId !== 0 && message.omsOrderId !== '0'
-      ? String(message.omsOrderId)
-      : (existingIndex >= 0 ? prev[existingIndex].omsOrderId : '');
-
-    const updatedOrder: UserOrder = {
-      orderId: message.orderId,
-      omsOrderId: incomingOmsId,
-      marketId: message.marketId ?? marketId ?? 1,
-      market: message.market ?? market ?? 'BTC-USD',
-      userId: message.userId,
-      side: message.side,
-      type: 'LIMIT', // SBE OrderStatusBatch doesn't include order type; LIMIT is default
-      price: message.price,
-      originalQuantity: message.remainingQuantity + message.filledQuantity,
-      remainingQuantity: message.remainingQuantity,
-      filledQuantity: message.filledQuantity,
-      status: message.status as OrderStatus,
-      timestamp: message.timestamp,
-    };
-
-    if (existingIndex >= 0) {
-      // Update existing order
-      const newOrders = [...prev];
-      newOrders[existingIndex] = updatedOrder;
-      return newOrders;
-    } else {
-      // Add new order at the beginning
-      const newOrders = [updatedOrder, ...prev];
-      return newOrders.slice(0, MAX_ORDERS);
-    }
+      const mapped = mapOrderEvent(event);
+      const idx = prev.findIndex(o => o.omsOrderId === event.omsOrderId);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = mapped;
+        return next;
+      }
+      return [mapped, ...prev].slice(0, MAX_ORDERS);
+    });
   }, []);
 
-  const handleOrderStatus = useCallback((message: OrderStatusMessage) => {
-    setOrders(prev => processOrderStatus(message, prev));
-  }, [processOrderStatus]);
-
-  // Handle batched order status updates
-  const handleOrderStatusBatch = useCallback((message: OrderStatusBatchMessage) => {
-    if (!message.orders || message.orders.length === 0) return;
-
-    setOrders(prev => {
-      let result = prev;
-      for (const order of message.orders) {
-        result = processOrderStatus(order, result, message.marketId, message.market);
-      }
-      return result;
-    });
-  }, [processOrderStatus]);
+  // REST seed of the caller's ACTIVE orders. Merge where the WS wins: an
+  // entry already present (live-updated) is never overwritten by the
+  // possibly-staler snapshot.
+  const seedOpenOrders = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/orders`, { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const raw = (await res.json()) as unknown;
+      if (!Array.isArray(raw)) return;
+      const seeded = (raw as OmsOrderEvent[])
+        .filter(e => !TERMINAL.has(e.status))
+        .map(mapOrderEvent);
+      setOrders(prev => {
+        const known = new Set(prev.map(o => o.omsOrderId));
+        const additions = seeded.filter(o => !known.has(o.omsOrderId));
+        if (additions.length === 0) return prev;
+        const merged = [...prev, ...additions];
+        merged.sort((a, b) => b.timestamp - a.timestamp);
+        return merged.slice(0, MAX_ORDERS);
+      });
+    } catch {
+      // OMS briefly unreachable: the WS reconnect path retries the seed.
+    }
+  }, []);
 
   const resetOrders = useCallback(() => {
     setOrders([]);
   }, []);
 
-  const removeOrder = useCallback((orderId: number) => {
-    setOrders(prev => prev.filter(o => o.orderId !== orderId));
+  const removeOrder = useCallback((omsOrderId: string) => {
+    setOrders(prev => prev.filter(o => o.omsOrderId !== omsOrderId));
   }, []);
 
-  // Get only open orders (NEW or PARTIALLY_FILLED)
+  // Only engine-acked working orders; PENDING_* states are transient and
+  // stay out of the Open Orders panel (same selector semantics as before).
   const openOrders = orders.filter(
     o => o.status === 'NEW' || o.status === 'PARTIALLY_FILLED'
   );
@@ -86,8 +101,8 @@ export function useOrders() {
   return {
     orders,
     openOrders,
-    handleOrderStatus,
-    handleOrderStatusBatch,
+    handleOrderEvent,
+    seedOpenOrders,
     resetOrders,
     removeOrder,
   };

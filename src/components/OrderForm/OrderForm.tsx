@@ -12,6 +12,9 @@ interface OrderFormProps {
   externalPrice?: number | null;
   isMobile?: boolean;
   defaultSide?: 'BID' | 'ASK';
+  /** When false the form is disabled and submit becomes "Sign in to trade". */
+  signedIn: boolean;
+  onRequestSignIn: () => void;
 }
 
 const SYNTHETIC_TYPES: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
@@ -48,6 +51,8 @@ function OrderSideForm({
   onSubmitOrder,
   loading,
   externalPrice,
+  signedIn,
+  onRequestSignIn,
 }: {
   side: OrderSide;
   market: Market;
@@ -56,6 +61,8 @@ function OrderSideForm({
   onSubmitOrder: (order: OrderRequest) => Promise<{ success: boolean; message: string }>;
   loading: boolean;
   externalPrice?: number | null;
+  signedIn: boolean;
+  onRequestSignIn: () => void;
 }) {
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -148,6 +155,7 @@ function OrderSideForm({
             placeholder="0.00"
             step="0.01"
             min="0"
+            disabled={!signedIn}
             className={inputClass}
           />
           <Suffix>{market.quoteAsset}</Suffix>
@@ -156,27 +164,27 @@ function OrderSideForm({
 
       {needsStopPrice(orderType) && (
         <Field label="Stop Price">
-          <input type="number" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} placeholder="0.00" step="0.01" min="0" className={inputClass} />
+          <input type="number" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} placeholder="0.00" step="0.01" min="0" disabled={!signedIn} className={inputClass} />
           <Suffix>{market.quoteAsset}</Suffix>
         </Field>
       )}
 
       {needsTrailingDelta(orderType) && (
         <Field label="Trailing Delta">
-          <input type="number" value={trailingDelta} onChange={(e) => setTrailingDelta(e.target.value)} placeholder="0.00" step="0.01" min="0" className={inputClass} />
+          <input type="number" value={trailingDelta} onChange={(e) => setTrailingDelta(e.target.value)} placeholder="0.00" step="0.01" min="0" disabled={!signedIn} className={inputClass} />
           <Suffix>{market.quoteAsset}</Suffix>
         </Field>
       )}
 
       {needsDisplayQty(orderType) && (
         <Field label="Visible Qty">
-          <input type="number" value={displayQuantity} onChange={(e) => setDisplayQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" className={inputClass} />
+          <input type="number" value={displayQuantity} onChange={(e) => setDisplayQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" disabled={!signedIn} className={inputClass} />
           <Suffix>{market.baseAsset}</Suffix>
         </Field>
       )}
 
       <Field label="Amount">
-        <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" className={inputClass} />
+        <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" disabled={!signedIn} className={inputClass} />
         <Suffix>{market.baseAsset}</Suffix>
       </Field>
 
@@ -187,7 +195,8 @@ function OrderSideForm({
             key={pct}
             type="button"
             onClick={() => handlePercentage(pct)}
-            className={`flex-1 rounded-sm border py-1 font-mono text-[11px] tabular-nums transition-colors ${
+            disabled={!signedIn}
+            className={`flex-1 rounded-sm border py-1 font-mono text-[11px] tabular-nums transition-colors disabled:opacity-50 ${
               sliderValue === pct
                 ? 'border-accent bg-accent-soft text-accent'
                 : 'border-hairline text-muted hover:border-hairline-strong hover:text-text'
@@ -203,6 +212,7 @@ function OrderSideForm({
         max="100"
         value={sliderValue}
         onChange={handleSlider}
+        disabled={!signedIn}
         className={`h-1 w-full cursor-pointer appearance-none rounded-full bg-surface-3 ${isBuy ? 'accent-buy' : 'accent-sell'}`}
         aria-label="Amount percentage"
       />
@@ -224,15 +234,25 @@ function OrderSideForm({
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className={`mt-auto rounded-md py-2.5 text-[13px] font-bold text-white transition-[filter] hover:brightness-110 disabled:opacity-50 ${
-          isBuy ? 'bg-buy' : 'bg-sell'
-        }`}
-      >
-        {loading ? '…' : `${isBuy ? 'Buy' : 'Sell'} ${market.baseAsset}`}
-      </button>
+      {signedIn ? (
+        <button
+          type="submit"
+          disabled={loading}
+          className={`mt-auto rounded-md py-2.5 text-[13px] font-bold text-white transition-[filter] hover:brightness-110 disabled:opacity-50 ${
+            isBuy ? 'bg-buy' : 'bg-sell'
+          }`}
+        >
+          {loading ? '…' : `${isBuy ? 'Buy' : 'Sell'} ${market.baseAsset}`}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onRequestSignIn}
+          className="mt-auto rounded-md bg-accent py-2.5 text-[13px] font-bold text-on-accent transition-colors hover:bg-accent-hover"
+        >
+          Sign in to trade
+        </button>
+      )}
     </form>
   );
 }
@@ -254,7 +274,7 @@ const typeTab = (active: boolean) =>
     active ? 'bg-surface-3 text-text-strong' : 'text-muted hover:text-text'
   }`;
 
-export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMobile, defaultSide }: OrderFormProps) {
+export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMobile, defaultSide, signedIn, onRequestSignIn }: OrderFormProps) {
   const [orderType, setOrderType] = useState<OrderType>('LIMIT');
   const [timeInForce, setTimeInForce] = useState<TimeInForce>('GTC');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -276,6 +296,8 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, isMob
       onSubmitOrder={onSubmitOrder}
       loading={loading}
       externalPrice={externalPrice}
+      signedIn={signedIn}
+      onRequestSignIn={onRequestSignIn}
     />
   );
 

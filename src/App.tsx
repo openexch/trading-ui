@@ -8,7 +8,10 @@ import { useMarketStats } from './hooks/useMarketStats';
 import { useClusterState } from './hooks/useClusterState';
 import { useApi } from './hooks/useApi';
 import { useOrders } from './hooks/useOrders';
+import { useOmsSocket } from './hooks/useOmsSocket';
 import { useTheme } from './hooks/useTheme';
+import { useAuth } from './auth/AuthContext';
+import { AuthModal } from './components/Auth/AuthModal';
 import { OrderBook } from './components/OrderBook/OrderBook';
 import { TradeList } from './components/Trades/TradeList';
 import { Chart } from './components/Chart/Chart';
@@ -23,7 +26,7 @@ import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
 import { BackgroundFX } from './components/BackgroundFX';
 import { AdminPage } from './pages/AdminPage';
-import type { WebSocketMessage, Market, OrderRequest, UserOrder, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage, OrderStatusBatchMessage } from './types/market';
+import type { WebSocketMessage, Market, OrderRequest, UserOrder, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
 
 // Mobile detection hook
@@ -56,6 +59,8 @@ const Icons = {
 function MarketPage() {
   const isMobile = useIsMobile();
   const { theme, toggle: toggleTheme } = useTheme();
+  const { session, logout } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedMarket, setSelectedMarket] = useState<Market>(MARKETS[0]);
   const selectedMarketIdRef = useRef(selectedMarket.id);
 
@@ -83,16 +88,17 @@ function MarketPage() {
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
   const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
   const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
-  const { openOrders, handleOrderStatusBatch, resetOrders, removeOrder } = useOrders();
+  const { openOrders, handleOrderEvent, seedOpenOrders, resetOrders, removeOrder } = useOrders();
 
+  // Market-plane reset (reconnect / market switch). User orders live on the
+  // OMS plane now and are reset on session change instead.
   const resetAllState = useCallback(() => {
     resetOrderBook();
     resetTrades();
     resetStats();
-    resetOrders();
     setCandles([]);
     setCurrentCandle(null);
-  }, [resetOrderBook, resetTrades, resetStats, resetOrders]);
+  }, [resetOrderBook, resetTrades, resetStats]);
 
   const handleReconnecting = useCallback(() => {
     resetAllState();
@@ -119,10 +125,6 @@ function MarketPage() {
             handleTradesBatch(message);
             handleTrades(message.trades);
           }
-          break;
-        case 'ORDER_STATUS':
-        case 'ORDER_STATUS_BATCH':
-          handleOrderStatusBatch(message as OrderStatusBatchMessage);
           break;
         case 'SUBSCRIPTION_CONFIRMED':
           break;
@@ -189,8 +191,7 @@ function MarketPage() {
       }
     },
     [handleBookSnapshot, handleBookDelta, handleTradesBatch, setStats,
-     handleBookUpdate, handleTrades, handleClusterStatus, handleClusterEvent,
-     handleOrderStatusBatch]
+     handleBookUpdate, handleTrades, handleClusterStatus, handleClusterEvent]
   );
 
   const { status, forceReconnect, requestRefresh } = useWebSocket({
@@ -200,6 +201,22 @@ function MarketPage() {
     onReconnected: handleReconnected,
   });
   requestRefreshRef.current = requestRefresh;
+
+  // User-scoped OMS socket (oms#72): connects only while signed in; each
+  // (re)connect re-seeds open orders from REST (the WS stream then wins).
+  const sessionToken = session?.token ?? null;
+  useOmsSocket({
+    token: sessionToken,
+    onOrderEvent: handleOrderEvent,
+    onConnected: seedOpenOrders,
+  });
+
+  // Session change: drop the previous principal's orders; seed the new one's
+  // immediately (the socket's onConnected covers later reconnects).
+  useEffect(() => {
+    resetOrders();
+    if (sessionToken) seedOpenOrders();
+  }, [sessionToken, resetOrders, seedOpenOrders]);
 
   // Self-heal a thin book: with delta-fed state, drops or seams can leave
   // the rendered book short; if either side stays under 18 levels for 5s
@@ -278,7 +295,7 @@ function MarketPage() {
     if (!order.omsOrderId) return; // not OMS-managed; nothing we can cancel
     const result = await cancelOrder(order.omsOrderId);
     if (result.success) {
-      removeOrder(order.orderId);
+      removeOrder(order.omsOrderId);
     }
   }, [cancelOrder, removeOrder]);
 
@@ -337,6 +354,27 @@ function MarketPage() {
           )}
         </div>
         <div className="flex items-center gap-2.5">
+          {session ? (
+            <div className="flex h-8 items-center gap-2 rounded-md border border-hairline bg-surface-2 pl-2.5 pr-1.5">
+              <span className="max-w-[120px] truncate text-xs font-medium text-text" title={session.username}>
+                {session.username}
+              </span>
+              <button
+                onClick={logout}
+                title="Sign out"
+                className="rounded-sm px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-3 hover:text-text"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="h-8 rounded-md border border-hairline bg-surface-2 px-3 text-xs font-medium text-text transition-colors hover:bg-surface-3"
+            >
+              Sign in
+            </button>
+          )}
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
           {!isMobile && (
             <Link
@@ -433,14 +471,22 @@ function MarketPage() {
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {bottomTab === 'order' && (
-                  <OrderForm market={selectedMarket} bestBid={bestBid} bestAsk={bestAsk} onSubmitOrder={handleSubmitOrder} loading={apiLoading} externalPrice={clickedPrice} />
+                  <OrderForm market={selectedMarket} bestBid={bestBid} bestAsk={bestAsk} onSubmitOrder={handleSubmitOrder} loading={apiLoading} externalPrice={clickedPrice} signedIn={!!session} onRequestSignIn={() => setShowAuthModal(true)} />
                 )}
                 {bottomTab === 'orders' && (
-                  <OpenOrders orders={openOrders} onCancelOrder={handleCancelOrder} onReplaceOrder={handleReplaceOrder} loading={apiLoading} />
+                  session ? (
+                    <OpenOrders orders={openOrders} onCancelOrder={handleCancelOrder} onReplaceOrder={handleReplaceOrder} loading={apiLoading} />
+                  ) : (
+                    <SignInPrompt what="your orders" onSignIn={() => setShowAuthModal(true)} />
+                  )
                 )}
-                {bottomTab === 'history' && <OrderHistory market={selectedMarket} />}
+                {bottomTab === 'history' && (
+                  session ? <OrderHistory market={selectedMarket} /> : <SignInPrompt what="your history" onSignIn={() => setShowAuthModal(true)} />
+                )}
                 {bottomTab === 'trades' && <TradeList trades={trades} />}
-                {bottomTab === 'account' && <AccountPanel />}
+                {bottomTab === 'account' && (
+                  session ? <AccountPanel /> : <SignInPrompt what="your account" onSignIn={() => setShowAuthModal(true)} />
+                )}
               </div>
             </div>
           ) : (
@@ -510,10 +556,15 @@ function MarketPage() {
               externalPrice={clickedPrice}
               isMobile
               defaultSide={mobileOrderSide}
+              signedIn={!!session}
+              onRequestSignIn={() => setShowAuthModal(true)}
             />
           </div>
         </div>
       )}
+
+      {/* Sign in / register modal */}
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
 
       {/* ── Footer ── */}
       {!isMobile && (
@@ -541,6 +592,21 @@ function MarketPage() {
 /** Active-tab underline accent. */
 function Underline() {
   return <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-t bg-accent" />;
+}
+
+/** Centered sign-in nudge for the user-scoped tab panels. */
+function SignInPrompt({ what, onSignIn }: { what: string; onSignIn: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 py-8">
+      <span className="text-[12px] text-muted">Sign in to see {what}</span>
+      <button
+        onClick={onSignIn}
+        className="rounded-md bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent transition-colors hover:bg-accent-hover"
+      >
+        Sign in
+      </button>
+    </div>
+  );
 }
 
 function App() {

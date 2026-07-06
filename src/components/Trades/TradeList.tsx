@@ -41,14 +41,21 @@ export function TradeList({ trades }: TradeListProps) {
           </div>
         ) : (
           trades.map((trade, index) => {
-            const isBuyDominant = trade.buyCount > trade.sellCount;
+            // Taker side when the gateway provides it (market WS v5+);
+            // otherwise a tick test against the previous trade IN TIME.
+            // The tape is newest-first, so previous-in-time is the NEXT
+            // element; oldest row and equal prices read as up-ticks.
+            const prev = trades[index + 1];
+            const isBuy = trade.side != null
+              ? trade.side === 'BUY'
+              : prev == null || trade.price >= prev.price;
             return (
               <div
                 key={`${trade.timestamp}-${index}`}
                 className="grid animate-fade-in grid-cols-[1fr_1fr_70px] gap-1.5 px-4 py-1 font-mono text-[11.5px] leading-[1.9] tabular-nums transition-colors hover:bg-surface-2"
               >
                 <span
-                  className={`font-medium ${isBuyDominant ? 'text-buy' : 'text-sell'}`}
+                  className={`font-medium ${isBuy ? 'text-buy' : 'text-sell'}`}
                 >
                   ${formatPrice(trade.price)}
                 </span>

@@ -92,7 +92,7 @@ export function OpenOrders({ orders, onCancelOrder, onReplaceOrder, loading }: O
                 const editing = editingId === order.orderId;
                 const canEdit = EDITABLE.has(order.status);
                 return (
-                  <tr key={order.orderId} className="border-b border-hairline/60 hover:bg-surface-2">
+                  <tr key={order.omsOrderId || order.orderId} className="border-b border-hairline/60 hover:bg-surface-2">
                     <td className={`${td} font-mono tabular-nums text-faint`}>{formatTime(order.timestamp)}</td>
                     <td className={`${td} font-mono text-muted`}>{order.market}</td>
                     <td className={`${td} font-medium ${order.side === 'BID' ? 'text-buy' : 'text-sell'}`}>
