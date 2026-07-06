@@ -55,7 +55,6 @@ interface OperationProgress {
   totalSteps: number;
   complete: boolean;
   error: boolean;
-  errorMessage: string | null;
   elapsedMs: number;
 }
 
@@ -91,7 +90,8 @@ type LogSource =
 type ConfirmAction = {
   type: 'stop-node' | 'restart-node' | 'start-node' |
         'process-action' | 'self-update' |
-        'rolling-update' | 'rolling-cleanup' | 'stop-all-nodes' | 'start-all-nodes' | 'cleanup';
+        'rolling-update' | 'housekeeping' | 'housekeeping-force' |
+        'stop-all-nodes' | 'start-all-nodes' | 'cleanup';
   nodeId?: number;
   service?: string;
   action?: 'start' | 'stop' | 'restart';
@@ -276,11 +276,11 @@ function getClusterStatus(progress: OperationProgress | null, nodes: NodeStatus[
     };
   }
 
-  if (progress?.operation === 'rolling-cleanup' && !progress.complete) {
+  if (progress?.operation === 'housekeeping' && !progress.complete) {
     return {
       status: 'updating',
-      title: 'Rolling Cleanup',
-      detail: progress.status || 'Cleaning archive...'
+      title: 'Archive Housekeeping',
+      detail: progress.status || 'Purging log segments below latest snapshot...'
     };
   }
 
@@ -711,26 +711,42 @@ export function AdminPage() {
     }
   };
 
-  const requestRollingCleanup = () => {
+  const requestHousekeeping = () => {
     if (progress?.operation && !progress.complete) return;
     setPendingAction({
-      type: 'rolling-cleanup',
-      title: 'Start Rolling Cleanup?',
-      message: 'This will clean archive segments on each node one by one to free disk space. The cluster will remain available during the cleanup.',
-      confirmLabel: 'Start Cleanup',
+      type: 'housekeeping',
+      title: 'Start Archive Housekeeping?',
+      message: 'Reclaims archive disk on the live cluster by purging log segments below the latest snapshot. Live-safe; refused if any node is down or lagging.',
+      confirmLabel: 'Start Housekeeping',
       confirmStyle: 'warning',
     });
   };
 
-  const executeRollingCleanup = async () => {
+  const executeHousekeeping = async (force: boolean) => {
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/rolling-cleanup`, { method: 'POST' });
+      const response = await fetch(`${ADMIN_BASE}/api/admin/housekeeping`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(force ? { force: true } : {}),
+      });
       if (!response.ok) {
         const data = await response.json();
-        setError(data.error || 'Rolling cleanup failed');
+        if (response.status === 409 && !force && data.error) {
+          // The lag guard refused (a node is down/lagging — purging would
+          // strand it). Offer an explicit, clearly-dangerous override.
+          setPendingAction({
+            type: 'housekeeping-force',
+            title: 'Housekeeping Refused — Force?',
+            message: `The server refused: ${data.error}. Forcing while a member is down or lagging can strand it permanently. Only continue if you know why.`,
+            confirmLabel: 'Force Housekeeping',
+            confirmStyle: 'danger',
+          });
+          return;
+        }
+        setError(data.error || 'Housekeeping failed');
       }
     } catch {
-      setError('Failed to trigger rolling cleanup');
+      setError('Failed to trigger housekeeping');
     }
   };
 
@@ -792,8 +808,11 @@ export function AdminPage() {
       case 'rolling-update':
         await executeRollingUpdate();
         break;
-      case 'rolling-cleanup':
-        await executeRollingCleanup();
+      case 'housekeeping':
+        await executeHousekeeping(false);
+        break;
+      case 'housekeeping-force':
+        await executeHousekeeping(true);
         break;
       case 'stop-all-nodes':
         await executeStopAllNodes();
@@ -976,11 +995,11 @@ export function AdminPage() {
                       </button>
                       <button
                         className="flex items-center gap-1.5 rounded-md border border-hairline bg-surface px-3.5 py-1.5 text-[12px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-35 [&_svg]:h-3.5 [&_svg]:w-3.5"
-                        onClick={requestRollingCleanup}
+                        onClick={requestHousekeeping}
                         disabled={isOperationRunning}
                       >
                         {Icons.archive}
-                        <span>Rolling Cleanup</span>
+                        <span>Housekeeping</span>
                       </button>
                     </div>
                   )}
