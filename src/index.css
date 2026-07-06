@@ -9,17 +9,18 @@
    Semantic vars flip between themes; mapped into Tailwind below.
    ================================================================ */
 :root {
-  /* Surfaces — Light (paper) */
-  --bg: #fbfaf7;
+  /* Surfaces — Light (instrument paper): cool gray-blue rather than warm
+     cream, so both themes share the same blue undertone. */
+  --bg: #f6f7fa;
   --surface: #ffffff;
-  --surface-2: #f4f2ec;
-  --surface-3: #ece8de;
-  --text: #14110e;
-  --text-strong: #000000;
-  --muted: #6b6256;
-  --faint: #7a7164;
-  --hairline: #e7e3d8;
-  --hairline-strong: #d8d2c4;
+  --surface-2: #f0f2f6;
+  --surface-3: #e6e9f0;
+  --text: #16191f;
+  --text-strong: #05070a;
+  --muted: #5c6470;
+  --faint: #6e7683;
+  --hairline: #e3e7ee;
+  --hairline-strong: #d1d7e2;
 
   /* Signature accent — logo blue, theme-aware for WCAG AA (deep in light,
      bright in dark). --on-accent is the readable text color on a solid fill. */
@@ -31,7 +32,7 @@
 
   /* Decorative background FX (subtle, derived from accent) */
   --glow: color-mix(in srgb, var(--accent) 16%, transparent);
-  --grid-dot: rgba(20, 17, 14, 0.05);
+  --grid-dot: rgba(30, 60, 120, 0.05);
 
   /* Trade semantics */
   --buy: #16a36a;
@@ -49,17 +50,19 @@
 }
 
 .dark {
-  /* Surfaces — Dark (ink) */
-  --bg: #121316;
-  --surface: #181a1e;
-  --surface-2: #1f2228;
-  --surface-3: #282c34;
-  --text: #ededf0;
+  /* Surfaces — Dark (brand ink): a blue undertone from the logo runs through
+     every surface and hairline, so the terminal reads as Open Exchange even
+     with zero decoration. */
+  --bg: #0c1017;
+  --surface: #10151d;
+  --surface-2: #161c26;
+  --surface-3: #1e2735;
+  --text: #e8ecf4;
   --text-strong: #ffffff;
-  --muted: #8a8e99;
-  --faint: #82868f;
-  --hairline: rgba(255, 255, 255, 0.07);
-  --hairline-strong: rgba(255, 255, 255, 0.14);
+  --muted: #8b95a7;
+  --faint: #7d8698;
+  --hairline: rgba(140, 170, 255, 0.09);
+  --hairline-strong: rgba(140, 170, 255, 0.18);
 
   --accent: #5b9bff;
   --accent-hover: #87b4ff;
@@ -69,12 +72,14 @@
 
   /* Decorative background FX (subtle, derived from accent) */
   --glow: color-mix(in srgb, var(--accent) 24%, transparent);
-  --grid-dot: rgba(255, 255, 255, 0.05);
+  --grid-dot: rgba(140, 170, 255, 0.05);
 
-  --buy: #4fb286;
-  --buy-soft: rgba(79, 178, 134, 0.12);
-  --sell: #e06c5a;
-  --sell-soft: rgba(224, 108, 90, 0.12);
+  /* Trade colors carry the energy of the tape — brighter than the muted
+     v1 pair, still AA on the ink surfaces. */
+  --buy: #35c98a;
+  --buy-soft: rgba(53, 201, 138, 0.13);
+  --sell: #f2635a;
+  --sell-soft: rgba(242, 99, 90, 0.13);
   --warn: #e8a13c;
   --warn-soft: rgba(232, 161, 60, 0.14);
 

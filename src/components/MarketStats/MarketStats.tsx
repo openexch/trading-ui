@@ -66,11 +66,20 @@ export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
         </div>
         <div className="flex flex-col">
           <span
-            className={`font-mono text-xl font-semibold tabular-nums leading-none transition-colors ${
+            className={`flex items-baseline gap-1.5 font-display text-[26px] font-bold tabular-nums leading-none tracking-tight transition-colors ${
               tick === 'up' ? 'text-buy' : tick === 'down' ? 'text-sell' : 'text-text-strong'
             }`}
           >
-            {lastPrice !== null ? `$${formatPrice(lastPrice)}` : <Pending />}
+            {lastPrice !== null ? (
+              <>
+                {tick && (
+                  <span aria-hidden className="text-[13px] leading-none">
+                    {tick === 'up' ? '\u25b2' : '\u25bc'}
+                  </span>
+                )}
+                {`$${formatPrice(lastPrice)}`}
+              </>
+            ) : <Pending />}
           </span>
           {stats ? (
             <span className={`mt-0.5 font-mono text-xs font-medium tabular-nums ${isPositive ? 'text-buy' : 'text-sell'}`}>
