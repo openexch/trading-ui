@@ -38,14 +38,17 @@ export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
   // Directional tick flash on price change.
   const prevPrice = useRef(lastPrice);
   const [tick, setTick] = useState<'up' | 'down' | null>(null);
+  // Direction of the LAST move — persistent, so the arrow never appears and
+  // disappears (that made the whole price jitter sideways every tick).
+  const [dir, setDir] = useState<'up' | 'down' | null>(null);
   useEffect(() => {
     if (lastPrice === null) {
       prevPrice.current = null;
       return;
     }
     if (prevPrice.current !== null) {
-      if (lastPrice > prevPrice.current) setTick('up');
-      else if (lastPrice < prevPrice.current) setTick('down');
+      if (lastPrice > prevPrice.current) { setTick('up'); setDir('up'); }
+      else if (lastPrice < prevPrice.current) { setTick('down'); setDir('down'); }
     }
     prevPrice.current = lastPrice;
     const id = window.setTimeout(() => setTick(null), 500);
@@ -72,11 +75,14 @@ export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
           >
             {lastPrice !== null ? (
               <>
-                {tick && (
-                  <span aria-hidden className="text-[13px] leading-none">
-                    {tick === 'up' ? '\u25b2' : '\u25bc'}
-                  </span>
-                )}
+                <span
+                  aria-hidden
+                  className={`w-[13px] text-[13px] leading-none transition-opacity ${
+                    dir ? (dir === 'up' ? 'text-buy' : 'text-sell') : 'opacity-0'
+                  }`}
+                >
+                  {dir === 'down' ? '\u25bc' : '\u25b2'}
+                </span>
                 {`$${formatPrice(lastPrice)}`}
               </>
             ) : <Pending />}
