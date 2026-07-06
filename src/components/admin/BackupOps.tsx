@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useBackupOps, type RecoverResult } from '../../hooks/useBackupOps';
 import { ConfirmModal } from './ConfirmModal';
+import { useToast } from './Toasts';
 
 function Pill({ ok, label, title, alert }: { ok: boolean; label: string; title?: string; alert?: boolean }) {
   // alert renders the not-ok state as a genuine warning (sell tint) instead
@@ -31,9 +32,9 @@ function Card({ title, children, action }: { title: string; children: React.Reac
 
 export function BackupOps() {
   const { autoSnapshot, backupInfo, loading, error, refresh, enableAutoSnapshot, disableAutoSnapshot, takeSnapshot, recover } = useBackupOps();
+  const toast = useToast();
 
   const [interval, setIntervalMin] = useState('30');
-  const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Recovery state
@@ -42,8 +43,7 @@ export function BackupOps() {
   const [confirmRecover, setConfirmRecover] = useState(false);
 
   const flash = (ok: boolean, text: string) => {
-    setBanner({ ok, text });
-    setTimeout(() => setBanner(null), 4000);
+    toast({ tone: ok ? 'success' : 'error', text });
   };
 
   const run = async (fn: () => Promise<{ success: boolean; message: string }>) => {
@@ -76,11 +76,6 @@ export function BackupOps() {
 
   return (
     <div className="flex flex-col gap-4">
-      {banner && (
-        <div className={`rounded-md px-3 py-2 text-[13px] ${banner.ok ? 'bg-buy-soft text-buy' : 'bg-sell-soft text-sell'}`}>
-          {banner.text}
-        </div>
-      )}
       {error && <div className="rounded-md bg-sell-soft px-3 py-2 text-[13px] text-sell">{error}</div>}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
