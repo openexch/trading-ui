@@ -96,3 +96,73 @@ deliberate flourish.
 - Engine price grid + snapping: `src/types/market.ts`, `src/utils/ticks.ts`
 - Balances context: `src/hooks/useBalances.tsx`
 - Account slide-over: `src/components/Account/AccountDrawer.tsx`
+
+## Admin console (`/admin`)
+
+The 2026-07-06 admin polish pass (PRs #52–#55) applied the same doctrine to
+the operator console. Same rules: identity from materials, no ornamental FX,
+data loud and chrome quiet.
+
+### Signature element: the cluster rail
+
+The admin mirror of the ticker rail (`ClusterStatusBar.tsx`). Fixed-height
+(64px) surface; a state-toned `border-l-2` rule + status dot + display-face
+hero title ("Cluster Healthy") on the left; tabular stat tiles (Nodes,
+Leader, Services, Memory, Commit) in the middle; cluster operations on the
+right. Invariants:
+
+- The thin hairline across the rail's top edge is the **operation progress
+  bar** — it is data, not ornament. Keep it.
+- The operations slot is **reserved-width**: Rolling Update / Housekeeping
+  buttons swap with the operation percent without the rail ever resizing.
+- The rail chrome mounts immediately; tiles render pulsing dashes until
+  data arrives. The rail itself must **never** swap with a skeleton.
+
+### State → color semantics
+
+`components/admin/status.ts` is the single source. buy = healthy/leader/
+running; **followers are quiet-healthy** (buy dot, buy-soft badge, hairline
+card rule — the leader keeps the loud buy rule; a healthy cluster must read
+all-green at a glance); warn is **reserved for transitional** states
+(starting/rejoining/election); sell = failed/stopping; faint =
+offline/stopped; accent = operation in progress. Do not map a steady state
+to warn again — amber followers made a healthy cluster look half-broken.
+
+### Confirmation
+
+All mutating admin actions confirm through the one `ConfirmModal`
+(tri-tone soft treatment: danger=sell, warning=warn, primary=buy — tinted
+surface + toned text, never a solid fill). The housekeeping 409 → force
+re-prompt is a **safety flow**: the server's refusal is quoted and the
+override is a second, explicitly dangerous confirm. Never collapse it into
+one step.
+
+### Notifications
+
+- Action results are overlay **toasts** (`Toasts.tsx`, bottom-right,
+  stable monotonic keys, sticky for errors). Never a layout-shifting
+  banner.
+- Connectivity is **persistent state**, not an event: the reserved-width
+  gateway pill in the header (live / degraded / down). Poll failures must
+  never emit per-tick toasts, and data stays on screen through an outage —
+  the pill carries the bad news.
+- Field-validation errors stay inline next to the field, persistent until
+  the input changes.
+
+### Anti-flicker (the trading-page lessons, applied)
+
+- Event feed rows keep stable `seq` keys, no per-row mount animation.
+- Node/service cards always render their stats rows — stopped processes
+  show dashes; a card never changes height because a process died.
+- Skeletons only for never-loaded (`null`); loaded-and-empty renders a
+  quiet notice. Never re-show skeletons over data.
+- A stale operation must never wedge the console: empty progress frames
+  clear an incomplete op, and `/progress` is re-checked while an operation
+  looks active (the 71%-stuck-rail bug).
+
+### Where things live
+
+- Sections: `src/components/admin/{ClusterStatusBar,NodesSection,ServicesSection,LogViewer,EventFeed,RiskAdmin,BackupOps}.tsx`
+- Primitives: `src/components/admin/{ConfirmModal,Toasts}.tsx`, shared icons in `src/components/Icons.tsx`
+- Semantics/shapes/format: `src/components/admin/{status,types,format,buttonStyles}.ts`
+- Page state + fetch/SSE wiring: `src/pages/AdminPage.tsx` (+ `src/hooks/useAdminEvents.ts`)
