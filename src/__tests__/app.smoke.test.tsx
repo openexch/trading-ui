@@ -18,6 +18,7 @@ vi.mock('../components/Chart/Chart', () => ({
 }));
 
 import App from '../App';
+import { AuthProvider } from '../auth/AuthContext';
 
 // ---- jsdom gaps -----------------------------------------------------------
 
@@ -28,13 +29,15 @@ class MockWebSocket {
   static CLOSED = 3;
   static instances: MockWebSocket[] = [];
   url: string;
+  protocols?: string | string[];
   readyState = 0; // CONNECTING forever — the app must still render
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = protocols;
     MockWebSocket.instances.push(this);
   }
   send() {}
@@ -63,8 +66,12 @@ function stubFetch() {
     let body: unknown = {};
     if (url.includes('/api/v1/orders') && init?.method === 'POST') {
       body = { accepted: true, omsOrderId: '331911111111111111', status: 'PENDING_NEW' };
+    } else if (url.includes('/api/v1/auth/me')) {
+      body = { userId: 1, username: 'dev' };
+    } else if (url.includes('/api/v1/orders/history') || url.includes('/api/v1/executions')) {
+      body = []; // terminal history / fills
     } else if (url.includes('/api/v1/orders')) {
-      body = []; // open orders / history queries
+      body = []; // active (open) orders seed
     } else if (url.includes('/api/v1/accounts')) {
       body = { userId: 1, assets: [] };
     } else if (url.includes('/api/candles')) {
@@ -97,26 +104,39 @@ describe('App smoke', () => {
     } as unknown as typeof ResizeObserver;
     stubMatchMedia();
     fetchStub = stubFetch();
+    // VITE_AUTH_TOKEN is not set under vitest; a stored session stands in for
+    // it. Token-safe (non-dev:) so /auth/me validation (stubbed 200) and the
+    // bearer-subprotocol path are both exercised (oms#72).
+    localStorage.clear();
+    localStorage.setItem('oe.session', JSON.stringify({ token: 'smoketoken1', userId: 1, username: 'dev' }));
   });
 
-  it('mounts the trading page and opens a market-data socket', async () => {
+  it('mounts the trading page and opens market-data + OMS sockets', async () => {
     render(
       <MemoryRouter>
-        <App />
+        <AuthProvider>
+          <App />
+        </AuthProvider>
       </MemoryRouter>
     );
 
     // Order form is up for the default market (BTC-USD)
     expect(await screen.findByRole('button', { name: /buy btc/i })).toBeTruthy();
-    // Market-data WS was opened
-    expect(MockWebSocket.instances.length).toBeGreaterThan(0);
-    expect(MockWebSocket.instances[0].url).toContain('/ws');
+    // Market-data WS was opened, plus the user-scoped OMS socket (oms#72)
+    const urls = MockWebSocket.instances.map((ws) => ws.url);
+    expect(urls.some((u) => u.endsWith('/ws'))).toBe(true);
+    const oms = MockWebSocket.instances.find((ws) => ws.url.endsWith('/ws/v1'));
+    expect(oms, 'expected an OMS /ws/v1 socket').toBeTruthy();
+    // Auth rides the subprotocol: ['bearer', <token>]
+    expect(oms!.protocols).toEqual(['bearer', 'smoketoken1']);
   });
 
   it('submits a limit order to the OMS with exact money strings and no userId', async () => {
     const { container } = render(
       <MemoryRouter>
-        <App />
+        <AuthProvider>
+          <App />
+        </AuthProvider>
       </MemoryRouter>
     );
 

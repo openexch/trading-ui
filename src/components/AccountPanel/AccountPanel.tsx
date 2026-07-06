@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState, useEffect, useCallback } from 'react';
 import { formatPrice } from '../../utils/formatters';
-import { AUTH_HEADERS, DEMO_USER_ID } from '../../config';
-
-const API_BASE = import.meta.env.VITE_ORDER_API_URL || '';
-// Path segment only — identity is enforced from the auth token (oms#36).
-const USER_ID = DEMO_USER_ID;
+import { API_BASE, getAuthHeaders } from '../../config';
+import { useAuth } from '../../auth/AuthContext';
 
 interface AssetBalance {
   asset: string;
@@ -21,6 +18,8 @@ interface AccountData {
 }
 
 export function AccountPanel() {
+  // Path segment only — identity is enforced from the auth token (oms#36/#72).
+  const userId = useAuth().session?.userId ?? null;
   const [account, setAccount] = useState<AccountData | null>(null);
   const [loading, setLoading] = useState(false);
   const [depositAsset, setDepositAsset] = useState(1); // USD
@@ -28,8 +27,9 @@ export function AccountPanel() {
   const [actionMsg, setActionMsg] = useState('');
 
   const fetchAccount = useCallback(async () => {
+    if (userId === null) return; // signed out: nothing to fetch
     try {
-      const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}`, { headers: AUTH_HEADERS });
+      const res = await fetch(`${API_BASE}/api/v1/accounts/${userId}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         // Balances cross as exact decimal strings (oms#39)
@@ -46,24 +46,28 @@ export function AccountPanel() {
     } catch (e) {
       console.error('Failed to fetch account:', e);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
+    if (userId === null) {
+      setAccount(null);
+      return;
+    }
     fetchAccount();
     const interval = setInterval(fetchAccount, 5000);
     return () => clearInterval(interval);
-  }, [fetchAccount]);
+  }, [fetchAccount, userId]);
 
   const handleDeposit = useCallback(async () => {
     const amount = parseFloat(depositAmount);
-    if (isNaN(amount) || amount <= 0) return;
+    if (isNaN(amount) || amount <= 0 || userId === null) return;
 
     setLoading(true);
     setActionMsg('');
     try {
-      const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}/deposit`, {
+      const res = await fetch(`${API_BASE}/api/v1/accounts/${userId}/deposit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ assetId: depositAsset, amount: amount.toFixed(8) }),
       });
       if (res.ok) {
@@ -78,18 +82,18 @@ export function AccountPanel() {
       setActionMsg('Network error');
     }
     setLoading(false);
-  }, [depositAsset, depositAmount, fetchAccount]);
+  }, [depositAsset, depositAmount, fetchAccount, userId]);
 
   const handleWithdraw = useCallback(async () => {
     const amount = parseFloat(depositAmount);
-    if (isNaN(amount) || amount <= 0) return;
+    if (isNaN(amount) || amount <= 0 || userId === null) return;
 
     setLoading(true);
     setActionMsg('');
     try {
-      const res = await fetch(`${API_BASE}/api/v1/accounts/${USER_ID}/withdraw`, {
+      const res = await fetch(`${API_BASE}/api/v1/accounts/${userId}/withdraw`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ assetId: depositAsset, amount: amount.toFixed(8) }),
       });
       if (res.ok) {
@@ -104,7 +108,7 @@ export function AccountPanel() {
       setActionMsg('Network error');
     }
     setLoading(false);
-  }, [depositAsset, depositAmount, fetchAccount]);
+  }, [depositAsset, depositAmount, fetchAccount, userId]);
 
   const ASSETS = [
     { id: 1, name: 'USD' },

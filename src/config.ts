@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-// Dev bearer token for the OMS dev auth provider (oms#36). The backend derives
-// the caller's identity from it; request bodies and query strings no longer
-// carry a userId. Point VITE_AUTH_TOKEN at a real API key / JWT when the OMS
-// runs in api-key or jwt mode.
-export const AUTH_TOKEN: string = import.meta.env.VITE_AUTH_TOKEN || 'dev:1';
+import { getSession } from './auth/session';
 
-export const AUTH_HEADERS: Record<string, string> = {
-  Authorization: `Bearer ${AUTH_TOKEN}`,
-};
+/** OMS REST base ('' in dev; the Vite proxy forwards /api/v1 to :8080). */
+export const API_BASE: string = import.meta.env.VITE_ORDER_API_URL || '';
 
-// The user the dev token maps to — used only for URL paths and display,
-// never sent in request payloads.
-export const DEMO_USER_ID: number = (() => {
-  const m = /^dev:(\d+)$/.exec(AUTH_TOKEN);
-  return m ? Number(m[1]) : 1;
-})();
+/** Authorization header for OMS calls; empty when signed out (oms#72). The
+ *  backend derives the caller's identity from the bearer token; request
+ *  bodies and query strings never carry a userId. */
+export function getAuthHeaders(): Record<string, string> {
+  const session = getSession();
+  return session ? { Authorization: `Bearer ${session.token}` } : {};
+}
+
+/** The signed-in user's id (URL paths and display only, never sent in
+ *  request payloads) or null when signed out. */
+export function getCurrentUserId(): number | null {
+  return getSession()?.userId ?? null;
+}

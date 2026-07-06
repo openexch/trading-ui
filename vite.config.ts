@@ -13,6 +13,13 @@ export default defineConfig({
   server: {
     port: 80,
     proxy: {
+      // OMS user-scoped socket (oms#72). Listed BEFORE '/ws': Vite matches
+      // proxy contexts in key order, so '/ws/v1' must win over the market
+      // gateway's '/ws' prefix.
+      '/ws/v1': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
       '/ws': {
         target: 'ws://localhost:8081',
         ws: true,
@@ -35,6 +42,11 @@ export default defineConfig({
     port: 80,
     allowedHosts: ['trade.openexch.io', 'localhost'],
     proxy: {
+      // Keep in sync with server.proxy above ('/ws/v1' before '/ws').
+      '/ws/v1': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
       '/ws': {
         target: 'ws://localhost:8081',
         ws: true,
