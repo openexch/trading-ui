@@ -40,6 +40,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+// A scrolling panel over a focused number input silently changes its value
+// (native wheel-to-step) — blur instead so scrolling never edits an order.
+const blurOnWheel = (e: React.WheelEvent<HTMLInputElement>) => e.currentTarget.blur();
+
 function Suffix({ children }: { children: React.ReactNode }) {
   return (
     <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[11px] text-faint">
@@ -183,6 +187,7 @@ function OrderSideForm({
         <Field label={`Price · tick ${tickLabel(market)}`}>
           <input
             type="number"
+            onWheel={blurOnWheel}
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             onBlur={handlePriceBlur}
@@ -199,27 +204,27 @@ function OrderSideForm({
 
       {needsStopPrice(orderType) && (
         <Field label="Stop Price">
-          <input type="number" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} placeholder="0.00" step="0.01" min="0" disabled={!signedIn} className={inputClass} />
+          <input type="number" onWheel={blurOnWheel} value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} placeholder="0.00" step="0.01" min="0" disabled={!signedIn} className={inputClass} />
           <Suffix>{market.quoteAsset}</Suffix>
         </Field>
       )}
 
       {needsTrailingDelta(orderType) && (
         <Field label="Trailing Delta">
-          <input type="number" value={trailingDelta} onChange={(e) => setTrailingDelta(e.target.value)} placeholder="0.00" step="0.01" min="0" disabled={!signedIn} className={inputClass} />
+          <input type="number" onWheel={blurOnWheel} value={trailingDelta} onChange={(e) => setTrailingDelta(e.target.value)} placeholder="0.00" step="0.01" min="0" disabled={!signedIn} className={inputClass} />
           <Suffix>{market.quoteAsset}</Suffix>
         </Field>
       )}
 
       {needsDisplayQty(orderType) && (
         <Field label="Visible Qty">
-          <input type="number" value={displayQuantity} onChange={(e) => setDisplayQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" disabled={!signedIn} className={inputClass} />
+          <input type="number" onWheel={blurOnWheel} value={displayQuantity} onChange={(e) => setDisplayQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" disabled={!signedIn} className={inputClass} />
           <Suffix>{market.baseAsset}</Suffix>
         </Field>
       )}
 
       <Field label="Amount">
-        <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" disabled={!signedIn} className={inputClass} />
+        <input type="number" onWheel={blurOnWheel} value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" step="0.00000001" min="0" disabled={!signedIn} className={inputClass} />
         <Suffix>{market.baseAsset}</Suffix>
       </Field>
 

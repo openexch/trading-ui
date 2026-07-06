@@ -180,6 +180,7 @@ export function AccountPanel() {
         </select>
         <input
           type="number"
+          onWheel={(e) => e.currentTarget.blur()}
           placeholder="Amount"
           value={depositAmount}
           onChange={e => setDepositAmount(e.target.value)}
