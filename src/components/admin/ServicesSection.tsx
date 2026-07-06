@@ -9,7 +9,8 @@ import { iconBtnStop, iconBtnRestart, iconBtnStart, iconBtnAccent, iconBtnLogs }
 import type { LogSource, ProcessInfo } from './types';
 
 interface ServicesSectionProps {
-  processes: ProcessInfo[];
+  /** null = never loaded (skeletons); [] = loaded-and-empty (quiet notice). */
+  processes: ProcessInfo[] | null;
   operatingServices: Set<string>;
   snapshotOp: boolean;
   isOperationRunning: boolean;
@@ -42,7 +43,7 @@ export function ServicesSection({
   onSelfUpdate,
   onViewLogs,
 }: ServicesSectionProps) {
-  const serviceProcesses = processes.filter(p => p.role !== 'cluster');
+  const serviceProcesses = (processes ?? []).filter(p => p.role !== 'cluster');
 
   return (
     <section>
@@ -51,13 +52,15 @@ export function ServicesSection({
         <h2 className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Services</h2>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        {processes.length === 0 ? (
+        {processes === null ? (
           <>
-            <div className="h-[110px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-            <div className="h-[110px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-            <div className="h-[110px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-            <div className="h-[110px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
+            <div className="h-[132px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
+            <div className="h-[132px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
+            <div className="h-[132px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
+            <div className="h-[132px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
           </>
+        ) : serviceProcesses.length === 0 ? (
+          <div className="text-[13px] text-muted">No services registered.</div>
         ) : (
           serviceProcesses.map((proc) => {
             const isOperating = operatingServices.has(proc.name);
@@ -83,14 +86,14 @@ export function ServicesSection({
                   </div>
                   <span className={`h-2 w-2 flex-shrink-0 rounded-full ${procDot}`} />
                 </div>
-                {proc.running && (
-                  <div className="flex flex-wrap gap-3 font-mono text-[10px] tabular-nums text-faint">
-                    <span className="flex items-center gap-1">PID <span className="text-text">{proc.pid}</span></span>
-                    <span className="flex items-center gap-1">Mem <span className="text-text">{formatBytes(proc.memoryBytes)}</span></span>
-                    <span className="flex items-center gap-1">CPU <span className="text-text">{(proc.cpuPercent ?? 0).toFixed(1)}%</span></span>
-                    <span className="flex items-center gap-1">Up <span className="text-text">{formatUptime(proc.uptimeMs)}</span></span>
-                  </div>
-                )}
+                {/* Always rendered — a stopped service shows dashes, the
+                    card never changes height (anti-flicker: reserved rows). */}
+                <div className="flex flex-wrap gap-3 font-mono text-[10px] tabular-nums text-faint">
+                  <span className="flex items-center gap-1">PID <span className="text-text">{proc.running ? proc.pid : '--'}</span></span>
+                  <span className="flex items-center gap-1">Mem <span className="text-text">{proc.running ? formatBytes(proc.memoryBytes) : '--'}</span></span>
+                  <span className="flex items-center gap-1">CPU <span className="text-text">{proc.running ? `${(proc.cpuPercent ?? 0).toFixed(1)}%` : '--'}</span></span>
+                  <span className="flex items-center gap-1">Up <span className="text-text">{proc.running ? formatUptime(proc.uptimeMs) : '--'}</span></span>
+                </div>
                 <div className="flex justify-end gap-1.5">
                   {!isOperating && proc.running ? (
                     <>

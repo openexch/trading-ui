@@ -65,13 +65,15 @@ export function isSameLogSource(selected: LogSource | null, source: LogSource): 
 
 export function getLogLevel(line: string): 'error' | 'warn' | 'info' | 'debug' {
   const lower = line.toLowerCase();
-  if (lower.includes('[error]') || lower.includes('exception') || lower.includes('severe') || lower.includes('failed')) {
+  // Word boundaries on the bare keywords so e.g. "unfailed" or a hex blob
+  // containing "severe" doesn't tint the line; bracketed tags stay exact.
+  if (lower.includes('[error]') || /\bexception\b/.test(lower) || /\bsevere\b/.test(lower) || /\bfailed\b/.test(lower)) {
     return 'error';
   }
-  if (lower.includes('[warn]') || lower.includes('warning')) {
+  if (lower.includes('[warn]') || /\bwarning\b/.test(lower)) {
     return 'warn';
   }
-  if (lower.includes('[info]') || lower.includes('[gateway]') || lower.includes('started') || lower.includes('connected')) {
+  if (lower.includes('[info]') || lower.includes('[gateway]') || /\bstarted\b/.test(lower) || /\bconnected\b/.test(lower)) {
     return 'info';
   }
   return 'debug';

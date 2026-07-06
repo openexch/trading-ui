@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useBackupOps, type RecoverResult } from '../../hooks/useBackupOps';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from './Toasts';
+import type { NodeStatus } from './types';
 
 function Pill({ ok, label, title, alert }: { ok: boolean; label: string; title?: string; alert?: boolean }) {
   // alert renders the not-ok state as a genuine warning (sell tint) instead
@@ -30,7 +31,12 @@ function Card({ title, children, action }: { title: string; children: React.Reac
   );
 }
 
-export function BackupOps() {
+interface BackupOpsProps {
+  /** Live cluster nodes — the recovery target list derives from these. */
+  nodes?: NodeStatus[];
+}
+
+export function BackupOps({ nodes }: BackupOpsProps) {
   const { autoSnapshot, backupInfo, loading, error, refresh, enableAutoSnapshot, disableAutoSnapshot, takeSnapshot, recover } = useBackupOps();
   const toast = useToast();
 
@@ -176,7 +182,14 @@ export function BackupOps() {
               onChange={e => { setRecoverNode(Number(e.target.value)); setDryRunResult(null); }}
               className="rounded-md border border-hairline bg-surface-2 px-2 py-1.5 text-[12px] focus:border-accent focus:outline-none"
             >
-              {[0, 1, 2].map(n => <option key={n} value={n}>Node {n}</option>)}
+              {(nodes && nodes.length > 0 ? nodes.map(n => n.id) : [0, 1, 2]).map(id => {
+                const node = nodes?.find(n => n.id === id);
+                return (
+                  <option key={id} value={id}>
+                    Node {id}{node ? ` — ${node.running ? 'running' : 'stopped'}` : ''}
+                  </option>
+                );
+              })}
             </select>
           </label>
           <button onClick={doDryRun} disabled={busy} className="rounded-md border border-hairline px-3 py-1.5 text-[13px] text-muted hover:border-accent hover:text-accent disabled:opacity-40">
@@ -186,6 +199,12 @@ export function BackupOps() {
             Recover node {recoverNode}
           </button>
         </div>
+
+        {nodes?.find(n => n.id === recoverNode)?.running && (
+          <p className="mt-2 text-[12px] text-warn">
+            Node {recoverNode} is running — stop it first, or recovery will be refused.
+          </p>
+        )}
 
         {dryRunResult && dryRunResult.dryRun && (
           <div className="mt-3 rounded-md border border-hairline bg-surface-2 p-3 text-[12px]">

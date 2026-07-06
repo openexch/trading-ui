@@ -35,14 +35,41 @@ export function AdminPage() {
   );
 }
 
+/**
+ * Gateway connectivity — persistent state in a reserved-width pill, never a
+ * banner (connectivity is not an event). live = REST + stream up;
+ * degraded = REST up, stream down; down = REST unreachable.
+ */
+function GatewayIndicator({ gatewayOk, eventsConnected }: { gatewayOk: boolean; eventsConnected: boolean }) {
+  const state = !gatewayOk ? 'down' : eventsConnected ? 'live' : 'degraded';
+  const DOT: Record<string, string> = {
+    live: 'bg-buy',
+    degraded: 'bg-warn animate-pulse-soft',
+    down: 'bg-sell animate-pulse-soft',
+  };
+  return (
+    <span
+      title={`Admin gateway: ${state === 'live' ? 'connected' : state === 'degraded' ? 'connected, event stream down' : 'unreachable'}`}
+      className="flex w-[110px] flex-shrink-0 items-center justify-end gap-1.5 text-[11px] font-medium text-muted"
+    >
+      <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${DOT[state]}`} />
+      <span className="tabular-nums">{state === 'live' ? 'Gateway' : state === 'degraded' ? 'Degraded' : 'Offline'}</span>
+    </span>
+  );
+}
+
 function AdminConsole() {
   const { theme, toggle } = useTheme();
   const toast = useToast();
   const [tab, setTab] = useState<AdminTab>('cluster');
   const [status, setStatus] = useState<ClusterStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // REST reachability: connectivity is persistent state (the header pill),
+  // never a banner or a per-poll toast.
+  const [gatewayOk, setGatewayOk] = useState(true);
   const [progress, setProgress] = useState<AdminProgress | null>(null);
-  const [processes, setProcesses] = useState<ProcessInfo[]>([]);
+  // null = never loaded (skeletons); [] = loaded-and-empty (quiet notice).
+  const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
+  const [logsUnavailable, setLogsUnavailable] = useState(false);
   const [processSummary, setProcessSummary] = useState<ProcessSummary | null>(null);
   const [operatingServices, setOperatingServices] = useState<Set<string>>(new Set());
   const [snapshotOp, setSnapshotOp] = useState(false);
@@ -57,10 +84,13 @@ function AdminConsole() {
       if (response.ok) {
         const data = await response.json() as ClusterStatus;
         setStatus(data);
-        setError(null);
+        setGatewayOk(true);
+      } else {
+        setGatewayOk(false);
       }
     } catch {
-      setError('Failed to fetch cluster status');
+      // Keep the last-good data on screen; the pill carries the bad news.
+      setGatewayOk(false);
     }
   }, []);
 
@@ -77,6 +107,11 @@ function AdminConsole() {
               setProgress(null);
             }, 3000);
           }
+        } else {
+          // The server-side record is gone (reset). If we still hold an
+          // incomplete operation, it's stale — clear it or the rail sticks
+          // mid-percent and every action stays disabled until a refresh.
+          setProgress(prev => (prev && !prev.complete ? null : prev));
         }
       }
     } catch {
@@ -97,9 +132,12 @@ function AdminConsole() {
       if (response.ok) {
         const data = await response.json();
         setLogs(data.logs || []);
+        setLogsUnavailable(false);
+      } else {
+        setLogsUnavailable(true);
       }
     } catch {
-      // Ignore
+      setLogsUnavailable(true);
     }
   }, [logSource]);
 
@@ -111,12 +149,15 @@ function AdminConsole() {
       ]);
       if (listRes.ok) {
         setProcesses(await listRes.json());
+        setGatewayOk(true);
+      } else {
+        setGatewayOk(false);
       }
       if (summaryRes.ok) {
         setProcessSummary(await summaryRes.json());
       }
     } catch {
-      // Ignore
+      setGatewayOk(false);
     }
   }, []);
 
@@ -129,9 +170,25 @@ function AdminConsole() {
     connected: eventsConnected,
     unseen: feedUnseen,
     markSeen: markFeedSeen,
-  } = useAdminEvents(() => { fetchProcesses(); });
+  } = useAdminEvents((ev) => {
+    fetchProcesses();
+    // A 'started' (or 'crashed') event is the real end of a start/restart —
+    // clear the operating flag now instead of waiting out the blind timeout
+    // (which stays as fallback). 'stopped' is deliberately NOT cleared here:
+    // during a restart it would flash the card back to a stopped state.
+    if (ev.type === 'started' || ev.type === 'crashed') {
+      setOperatingServices(prev => {
+        if (!prev.has(ev.service)) return prev;
+        const next = new Set(prev);
+        next.delete(ev.service);
+        return next;
+      });
+    }
+  });
   const eventsConnectedRef = useRef(eventsConnected);
   eventsConnectedRef.current = eventsConnected;
+  const operationActiveRef = useRef(false);
+  operationActiveRef.current = !!(progress?.operation && !progress.complete);
 
   // Events arriving while the panel is open are already "seen".
   useEffect(() => {
@@ -148,6 +205,10 @@ function AdminConsole() {
           setProgress(null);
         }, 3000);
       }
+    } else {
+      // Empty frame after a server-side reset: drop a stale incomplete op
+      // (seen live: a snapshot frame stuck the rail at 71% until refresh).
+      setProgress(prev => (prev && !prev.complete ? null : prev));
     }
   }, [sseProgress]);
 
@@ -156,9 +217,10 @@ function AdminConsole() {
     fetchProgress();
     const interval = setInterval(() => {
       fetchStatus();
-      // Progress rides the event stream; poll it only as a fallback while
-      // the stream is down.
-      if (!eventsConnectedRef.current) {
+      // Progress rides the event stream; poll it as a fallback while the
+      // stream is down, and while an operation looks active — the poll is
+      // what reconciles a stale op if its completion frame never arrives.
+      if (!eventsConnectedRef.current || operationActiveRef.current) {
         fetchProgress();
       }
     }, 3000);
@@ -252,11 +314,15 @@ function AdminConsole() {
 
   const executeNodeAction = async (action: string, nodeId: number) => {
     try {
-      await fetch(`${ADMIN_BASE}/api/admin/${action}`, {
+      const response = await fetch(`${ADMIN_BASE}/api/admin/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nodeId }),
       });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast({ tone: 'error', text: data.error || `Failed to ${action.replace('-', ' ')} (HTTP ${response.status})`, sticky: true });
+      }
     } catch {
       toast({ tone: 'error', text: `Failed to ${action.replace('-', ' ')}`, sticky: true });
     }
@@ -267,7 +333,7 @@ function AdminConsole() {
   const requestProcessAction = (service: string, action: 'start' | 'stop' | 'restart') => {
     if (operatingServices.has(service) || (progress?.operation && !progress.complete)) return;
 
-    const displayName = processes.find(p => p.name === service)?.display || service;
+    const displayName = processes?.find(p => p.name === service)?.display || service;
     const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
 
     const descriptions: Record<string, Record<string, string>> = {
@@ -311,24 +377,27 @@ function AdminConsole() {
 
   const executeProcessAction = async (service: string, action: string) => {
     setOperatingServices(prev => new Set(prev).add(service));
+    const clearOperating = () => setOperatingServices(prev => {
+      const next = new Set(prev);
+      next.delete(service);
+      return next;
+    });
     try {
-      await fetch(`${ADMIN_BASE}/api/admin/processes/${service}/${action}`, { method: 'POST' });
+      const response = await fetch(`${ADMIN_BASE}/api/admin/processes/${service}/${action}`, { method: 'POST' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast({ tone: 'error', text: data.error || `Failed to ${action} ${service} (HTTP ${response.status})`, sticky: true });
+        clearOperating();
+        return;
+      }
       const timeout = action === 'restart' ? 8000 : 3000;
       setTimeout(() => {
-        setOperatingServices(prev => {
-          const next = new Set(prev);
-          next.delete(service);
-          return next;
-        });
+        clearOperating();
         fetchProcesses();
       }, timeout);
     } catch {
       toast({ tone: 'error', text: `Failed to ${action} ${service}`, sticky: true });
-      setOperatingServices(prev => {
-        const next = new Set(prev);
-        next.delete(service);
-        return next;
-      });
+      clearOperating();
     }
   };
 
@@ -348,7 +417,17 @@ function AdminConsole() {
   const executeSelfUpdate = async () => {
     setOperatingServices(prev => new Set(prev).add('admin'));
     try {
-      await fetch(`${ADMIN_BASE}/api/admin/rebuild-admin`, { method: 'POST' });
+      const response = await fetch(`${ADMIN_BASE}/api/admin/rebuild-admin`, { method: 'POST' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast({ tone: 'error', text: data.error || `Self-update refused (HTTP ${response.status})`, sticky: true });
+        setOperatingServices(prev => {
+          const next = new Set(prev);
+          next.delete('admin');
+          return next;
+        });
+        return;
+      }
       // Admin will restart automatically — connection will drop
     } catch {
       toast({ tone: 'error', text: 'Failed to trigger self-update', sticky: true });
@@ -366,7 +445,13 @@ function AdminConsole() {
     if (snapshotOp || (progress?.operation && !progress.complete)) return;
     setSnapshotOp(true);
     try {
-      await fetch(`${ADMIN_BASE}/api/admin/snapshot`, { method: 'POST' });
+      const response = await fetch(`${ADMIN_BASE}/api/admin/snapshot`, { method: 'POST' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast({ tone: 'error', text: data.error || `Failed to take snapshot (HTTP ${response.status})`, sticky: true });
+        setSnapshotOp(false);
+        return;
+      }
       setTimeout(() => { setSnapshotOp(false); }, 5000);
     } catch {
       toast({ tone: 'error', text: 'Failed to take snapshot', sticky: true });
@@ -440,7 +525,11 @@ function AdminConsole() {
 
   const executeStopAllNodes = async () => {
     try {
-      await fetch(`${ADMIN_BASE}/api/admin/stop-all-nodes`, { method: 'POST' });
+      const response = await fetch(`${ADMIN_BASE}/api/admin/stop-all-nodes`, { method: 'POST' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast({ tone: 'error', text: data.error || `Failed to stop all nodes (HTTP ${response.status})`, sticky: true });
+      }
     } catch {
       toast({ tone: 'error', text: 'Failed to stop all nodes', sticky: true });
     }
@@ -448,7 +537,11 @@ function AdminConsole() {
 
   const executeStartAllNodes = async () => {
     try {
-      await fetch(`${ADMIN_BASE}/api/admin/start-all-nodes`, { method: 'POST' });
+      const response = await fetch(`${ADMIN_BASE}/api/admin/start-all-nodes`, { method: 'POST' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast({ tone: 'error', text: data.error || `Failed to start all nodes (HTTP ${response.status})`, sticky: true });
+      }
     } catch {
       toast({ tone: 'error', text: 'Failed to start all nodes', sticky: true });
     }
@@ -545,7 +638,8 @@ function AdminConsole() {
             <span className="text-accent">Open</span> Exchange — Admin
           </h1>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
+          <GatewayIndicator gatewayOk={gatewayOk} eventsConnected={eventsConnected} />
           <ThemeToggle theme={theme} onToggle={toggle} />
         </div>
       </header>
@@ -560,22 +654,8 @@ function AdminConsole() {
       </div>
 
       <div className="mx-auto max-w-[1280px] px-6 pb-12 pt-6">
-        {/* Error Banner (shared) */}
-        {error && (
-          <div className="mb-6 flex items-center gap-3 rounded-md border border-sell/20 bg-sell-soft px-4 py-2.5 text-sell [&_svg]:h-4 [&_svg]:w-4">
-            {Icons.x}
-            <span className="flex-1 text-[13px] font-medium">{error}</span>
-            <button
-              onClick={() => setError(null)}
-              className="rounded-md px-2 py-1 text-[12px] font-medium hover:bg-sell/10"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
         {tab === 'risk' && <RiskAdmin />}
-        {tab === 'backup' && <BackupOps />}
+        {tab === 'backup' && <BackupOps nodes={status?.nodes} />}
 
         {tab === 'cluster' && (
           <>
@@ -592,7 +672,7 @@ function AdminConsole() {
             <main className="flex flex-col gap-8">
               <NodesSection
                 status={status}
-                processes={processes}
+                processes={processes ?? []}
                 isOperationRunning={isOperationRunning}
                 logSource={logSource}
                 onStopNode={requestStopNode}
@@ -633,6 +713,7 @@ function AdminConsole() {
               <LogViewer
                 logSource={logSource}
                 logs={logs}
+                unavailable={logsUnavailable}
                 onClear={() => setLogSource(null)}
               />
             </main>

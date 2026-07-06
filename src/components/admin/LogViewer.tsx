@@ -9,10 +9,12 @@ import type { LogSource } from './types';
 interface LogViewerProps {
   logSource: LogSource | null;
   logs: string[];
+  /** The 2s tail poll is failing — shown inline, never as a toast. */
+  unavailable?: boolean;
   onClear: () => void;
 }
 
-export function LogViewer({ logSource, logs, onClear }: LogViewerProps) {
+export function LogViewer({ logSource, logs, unavailable = false, onClear }: LogViewerProps) {
   const [logFilters, setLogFilters] = useState({ error: true, warn: true, info: true, debug: true });
   const logsRef = useRef<HTMLDivElement>(null);
 
@@ -87,7 +89,9 @@ export function LogViewer({ logSource, logs, onClear }: LogViewerProps) {
         className="h-80 overflow-y-auto rounded-md border border-hairline bg-bg font-mono text-[12px] leading-relaxed"
         ref={logsRef}
       >
-        {logSource ? (
+        {logSource && unavailable ? (
+          <div className="py-6 text-center italic text-muted">Log source unavailable</div>
+        ) : logSource ? (
           filteredLogs.length > 0 ? (
             filteredLogs.map((line, i) => {
               const level = getLogLevel(line);
