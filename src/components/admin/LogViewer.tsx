@@ -36,7 +36,16 @@ export function LogViewer({ logSource, logs, onClear }: LogViewerProps) {
     <section className="rounded-lg border border-hairline bg-surface p-6">
       <div className="mb-5 flex flex-wrap items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
         {Icons.logs}
-        <h2 className="flex-1 font-mono text-[12px] font-semibold text-text-strong">{getLogSourceLabel(logSource)}</h2>
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">Logs</h2>
+        <span className="flex-1">
+          {logSource ? (
+            <span className="rounded-full bg-surface-2 px-2.5 py-0.5 font-mono text-[11px] font-medium text-text">
+              {getLogSourceLabel(logSource)}
+            </span>
+          ) : (
+            <span className="text-[11px] text-faint">{getLogSourceLabel(null)}</span>
+          )}
+        </span>
         {logSource && (
           <>
             <div className="flex flex-wrap gap-1">

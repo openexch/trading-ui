@@ -171,6 +171,7 @@ export function RiskAdmin() {
 
   return (
     <div className="flex flex-col gap-4">
+      <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">Risk Controls</h2>
       {loading && entries.length === 0 && <div className="text-[13px] text-muted">Loading risk config…</div>}
       {error && <div className="rounded-md bg-sell-soft px-3 py-2 text-[13px] text-sell">{error}</div>}
       {!loading && !error && entries.length === 0 && (
