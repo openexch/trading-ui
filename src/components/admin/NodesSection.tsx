@@ -152,16 +152,16 @@ export function NodesSection({
                     <NodeDetailsTooltip node={node} />
                   </span>
                 </div>
-                {nodeProc && nodeProc.running && (
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <span className="text-[10px] font-medium text-faint">Mem:</span>
-                    <span className="tabular-nums text-text">{formatBytes(nodeProc.memoryBytes)}</span>
-                    <span className="text-[10px] font-medium text-faint">CPU:</span>
-                    <span className="tabular-nums text-text">{(nodeProc.cpuPercent ?? 0).toFixed(1)}%</span>
-                    <span className="text-[10px] font-medium text-faint">Up:</span>
-                    <span className="tabular-nums text-text">{formatUptime(nodeProc.uptimeMs)}</span>
-                  </div>
-                )}
+                {/* Always rendered — a stopped node shows dashes, the card
+                    never changes height (anti-flicker: reserved rows). */}
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="text-[10px] font-medium text-faint">Mem:</span>
+                  <span className="tabular-nums text-text">{nodeProc?.running ? formatBytes(nodeProc.memoryBytes) : '--'}</span>
+                  <span className="text-[10px] font-medium text-faint">CPU:</span>
+                  <span className="tabular-nums text-text">{nodeProc?.running ? `${(nodeProc.cpuPercent ?? 0).toFixed(1)}%` : '--'}</span>
+                  <span className="text-[10px] font-medium text-faint">Up:</span>
+                  <span className="tabular-nums text-text">{nodeProc?.running ? formatUptime(nodeProc.uptimeMs) : '--'}</span>
+                </div>
               </div>
               <div className="mt-auto flex gap-1.5">
                 {node.running && !isTransitioning ? (

@@ -9,13 +9,13 @@
  * components but must render the same console.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AdminPage } from './AdminPage';
 
 // ---- jsdom gaps -----------------------------------------------------------
 
-/** Minimal EventSource stub — the admin console must render without SSE. */
+/** Scriptable EventSource stub (same shape as useAdminEvents.test.tsx). */
 class FakeEventSource {
   static CONNECTING = 0;
   static OPEN = 1;
@@ -25,13 +25,27 @@ class FakeEventSource {
   readyState = 0;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  listeners = new Map<string, ((ev: MessageEvent) => void)[]>();
   constructor(url: string) {
     this.url = url;
     FakeEventSource.instances.push(this);
   }
-  addEventListener() {}
+  addEventListener(type: string, fn: (ev: MessageEvent) => void) {
+    const arr = this.listeners.get(type) ?? [];
+    arr.push(fn);
+    this.listeners.set(type, arr);
+  }
   close() {
     this.readyState = FakeEventSource.CLOSED;
+  }
+  open() {
+    this.readyState = FakeEventSource.OPEN;
+    this.onopen?.();
+  }
+  emit(type: string, data: unknown) {
+    for (const fn of this.listeners.get(type) ?? []) {
+      fn({ data: JSON.stringify(data) } as MessageEvent);
+    }
   }
 }
 
@@ -233,5 +247,97 @@ describe('AdminPage smoke', () => {
     // Heading is micro-caps "Logs"; the selected source renders as a chip
     expect(screen.getByRole('heading', { name: 'Logs' })).toBeTruthy();
     expect(screen.getAllByText('Node 0').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('surfaces a non-ok action response as a sticky error toast with the server text', async () => {
+    // POSTs fail with a server-side reason; reads keep working
+    const base = fetchStub.mock.getMockImplementation()!;
+    fetchStub.mock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ error: 'node 0 is the leader' }),
+          text: async () => '{"error":"node 0 is the leader"}',
+        } as Response;
+      }
+      return base(input, init);
+    });
+
+    renderAdmin();
+    await screen.findByText('Cluster Healthy');
+
+    fireEvent.click(screen.getAllByTitle('Stop')[0]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop Node' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('node 0 is the leader');
+  });
+
+  it('shows the gateway pill as Offline when REST fails, keeping last-good data off-screen quietly', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error('connection refused');
+    }) as unknown as typeof fetch;
+
+    renderAdmin();
+    await waitFor(() => expect(screen.getByText('Offline')).toBeTruthy());
+    // No banner, no toast — connectivity is the pill's job
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/Failed to fetch/i)).toBeNull();
+  });
+
+  it('renders a stopped node card with dashed stats instead of dropping the row', async () => {
+    const offline = JSON.parse(JSON.stringify(CLUSTER_STATUS));
+    offline.nodes[2] = { id: 2, running: false, role: 'OFFLINE', status: 'OFFLINE' };
+    const base = fetchStub.mock.getMockImplementation()!;
+    fetchStub.mock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/admin/status')) {
+        return { ok: true, status: 200, json: async () => offline, text: async () => '' } as Response;
+      }
+      return base(input, init);
+    });
+
+    renderAdmin();
+    await screen.findByText('OFFLINE');
+    // The Mem/CPU/Up row is reserved: dashes render, the card keeps its shape
+    expect(screen.getAllByText('--').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('derives backup recovery targets from live nodes and warns on a running target', async () => {
+    renderAdmin();
+    await screen.findByText('Cluster Healthy');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Backup' }));
+    await screen.findByText('Recover from backup');
+
+    const options = screen.getAllByRole('option').map(o => o.textContent);
+    expect(options).toEqual(['Node 0 — running', 'Node 1 — running', 'Node 2 — running']);
+    // Default target (node 0) is running — the inline warn shows before the
+    // operator burns a recovery attempt on a refused request
+    expect(screen.getByText(/Node 0 is running — stop it first/i)).toBeTruthy();
+  });
+
+  it('clears a stale operation when an empty progress frame arrives (no stuck rail)', async () => {
+    renderAdmin();
+    await screen.findByText('Cluster Healthy');
+    const es = FakeEventSource.instances[0];
+    act(() => es.open());
+
+    // An operation starts: the ops slot swaps buttons for the percent
+    act(() => es.emit('progress', {
+      operation: 'snapshot', currentStep: 1, totalSteps: 1,
+      complete: false, error: false, progress: 71,
+    }));
+    expect(await screen.findByText('71%')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Rolling Update/i })).toBeNull();
+
+    // The server resets the record without a completion frame (seen live) —
+    // the empty frame must clear the stale op and give the buttons back
+    act(() => es.emit('progress', {
+      currentStep: 0, totalSteps: 0, complete: false, error: false,
+    }));
+    expect(await screen.findByRole('button', { name: /Rolling Update/i })).toBeTruthy();
+    expect(screen.queryByText('71%')).toBeNull();
   });
 });
