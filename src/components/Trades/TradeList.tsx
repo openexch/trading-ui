@@ -53,7 +53,7 @@ export function TradeList({ trades }: TradeListProps) {
             return (
               <div
                 key={`${trade.timestamp}-${trade.price}-${trade.quantity}-${index}`}
-                className="grid grid-cols-[1fr_1fr_70px] gap-1.5 px-4 py-1 font-mono text-[11.5px] leading-[1.9] tabular-nums transition-colors hover:bg-surface-2"
+                className="grid grid-cols-[1fr_1fr_70px] gap-1.5 px-4 py-1 font-mono text-[12px] leading-[1.8] tabular-nums transition-colors hover:bg-surface-2"
               >
                 <span
                   className={`font-medium ${isBuy ? 'text-buy' : 'text-sell'}`}
