@@ -130,6 +130,7 @@
   --animate-pulse-soft: pulseSoft 2s ease-in-out infinite;
   --animate-fade-in: fadeIn 0.18s ease-out;
   --animate-sheet-up: sheetUp 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-slide-in-right: slideInRight 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-overlay-in: overlayIn 0.18s ease-out;
   --animate-drift: drift 18s ease-in-out infinite;
 }
@@ -235,6 +236,10 @@
 @keyframes sheetUp {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 @keyframes overlayIn {
   from { opacity: 0; }

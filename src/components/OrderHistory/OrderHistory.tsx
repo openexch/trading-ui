@@ -87,7 +87,11 @@ export function OrderHistory({ market }: OrderHistoryProps) {
         <div className="flex flex-1 items-center justify-center py-8 text-[12px] text-sell">{error}</div>
       ) : isEmpty ? (
         <div className="flex flex-1 items-center justify-center py-8 text-[12px] text-muted">
-          {loading ? 'Loading…' : subTab === 'orders' ? 'No order history' : 'No trades yet'}
+          {loading
+            ? 'Loading…'
+            : subTab === 'orders'
+              ? 'Your completed orders will appear here'
+              : 'Your fills will appear here'}
         </div>
       ) : subTab === 'orders' ? (
         <div className="min-h-0 flex-1 overflow-auto">

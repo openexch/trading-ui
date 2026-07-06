@@ -21,7 +21,7 @@ import { MarketStats } from './components/MarketStats/MarketStats';
 import { OrderForm } from './components/OrderForm/OrderForm';
 import { OpenOrders } from './components/OpenOrders/OpenOrders';
 import { OrderHistory } from './components/OrderHistory/OrderHistory';
-import { AccountPanel } from './components/AccountPanel/AccountPanel';
+import { AccountDrawer } from './components/Account/AccountDrawer';
 import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
 import { BackgroundFX } from './components/BackgroundFX';
@@ -59,8 +59,9 @@ const Icons = {
 function MarketPage() {
   const isMobile = useIsMobile();
   const { theme, toggle: toggleTheme } = useTheme();
-  const { session, logout } = useAuth();
+  const { session } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAccountDrawer, setShowAccountDrawer] = useState(false);
   const [selectedMarket, setSelectedMarket] = useState<Market>(MARKETS[0]);
   const selectedMarketIdRef = useRef(selectedMarket.id);
 
@@ -77,6 +78,13 @@ function MarketPage() {
   const [currentCandle, setCurrentCandle] = useState<CandleData | null>(null);
   const [chartInterval, setChartInterval] = useState<string>('1m');
   const chartIntervalRef = useRef<string>('1m');
+  // Market switch keeps the outgoing candles mounted under a dimming overlay
+  // (no blank flash); chartLoading drives the overlay, candlesMarketRef says
+  // which market the candles array belongs to — CANDLE_UPDATEs are ignored
+  // until the new market's CANDLE_HISTORY baseline lands (no cross-market
+  // appends).
+  const [chartLoading, setChartLoading] = useState(false);
+  const candlesMarketRef = useRef(selectedMarket.id);
 
   // The book requests a fresh snapshot itself when it detects a version gap
   // (v4 chain); the ref indirection breaks the hook-order cycle with
@@ -106,13 +114,13 @@ function MarketPage() {
   const { openOrders, handleOrderEvent, seedOpenOrders, resetOrders, removeOrder } = useOrders(handleOrderRejected);
 
   // Market-plane reset (reconnect / market switch). User orders live on the
-  // OMS plane now and are reset on session change instead.
+  // OMS plane now and are reset on session change instead. Candles are NOT
+  // reset here — they stay mounted under the chart's loading overlay and are
+  // replaced wholesale when the next CANDLE_HISTORY arrives.
   const resetAllState = useCallback(() => {
     resetOrderBook();
     resetTrades();
     resetStats();
-    setCandles([]);
-    setCurrentCandle(null);
   }, [resetOrderBook, resetTrades, resetStats]);
 
   const handleReconnecting = useCallback(() => {
@@ -168,13 +176,21 @@ function MarketPage() {
             if (chartIntervalRef.current === '1m' || candleHist.interval === chartIntervalRef.current) {
               setCandles(candleHist.candles);
               setCurrentCandle(null);
+              // The selected market's baseline has landed: live updates may
+              // apply again and the chart's loading dim lifts.
+              candlesMarketRef.current = candleHist.marketId;
+              setChartLoading(false);
             }
           }
           break;
         }
         case 'CANDLE_UPDATE': {
           const candleUpd = message as CandleUpdateMessage;
-          if (candleUpd.marketId === selectedMarketIdRef.current && candleUpd.interval === '1m') {
+          // Second guard: after a market switch, drop updates until the new
+          // market's history baseline has replaced the candles array.
+          if (candleUpd.marketId === selectedMarketIdRef.current &&
+              candlesMarketRef.current === selectedMarketIdRef.current &&
+              candleUpd.interval === '1m') {
             if (chartIntervalRef.current === '1m') {
               // Update current candle for real-time chart updates
               setCurrentCandle(candleUpd.candle);
@@ -249,6 +265,7 @@ function MarketPage() {
 
   // Fetch candles from REST API for non-1m intervals
   const fetchCandles = useCallback(async (marketId: number, interval: string, limit: number = 200) => {
+    setChartLoading(true);
     try {
       const apiBase = import.meta.env.VITE_MARKET_WS_URL
         ? import.meta.env.VITE_MARKET_WS_URL.replace(/^wss?:/, window.location.protocol === 'https:' ? 'https:' : 'http:')
@@ -259,10 +276,13 @@ function MarketPage() {
         if (data.candles && data.marketId === selectedMarketIdRef.current) {
           setCandles(data.candles);
           setCurrentCandle(null);
+          candlesMarketRef.current = data.marketId;
         }
       }
     } catch (e) {
       console.error('Failed to fetch candles:', e);
+    } finally {
+      setChartLoading(false);
     }
   }, []);
 
@@ -293,6 +313,8 @@ function MarketPage() {
     setSelectedMarket(market);
     chartIntervalRef.current = '1m';
     setChartInterval('1m');
+    // Dim (don't blank) the chart until the new market's history lands
+    setChartLoading(true);
     resetAllState();
     setShowMarketSelector(false);
   }, [resetAllState]);
@@ -326,11 +348,8 @@ function MarketPage() {
     setClickedPrice(price);
   }, []);
 
-  // Bottom section tab state
-  const [bottomTab, setBottomTab] = useState<'order' | 'orders' | 'history' | 'trades' | 'account'>('order');
-
-  const bestBid = orderBook.bids.length > 0 ? orderBook.bids[0] : null;
-  const bestAsk = orderBook.asks.length > 0 ? orderBook.asks[0] : null;
+  // Bottom strip tab state (the order form lives in the right rail now)
+  const [bottomTab, setBottomTab] = useState<'orders' | 'history'>('orders');
 
   const tabClass = (active: boolean) =>
     `relative px-4 py-2.5 text-[13px] font-medium transition-colors ${
@@ -370,18 +389,16 @@ function MarketPage() {
         </div>
         <div className="flex items-center gap-2.5">
           {session ? (
-            <div className="flex h-8 items-center gap-2 rounded-md border border-hairline bg-surface-2 pl-2.5 pr-1.5">
-              <span className="max-w-[120px] truncate text-xs font-medium text-text" title={session.username}>
-                {session.username}
-              </span>
-              <button
-                onClick={logout}
-                title="Sign out"
-                className="rounded-sm px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-3 hover:text-text"
-              >
-                Sign out
-              </button>
-            </div>
+            <button
+              onClick={() => setShowAccountDrawer(true)}
+              title="Account & balances"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-hairline bg-surface-2 px-2.5 text-xs font-medium text-text transition-colors hover:bg-surface-3"
+            >
+              <span className="max-w-[120px] truncate">{session.username}</span>
+              <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-faint">
+                <path d="M2.5 4.5L6 8l3.5-3.5" />
+              </svg>
+            </button>
           ) : (
             <button
               onClick={() => setShowAuthModal(true)}
@@ -409,8 +426,8 @@ function MarketPage() {
         <MarketStats market={selectedMarket} stats={stats} orderBook={orderBook} />
       </div>
 
-      {/* ── Main grid ── */}
-      <main className="my-1.5 grid min-h-0 flex-1 grid-cols-1 gap-1.5 overflow-hidden lg:grid-cols-[300px_1fr] xl:grid-cols-[320px_1fr]">
+      {/* ── Main grid: book | chart + own orders | order rail + tape ── */}
+      <main className="my-1.5 grid min-h-0 flex-1 grid-cols-1 gap-1.5 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[320px_minmax(0,1fr)_320px]">
         {/* Left — Order Book (desktop) */}
         {!isMobile && (
           <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-hairline bg-surface">
@@ -430,6 +447,7 @@ function MarketPage() {
                 theme={theme}
                 onIntervalChange={handleIntervalChange}
                 activeInterval={chartInterval}
+                loading={chartLoading}
               />
             </div>
           )}
@@ -455,7 +473,7 @@ function MarketPage() {
           {isMobile && (
             <div className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch]">
               {mobileTab === 'chart' && (
-                <Chart candles={candles} currentCandle={currentCandle} symbol={selectedMarket.symbol} theme={theme} onIntervalChange={handleIntervalChange} activeInterval={chartInterval} />
+                <Chart candles={candles} currentCandle={currentCandle} symbol={selectedMarket.symbol} theme={theme} onIntervalChange={handleIntervalChange} activeInterval={chartInterval} loading={chartLoading} />
               )}
               {mobileTab === 'orderbook' && (
                 <OrderBook orderBook={orderBook} levelChanges={levelChanges} onPriceClick={handlePriceClick} />
@@ -464,30 +482,19 @@ function MarketPage() {
             </div>
           )}
 
-          {/* Desktop bottom tabbed section */}
+          {/* Desktop bottom strip — FIXED height so the chart above never
+              resizes when the tab changes */}
           {!isMobile ? (
-            <div className="flex max-h-[340px] min-h-[200px] flex-col border-t border-hairline">
+            <div className="flex h-[260px] flex-shrink-0 flex-col border-t border-hairline">
               <div className="flex flex-shrink-0 gap-0 border-b border-hairline px-4">
-                <button className={tabClass(bottomTab === 'order')} onClick={() => setBottomTab('order')}>
-                  Order{bottomTab === 'order' && <Underline />}
-                </button>
                 <button className={tabClass(bottomTab === 'orders')} onClick={() => setBottomTab('orders')}>
                   Open Orders ({openOrders.length}){bottomTab === 'orders' && <Underline />}
                 </button>
                 <button className={tabClass(bottomTab === 'history')} onClick={() => setBottomTab('history')}>
                   History{bottomTab === 'history' && <Underline />}
                 </button>
-                <button className={tabClass(bottomTab === 'trades')} onClick={() => setBottomTab('trades')}>
-                  Trades{bottomTab === 'trades' && <Underline />}
-                </button>
-                <button className={tabClass(bottomTab === 'account')} onClick={() => setBottomTab('account')}>
-                  Account{bottomTab === 'account' && <Underline />}
-                </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
-                {bottomTab === 'order' && (
-                  <OrderForm market={selectedMarket} bestBid={bestBid} bestAsk={bestAsk} onSubmitOrder={handleSubmitOrder} loading={apiLoading} externalPrice={clickedPrice} signedIn={!!session} onRequestSignIn={() => setShowAuthModal(true)} rejectNotice={rejectNotice} />
-                )}
                 {bottomTab === 'orders' && (
                   session ? (
                     <OpenOrders orders={openOrders} onCancelOrder={handleCancelOrder} onReplaceOrder={handleReplaceOrder} loading={apiLoading} />
@@ -497,10 +504,6 @@ function MarketPage() {
                 )}
                 {bottomTab === 'history' && (
                   session ? <OrderHistory market={selectedMarket} /> : <SignInPrompt what="your history" onSignIn={() => setShowAuthModal(true)} />
-                )}
-                {bottomTab === 'trades' && <TradeList trades={trades} />}
-                {bottomTab === 'account' && (
-                  session ? <AccountPanel /> : <SignInPrompt what="your account" onSignIn={() => setShowAuthModal(true)} />
                 )}
               </div>
             </div>
@@ -521,6 +524,28 @@ function MarketPage() {
             </div>
           )}
         </section>
+
+        {/* Right — always-visible order form over the live tape (desktop) */}
+        {!isMobile && (
+          <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-hairline bg-surface">
+            <div className="max-h-[60%] flex-shrink-0 overflow-y-auto">
+              <OrderForm
+                compact
+                market={selectedMarket}
+                onSubmitOrder={handleSubmitOrder}
+                loading={apiLoading}
+                externalPrice={clickedPrice}
+                lastPrice={stats?.lastPrice ?? null}
+                signedIn={!!session}
+                onRequestSignIn={() => setShowAuthModal(true)}
+                rejectNotice={rejectNotice}
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden border-t border-hairline">
+              <TradeList trades={trades} />
+            </div>
+          </aside>
+        )}
       </main>
 
       {/* Mobile Market Selector overlay */}
@@ -560,8 +585,6 @@ function MarketPage() {
             </div>
             <OrderForm
               market={selectedMarket}
-              bestBid={bestBid}
-              bestAsk={bestAsk}
               onSubmitOrder={async (order) => {
                 const result = await handleSubmitOrder(order);
                 if (result.success) setMobileOrderSide(null);
@@ -569,8 +592,8 @@ function MarketPage() {
               }}
               loading={apiLoading}
               externalPrice={clickedPrice}
-              isMobile
               defaultSide={mobileOrderSide}
+              lastPrice={stats?.lastPrice ?? null}
               signedIn={!!session}
               onRequestSignIn={() => setShowAuthModal(true)}
               rejectNotice={rejectNotice}
@@ -581,6 +604,9 @@ function MarketPage() {
 
       {/* Sign in / register modal */}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+
+      {/* Account slide-over (header username pill; works on mobile too) */}
+      {showAccountDrawer && session && <AccountDrawer onClose={() => setShowAccountDrawer(false)} />}
 
       {/* ── Footer ── */}
       {!isMobile && (
