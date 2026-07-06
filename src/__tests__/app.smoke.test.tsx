@@ -176,6 +176,6 @@ describe('App smoke', () => {
     expect(headers.Authorization).toMatch(/^Bearer /);
 
     // Success notification renders (response accepted:true)
-    expect(container.textContent).toContain('Buy order placed');
+    expect(container.textContent).toContain('Buy order submitted');
   });
 });

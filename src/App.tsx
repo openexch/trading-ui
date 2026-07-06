@@ -26,7 +26,7 @@ import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
 import { BackgroundFX } from './components/BackgroundFX';
 import { AdminPage } from './pages/AdminPage';
-import type { WebSocketMessage, Market, OrderRequest, UserOrder, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
+import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
 
 // Mobile detection hook
@@ -88,7 +88,22 @@ function MarketPage() {
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
   const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
   const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
-  const { openOrders, handleOrderEvent, seedOpenOrders, resetOrders, removeOrder } = useOrders();
+
+  // Async engine rejections (off-tick/out-of-range price, full book) arrive
+  // as REJECTED events on the user's order stream — surface them, never let
+  // an accepted order silently vanish. rejectReason is populated for OMS
+  // risk rejects; engine rejects carry no reason until match#75 lands.
+  const [rejectNotice, setRejectNotice] = useState<string | null>(null);
+  const rejectTimerRef = useRef<number | null>(null);
+  const handleOrderRejected = useCallback((event: OmsOrderEvent) => {
+    const detail = event.rejectReason
+      ? `Order rejected: ${event.rejectReason}`
+      : 'Order rejected by the exchange. Check the price is on the market tick and inside the allowed range.';
+    setRejectNotice(detail);
+    if (rejectTimerRef.current) window.clearTimeout(rejectTimerRef.current);
+    rejectTimerRef.current = window.setTimeout(() => setRejectNotice(null), 8000);
+  }, []);
+  const { openOrders, handleOrderEvent, seedOpenOrders, resetOrders, removeOrder } = useOrders(handleOrderRejected);
 
   // Market-plane reset (reconnect / market switch). User orders live on the
   // OMS plane now and are reset on session change instead.
@@ -471,7 +486,7 @@ function MarketPage() {
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {bottomTab === 'order' && (
-                  <OrderForm market={selectedMarket} bestBid={bestBid} bestAsk={bestAsk} onSubmitOrder={handleSubmitOrder} loading={apiLoading} externalPrice={clickedPrice} signedIn={!!session} onRequestSignIn={() => setShowAuthModal(true)} />
+                  <OrderForm market={selectedMarket} bestBid={bestBid} bestAsk={bestAsk} onSubmitOrder={handleSubmitOrder} loading={apiLoading} externalPrice={clickedPrice} signedIn={!!session} onRequestSignIn={() => setShowAuthModal(true)} rejectNotice={rejectNotice} />
                 )}
                 {bottomTab === 'orders' && (
                   session ? (
@@ -558,6 +573,7 @@ function MarketPage() {
               defaultSide={mobileOrderSide}
               signedIn={!!session}
               onRequestSignIn={() => setShowAuthModal(true)}
+              rejectNotice={rejectNotice}
             />
           </div>
         </div>
