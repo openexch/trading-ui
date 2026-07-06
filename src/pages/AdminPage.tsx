@@ -3,349 +3,26 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
 import { ThemeToggle } from '../components/ThemeToggle/ThemeToggle';
+import { Icons } from '../components/Icons';
 import { RiskAdmin } from '../components/admin/RiskAdmin';
 import { BackupOps } from '../components/admin/BackupOps';
 import { EventFeed } from '../components/admin/EventFeed';
+import { ClusterStatusBar } from '../components/admin/ClusterStatusBar';
+import { NodesSection } from '../components/admin/NodesSection';
+import { ServicesSection } from '../components/admin/ServicesSection';
+import { LogViewer } from '../components/admin/LogViewer';
+import { getClusterStatus } from '../components/admin/status';
 import { useAdminEvents, type AdminProgress } from '../hooks/useAdminEvents';
+import type {
+  AdminTab,
+  ClusterStatus,
+  ConfirmAction,
+  LogSource,
+  ProcessInfo,
+  ProcessSummary,
+} from '../components/admin/types';
 
 const ADMIN_BASE = import.meta.env.VITE_ADMIN_API_URL || '';
-
-type NodeStatusType = 'LEADER' | 'FOLLOWER' | 'OFFLINE' | 'STOPPING' | 'STARTING' | 'REJOINING' | 'ELECTION';
-
-interface NodeStatus {
-  id: number;
-  running: boolean;
-  pid?: number;
-  role: NodeStatusType;
-  status?: NodeStatusType;
-  healthy?: boolean;
-  // Per-node data
-  logPosition?: number;      // From recording-log (stale, term boundaries only)
-  commitPosition?: number;   // Real-time from Aeron counters
-  snapshotPosition?: number;
-  logDelta?: number;         // commitPosition - snapshotPosition
-  snapshotCount?: number;
-  archiveBytes?: number;
-  archiveDiskBytes?: number;
-}
-
-interface GatewayStatus {
-  running: boolean;
-  port: number;
-}
-
-interface ClusterStatus {
-  nodes: NodeStatus[];
-  leader: number;
-  backup: { running: boolean; pid?: number };
-  gateway: { running: boolean; port: number };
-  gateways: {
-    market: GatewayStatus;
-    order: GatewayStatus;
-    admin: GatewayStatus;
-  };
-  // Archive is now per-node (in NodeStatus), these are deprecated
-  archiveBytes?: number;
-  archiveDiskBytes?: number;
-}
-
-interface ProcessInfo {
-  name: string;
-  display: string;
-  role: 'cluster' | 'gateway' | 'infra';
-  port: number;
-  running: boolean;
-  pid: number;
-  memoryBytes: number;
-  cpuPercent: number;
-  uptimeMs: number;
-  startedAt: string;
-  restartCount: number;
-  enabled: boolean;
-  status: string;
-}
-
-interface ProcessSummary {
-  total: number;
-  running: number;
-  stopped: number;
-  failed: number;
-  totalMemoryMB: number;
-  lastPollMs: number;
-}
-
-type LogSource =
-  | { type: 'node'; id: number }
-  | { type: 'service'; name: string };
-
-type ConfirmAction = {
-  type: 'stop-node' | 'restart-node' | 'start-node' |
-        'process-action' | 'self-update' |
-        'rolling-update' | 'housekeeping' | 'housekeeping-force' |
-        'stop-all-nodes' | 'start-all-nodes' | 'cleanup';
-  nodeId?: number;
-  service?: string;
-  action?: 'start' | 'stop' | 'restart';
-  title: string;
-  message: string;
-  confirmLabel: string;
-  confirmStyle: 'danger' | 'warning' | 'primary';
-};
-
-type AdminTab = 'cluster' | 'risk' | 'backup';
-
-// Icons
-const Icons = {
-  back: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5M12 19l-7-7 7-7"/>
-    </svg>
-  ),
-  server: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="2" y="2" width="20" height="8" rx="2"/>
-      <rect x="2" y="14" width="20" height="8" rx="2"/>
-      <circle cx="6" cy="6" r="1" fill="currentColor"/>
-      <circle cx="6" cy="18" r="1" fill="currentColor"/>
-    </svg>
-  ),
-  backup: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-    </svg>
-  ),
-  market: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polyline points="22,7 13.5,15.5 8.5,10.5 2,17"/>
-      <polyline points="16,7 22,7 22,13"/>
-    </svg>
-  ),
-  order: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="18" height="18" rx="2"/>
-      <path d="M9 9h6M9 13h6M9 17h4"/>
-    </svg>
-  ),
-  admin: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-    </svg>
-  ),
-  folder: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-    </svg>
-  ),
-  database: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <ellipse cx="12" cy="5" rx="9" ry="3"/>
-      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
-      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-    </svg>
-  ),
-  stop: (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <rect x="6" y="6" width="12" height="12" rx="1"/>
-    </svg>
-  ),
-  restart: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M1 4v6h6M23 20v-6h-6"/>
-      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-    </svg>
-  ),
-  play: (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <polygon points="5,3 19,12 5,21"/>
-    </svg>
-  ),
-  update: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
-    </svg>
-  ),
-  snapshot: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="18" height="18" rx="2"/>
-      <circle cx="12" cy="12" r="3"/>
-    </svg>
-  ),
-  logs: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
-    </svg>
-  ),
-  x: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-      <line x1="18" y1="6" x2="6" y2="18"/>
-      <line x1="6" y1="6" x2="18" y2="18"/>
-    </svg>
-  ),
-  archive: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="2" y="3" width="20" height="5" rx="1"/>
-      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/>
-      <path d="M10 12h4"/>
-    </svg>
-  ),
-  info: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="10"/>
-      <line x1="12" y1="16" x2="12" y2="12"/>
-      <line x1="12" y1="8" x2="12.01" y2="8"/>
-    </svg>
-  ),
-  ui: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="2" y="3" width="20" height="14" rx="2"/>
-      <path d="M8 21h8M12 17v4"/>
-    </svg>
-  ),
-};
-
-// Theme-aware semantic styling per cluster/node/process state.
-// LEADER / running / healthy -> buy; OFFLINE / failed -> sell;
-// FOLLOWER / transitional / electing -> warn; updating -> accent.
-const STATUS_BAR_BORDER: Record<string, string> = {
-  healthy: 'border-l-buy',
-  electing: 'border-l-warn',
-  unstable: 'border-l-sell',
-  updating: 'border-l-accent',
-};
-
-const STATUS_DOT_COLOR: Record<string, string> = {
-  healthy: 'bg-buy',
-  electing: 'bg-warn',
-  unstable: 'bg-sell',
-  updating: 'bg-accent',
-  // node/process states
-  leader: 'bg-buy',
-  online: 'bg-buy',
-  running: 'bg-buy',
-  follower: 'bg-warn',
-  offline: 'bg-faint',
-  stopped: 'bg-faint',
-  stopping: 'bg-sell',
-  failed: 'bg-sell',
-  starting: 'bg-warn',
-  rejoining: 'bg-warn',
-  election: 'bg-warn',
-};
-
-const NODE_CARD_BORDER: Record<string, string> = {
-  leader: 'border-l-buy',
-  follower: 'border-l-warn',
-  offline: 'border-l-faint opacity-70',
-  stopping: 'border-l-sell',
-  starting: 'border-l-warn',
-  rejoining: 'border-l-warn',
-  election: 'border-l-warn',
-};
-
-const NODE_ROLE_BADGE: Record<string, string> = {
-  leader: 'bg-buy-soft text-buy',
-  follower: 'bg-warn-soft text-warn',
-  offline: 'bg-surface-2 text-muted',
-  stopping: 'bg-sell-soft text-sell',
-  starting: 'bg-warn-soft text-warn',
-  rejoining: 'bg-warn-soft text-warn',
-  election: 'bg-warn-soft text-warn',
-};
-
-function getClusterStatus(progress: AdminProgress | null, nodes: NodeStatus[]): {
-  status: 'healthy' | 'electing' | 'unstable' | 'updating';
-  title: string;
-  detail: string;
-} {
-  if (progress?.operation === 'rolling-update' && !progress.complete) {
-    return {
-      status: 'updating',
-      title: 'Rolling Update',
-      detail: progress.status || 'Updating cluster...'
-    };
-  }
-
-  if (progress?.operation === 'housekeeping' && !progress.complete) {
-    return {
-      status: 'updating',
-      title: 'Archive Housekeeping',
-      detail: progress.status || 'Purging log segments below latest snapshot...'
-    };
-  }
-
-  const leader = nodes.find(n => n.role === 'LEADER');
-  const electingNodes = nodes.filter(n => n.role === 'ELECTION');
-  const isElecting = electingNodes.length > 0;
-
-  if (!leader && !isElecting) {
-    return {
-      status: 'unstable',
-      title: 'Cluster Unstable',
-      detail: 'No leader elected'
-    };
-  }
-
-  if (isElecting) {
-    return {
-      status: 'electing',
-      title: 'Leader Election',
-      detail: 'Selecting new leader...'
-    };
-  }
-
-  return {
-    status: 'healthy',
-    title: 'Cluster Healthy',
-    detail: `Node ${leader?.id} is leader`
-  };
-}
-
-function getLogSourceLabel(source: LogSource | null): string {
-  if (!source) return 'Select a service or node to view logs';
-  if (source.type === 'node') return `Node ${source.id}`;
-  switch (source.name) {
-    case 'backup': return 'Backup Node';
-    case 'market-gateway': return 'Market Gateway';
-    case 'order-gateway': return 'Order Gateway';
-    case 'admin-gateway': return 'Admin Gateway';
-    case 'ui': return 'Trading UI';
-    default: return source.name;
-  }
-}
-
-function processToLogName(name: string): string {
-  switch (name) {
-    case 'market': return 'market-gateway';
-    case 'order': return 'order-gateway';
-    case 'admin': return 'admin-gateway';
-    default: return name;
-  }
-}
-
-function getProcessIcon(name: string) {
-  switch (name) {
-    case 'backup': return Icons.backup;
-    case 'market': return Icons.market;
-    case 'order': return Icons.order;
-    case 'admin': return Icons.admin;
-    case 'ui': return Icons.ui;
-    default: return Icons.server;
-  }
-}
-
-function formatUptime(ms: number): string {
-  if (ms <= 0) return '--';
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  if (days > 0) return `${days}d ${hours % 24}h`;
-  if (hours > 0) return `${hours}h ${minutes % 60}m`;
-  if (minutes > 0) return `${minutes}m`;
-  return `${seconds}s`;
-}
 
 export function AdminPage() {
   const { theme, toggle } = useTheme();
@@ -359,10 +36,8 @@ export function AdminPage() {
   const [snapshotOp, setSnapshotOp] = useState(false);
   const [logSource, setLogSource] = useState<LogSource | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
-  const [logFilters, setLogFilters] = useState({ error: true, warn: true, info: true, debug: true });
   const [pendingAction, setPendingAction] = useState<ConfirmAction | null>(null);
   const [feedOpen, setFeedOpen] = useState(false);
-  const logsRef = useRef<HTMLDivElement>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -491,13 +166,6 @@ export function AdminPage() {
       return () => clearInterval(interval);
     }
   }, [logSource, fetchLogs]);
-
-  // Auto-scroll logs
-  useEffect(() => {
-    if (logsRef.current) {
-      logsRef.current.scrollTop = logsRef.current.scrollHeight;
-    }
-  }, [logs]);
 
   // ── Node action handlers (unchanged — still use /api/admin/status for transitional state) ──
 
@@ -834,64 +502,11 @@ export function AdminPage() {
     }
   };
 
-  // ── Formatters ──
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  };
-
-  // Format log/snapshot positions with K, M, G suffixes
-  const formatPosition = (pos: number | undefined): string => {
-    if (pos === undefined || pos < 0) return '--';
-    if (pos < 1000) return pos.toString();
-    if (pos < 1000000) return `${(pos / 1000).toFixed(1)}K`;
-    if (pos < 1000000000) return `${(pos / 1000000).toFixed(1)}M`;
-    return `${(pos / 1000000000).toFixed(2)}G`;
-  };
-
-  const isLogSelected = (source: LogSource) => {
-    if (!logSource) return false;
-    if (source.type === 'node' && logSource.type === 'node') {
-      return source.id === logSource.id;
-    }
-    if (source.type === 'service' && logSource.type === 'service') {
-      return source.name === logSource.name;
-    }
-    return false;
-  };
-
-  const getLogLevel = (line: string): 'error' | 'warn' | 'info' | 'debug' => {
-    const lower = line.toLowerCase();
-    if (lower.includes('[error]') || lower.includes('exception') || lower.includes('severe') || lower.includes('failed')) {
-      return 'error';
-    }
-    if (lower.includes('[warn]') || lower.includes('warning')) {
-      return 'warn';
-    }
-    if (lower.includes('[info]') || lower.includes('[gateway]') || lower.includes('started') || lower.includes('connected')) {
-      return 'info';
-    }
-    return 'debug';
-  };
-
-  const filteredLogs = logs.filter(line => {
-    const level = getLogLevel(line);
-    return logFilters[level];
-  });
-
-  const toggleFilter = (filter: 'error' | 'warn' | 'info' | 'debug') => {
-    setLogFilters(prev => ({ ...prev, [filter]: !prev[filter] }));
-  };
-
   // ── Derived state ──
 
   const clusterStatus = getClusterStatus(progress, status?.nodes || []);
   const isOperationRunning = !!(progress?.operation && !progress.complete);
   const operationProgress = isOperationRunning ? (progress?.progress || 0) : 0;
-  const serviceProcesses = processes.filter(p => p.role !== 'cluster');
 
   const tabClass = (active: boolean) =>
     `relative -mb-px border-b-2 px-4 py-2.5 text-[13px] font-medium font-display transition-colors ${
@@ -911,15 +526,6 @@ export function AdminPage() {
         return 'border border-buy/40 bg-buy-soft text-buy hover:brightness-105';
     }
   };
-
-  const iconBtnBase =
-    'flex h-8 w-8 items-center justify-center rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed [&_svg]:h-3.5 [&_svg]:w-3.5';
-  const iconBtnStop = `${iconBtnBase} bg-sell-soft text-sell hover:brightness-110`;
-  const iconBtnRestart = `${iconBtnBase} bg-warn-soft text-warn hover:brightness-110`;
-  const iconBtnStart = `${iconBtnBase} bg-buy-soft text-buy hover:brightness-110`;
-  const iconBtnAccent = `${iconBtnBase} bg-accent-soft text-accent hover:brightness-110`;
-  const iconBtnLogs = (active: boolean) =>
-    `${iconBtnBase} ${active ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-muted hover:text-text'}`;
 
   return (
     <div className="min-h-screen bg-bg text-text">
@@ -970,320 +576,42 @@ export function AdminPage() {
 
         {tab === 'cluster' && (
           <>
-            {/* Cluster Status Bar */}
-            {!status ? (
-              <div className="mb-6 h-[60px] animate-pulse rounded-md border border-hairline bg-surface-2" />
-            ) : (
-              <div className={`relative mb-6 flex items-center overflow-hidden rounded-md border border-l-[3px] border-hairline bg-surface p-4 ${STATUS_BAR_BORDER[clusterStatus.status]}`}>
-                <div
-                  className="absolute left-0 top-0 h-0.5 bg-accent transition-[width] duration-500"
-                  style={{ width: `${operationProgress}%` }}
-                />
-                <div className="relative flex w-full items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className={`h-2 w-2 flex-shrink-0 rounded-full ${STATUS_DOT_COLOR[clusterStatus.status]} ${clusterStatus.status !== 'healthy' ? 'animate-pulse-soft' : ''}`} />
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-display text-[14px] font-semibold text-text-strong">{clusterStatus.title}</span>
-                      <span className="text-[12px] text-muted">{clusterStatus.detail}</span>
-                    </div>
-                  </div>
-                  {isOperationRunning ? (
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[14px] font-semibold tabular-nums text-accent">{operationProgress}%</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        className="flex items-center gap-1.5 rounded-md border border-hairline bg-surface px-3.5 py-1.5 text-[12px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-35 [&_svg]:h-3.5 [&_svg]:w-3.5"
-                        onClick={requestRollingUpdate}
-                        disabled={isOperationRunning}
-                      >
-                        {Icons.update}
-                        <span>Rolling Update</span>
-                      </button>
-                      <button
-                        className="flex items-center gap-1.5 rounded-md border border-hairline bg-surface px-3.5 py-1.5 text-[12px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-35 [&_svg]:h-3.5 [&_svg]:w-3.5"
-                        onClick={requestHousekeeping}
-                        disabled={isOperationRunning}
-                      >
-                        {Icons.archive}
-                        <span>Housekeeping</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            <ClusterStatusBar
+              status={status}
+              clusterStatus={clusterStatus}
+              isOperationRunning={isOperationRunning}
+              operationProgress={operationProgress}
+              onRollingUpdate={requestRollingUpdate}
+              onHousekeeping={requestHousekeeping}
+            />
 
             <main className="flex flex-col gap-7">
-              {/* Cluster Nodes */}
-              <section className="rounded-lg border border-hairline bg-surface p-6">
-                <div className="mb-5 flex flex-wrap items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
-                  {Icons.server}
-                  <h2 className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Cluster Nodes</h2>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-sell disabled:opacity-30 [&_svg]:h-3 [&_svg]:w-3"
-                      onClick={requestStopAllNodes}
-                      disabled={isOperationRunning}
-                      title="Stop All Nodes"
-                    >
-                      {Icons.stop}
-                      <span>Stop All</span>
-                    </button>
-                    <button
-                      className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-buy disabled:opacity-30 [&_svg]:h-3 [&_svg]:w-3"
-                      onClick={requestStartAllNodes}
-                      disabled={isOperationRunning}
-                      title="Start All Nodes"
-                    >
-                      {Icons.play}
-                      <span>Start All</span>
-                    </button>
-                    <button
-                      className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-warn disabled:opacity-30 [&_svg]:h-3 [&_svg]:w-3"
-                      onClick={requestCleanup}
-                      disabled={isOperationRunning}
-                      title="Clean Aeron State"
-                    >
-                      {Icons.restart}
-                      <span>Cleanup</span>
-                    </button>
-                  </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {!status ? (
-                    <>
-                      <div className="h-[200px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-                      <div className="h-[200px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-                      <div className="h-[200px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-                    </>
-                  ) : status.nodes.map((node) => {
-                    const nodeState = node.status || node.role;
-                    const isTransitioning = ['STOPPING', 'STARTING', 'REJOINING', 'ELECTION'].includes(nodeState);
-                    const stateClass = nodeState.toLowerCase();
-                    const logSelected = isLogSelected({ type: 'node', id: node.id });
-                    const nodeProc = processes.find(p => p.name === `node${node.id}`);
+              <NodesSection
+                status={status}
+                processes={processes}
+                isOperationRunning={isOperationRunning}
+                logSource={logSource}
+                onStopNode={requestStopNode}
+                onRestartNode={requestRestartNode}
+                onStartNode={requestStartNode}
+                onStopAll={requestStopAllNodes}
+                onStartAll={requestStartAllNodes}
+                onCleanup={requestCleanup}
+                onViewLogs={setLogSource}
+              />
 
-                    return (
-                      <div
-                        key={node.id}
-                        className={`flex flex-col gap-2.5 rounded-lg border border-l-[3px] border-hairline bg-surface p-4 ${NODE_CARD_BORDER[stateClass] || 'border-l-hairline-strong'}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[13px] font-semibold text-text-strong">Node {node.id}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${NODE_ROLE_BADGE[stateClass] || 'bg-surface-2 text-muted'} ${isTransitioning ? 'animate-pulse-soft' : ''}`}>
-                            {nodeState}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-[12px] text-muted">
-                          <span className={`h-2 w-2 flex-shrink-0 rounded-full ${STATUS_DOT_COLOR[stateClass] || 'bg-faint'} ${isTransitioning ? 'animate-pulse-soft' : ''}`} />
-                          <span>
-                            {nodeState === 'OFFLINE' ? 'Stopped' :
-                             isTransitioning ? nodeState.charAt(0) + nodeState.slice(1).toLowerCase() + '...' :
-                             node.pid ? `PID ${node.pid}` : 'Running'}
-                          </span>
-                        </div>
-                        <div className="border-y border-hairline py-2.5 font-mono text-[11px]">
-                          <div className="mb-1.5 flex items-center gap-2">
-                            <span className="text-[10px] font-medium text-faint">Commit:</span>
-                            <span className="min-w-[48px] tabular-nums text-text">{formatPosition(node.commitPosition)}</span>
-                            <span className="text-[10px] font-medium text-faint">Snap:</span>
-                            <span className="min-w-[48px] tabular-nums text-text">{formatPosition(node.snapshotPosition)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-medium text-faint">Delta:</span>
-                            <span className="min-w-[48px] tabular-nums text-warn">{formatPosition(node.logDelta)}</span>
-                            <span className="text-[10px] font-medium text-faint">Archive:</span>
-                            <span className="min-w-[48px] tabular-nums text-text">{node.archiveBytes !== undefined ? formatBytes(node.archiveBytes) : '--'}</span>
-                            <span className="group relative ml-auto flex cursor-help items-center text-faint [&_svg]:h-3.5 [&_svg]:w-3.5 hover:text-accent">
-                              {Icons.info}
-                              <div className="invisible absolute bottom-full right-0 z-50 mb-2 min-w-[220px] rounded-md border border-hairline bg-surface p-3.5 opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100">
-                                <div className="mb-2.5 border-b border-hairline pb-1.5 font-sans text-[12px] font-semibold text-text-strong">Node Details</div>
-                                <div className="flex justify-between gap-4 py-0.5 text-[11px]">
-                                  <span className="text-muted">Commit Position:</span>
-                                  <span className="font-mono tabular-nums text-text-strong">{node.commitPosition !== undefined ? node.commitPosition.toLocaleString() : '--'}</span>
-                                </div>
-                                <div className="flex justify-between gap-4 py-0.5 text-[11px]">
-                                  <span className="text-muted">Snapshot Position:</span>
-                                  <span className="font-mono tabular-nums text-text-strong">{node.snapshotPosition !== undefined ? node.snapshotPosition.toLocaleString() : '--'}</span>
-                                </div>
-                                <div className="flex justify-between gap-4 py-0.5 text-[11px]">
-                                  <span className="text-muted">Delta (since snapshot):</span>
-                                  <span className="font-mono tabular-nums text-text-strong">{node.logDelta !== undefined ? node.logDelta.toLocaleString() : '--'}</span>
-                                </div>
-                                <div className="flex justify-between gap-4 py-0.5 text-[11px]">
-                                  <span className="text-muted">Snapshot Count:</span>
-                                  <span className="font-mono tabular-nums text-text-strong">{node.snapshotCount !== undefined ? node.snapshotCount : '--'}</span>
-                                </div>
-                                <div className="my-2 h-px bg-hairline" />
-                                <div className="flex justify-between gap-4 py-0.5 text-[11px]">
-                                  <span className="text-muted">Archive Size:</span>
-                                  <span className="font-mono tabular-nums text-text-strong">{node.archiveBytes !== undefined ? formatBytes(node.archiveBytes) : '--'}</span>
-                                </div>
-                                <div className="flex justify-between gap-4 py-0.5 text-[11px]">
-                                  <span className="text-muted">Disk Usage:</span>
-                                  <span className="font-mono tabular-nums text-text-strong">{node.archiveDiskBytes !== undefined ? formatBytes(node.archiveDiskBytes) : '--'}</span>
-                                </div>
-                              </div>
-                            </span>
-                          </div>
-                          {nodeProc && nodeProc.running && (
-                            <div className="mt-1.5 flex items-center gap-2">
-                              <span className="text-[10px] font-medium text-faint">Mem:</span>
-                              <span className="tabular-nums text-text">{formatBytes(nodeProc.memoryBytes)}</span>
-                              <span className="text-[10px] font-medium text-faint">CPU:</span>
-                              <span className="tabular-nums text-text">{(nodeProc.cpuPercent ?? 0).toFixed(1)}%</span>
-                              <span className="text-[10px] font-medium text-faint">Up:</span>
-                              <span className="tabular-nums text-text">{formatUptime(nodeProc.uptimeMs)}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-auto flex gap-1.5">
-                          {node.running && !isTransitioning ? (
-                            <>
-                              <button className={iconBtnStop} onClick={() => requestStopNode(node.id)} disabled={isOperationRunning} title="Stop">
-                                {Icons.stop}
-                              </button>
-                              <button className={iconBtnRestart} onClick={() => requestRestartNode(node.id)} disabled={isOperationRunning} title="Restart">
-                                {Icons.restart}
-                              </button>
-                            </>
-                          ) : !node.running && !isTransitioning ? (
-                            <button className={iconBtnStart} onClick={() => requestStartNode(node.id)} disabled={isOperationRunning} title="Start">
-                              {Icons.play}
-                            </button>
-                          ) : null}
-                          <button
-                            className={iconBtnLogs(logSelected)}
-                            onClick={() => setLogSource({ type: 'node', id: node.id })}
-                            title="View Logs"
-                          >
-                            {Icons.logs}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {/* Services — powered by Process Manager */}
-              <section className="rounded-lg border border-hairline bg-surface p-6">
-                <div className="mb-5 flex items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
-                  {Icons.server}
-                  <h2 className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Services</h2>
-                </div>
-                {processSummary && (
-                  <div className="mb-4 flex flex-wrap gap-6 rounded-md border border-hairline bg-surface-2 px-5 py-3">
-                    <div className="flex min-w-[50px] flex-col items-center gap-0.5">
-                      <span className="font-mono text-[16px] font-semibold tabular-nums text-buy">{processSummary.running}</span>
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-faint">Running</span>
-                    </div>
-                    <div className="flex min-w-[50px] flex-col items-center gap-0.5">
-                      <span className="font-mono text-[16px] font-semibold tabular-nums text-muted">{processSummary.stopped}</span>
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-faint">Stopped</span>
-                    </div>
-                    {processSummary.failed > 0 && (
-                      <div className="flex min-w-[50px] flex-col items-center gap-0.5">
-                        <span className="font-mono text-[16px] font-semibold tabular-nums text-sell">{processSummary.failed}</span>
-                        <span className="text-[10px] font-medium uppercase tracking-wide text-faint">Failed</span>
-                      </div>
-                    )}
-                    <div className="flex min-w-[50px] flex-col items-center gap-0.5">
-                      <span className="font-mono text-[13px] font-semibold tabular-nums text-accent">
-                        {processSummary.totalMemoryMB > 1024
-                          ? `${(processSummary.totalMemoryMB / 1024).toFixed(1)} GB`
-                          : `${Math.round(processSummary.totalMemoryMB)} MB`}
-                      </span>
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-faint">Total Memory</span>
-                    </div>
-                  </div>
-                )}
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {processes.length === 0 ? (
-                    <>
-                      <div className="h-[110px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-                      <div className="h-[110px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-                      <div className="h-[110px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-                      <div className="h-[110px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-                    </>
-                  ) : (
-                    serviceProcesses.map((proc) => {
-                      const isOperating = operatingServices.has(proc.name);
-                      const logName = processToLogName(proc.name);
-                      const logSelected = isLogSelected({ type: 'service', name: logName });
-                      const procDot = isOperating ? 'animate-pulse-soft bg-warn' : (STATUS_DOT_COLOR[proc.status] || 'bg-faint');
-
-                      return (
-                        <div key={proc.name} className={`flex flex-col gap-3.5 rounded-lg border bg-surface p-4 ${isOperating ? 'border-warn/30' : 'border-hairline'}`}>
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted [&_svg]:h-4 [&_svg]:w-4">{getProcessIcon(proc.name)}</div>
-                            <div className="min-w-0 flex-1">
-                              <span className="block text-[13px] font-semibold text-text-strong">
-                                {proc.display}
-                                {' '}
-                                <span className={`ml-1 rounded-full px-1.5 py-0.5 align-middle text-[9px] font-semibold uppercase tracking-wide ${proc.role === 'infra' ? 'bg-accent-soft text-accent' : 'bg-warn-soft text-warn'}`}>{proc.role}</span>
-                              </span>
-                              <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-muted">
-                                {isOperating
-                                  ? 'Processing...'
-                                  : `${proc.status}${proc.running && proc.port > 0 ? ` :${proc.port}` : ''}`}
-                              </span>
-                            </div>
-                            <span className={`h-2 w-2 flex-shrink-0 rounded-full ${procDot}`} />
-                          </div>
-                          {proc.running && (
-                            <div className="flex flex-wrap gap-3 font-mono text-[10px] tabular-nums text-faint">
-                              <span className="flex items-center gap-1">PID <span className="text-text">{proc.pid}</span></span>
-                              <span className="flex items-center gap-1">Mem <span className="text-text">{formatBytes(proc.memoryBytes)}</span></span>
-                              <span className="flex items-center gap-1">CPU <span className="text-text">{(proc.cpuPercent ?? 0).toFixed(1)}%</span></span>
-                              <span className="flex items-center gap-1">Up <span className="text-text">{formatUptime(proc.uptimeMs)}</span></span>
-                            </div>
-                          )}
-                          <div className="flex justify-end gap-1.5">
-                            {!isOperating && proc.running ? (
-                              <>
-                                <button className={iconBtnStop} onClick={() => requestProcessAction(proc.name, 'stop')} disabled={isOperationRunning || isOperating} title="Stop">{Icons.stop}</button>
-                                <button className={iconBtnRestart} onClick={() => requestProcessAction(proc.name, 'restart')} disabled={isOperationRunning || isOperating} title="Restart">{Icons.restart}</button>
-                                {proc.name === 'backup' && (
-                                  <button
-                                    className={iconBtnAccent}
-                                    onClick={takeSnapshot}
-                                    disabled={snapshotOp || isOperationRunning}
-                                    title="Take Snapshot"
-                                  >
-                                    {Icons.snapshot}
-                                  </button>
-                                )}
-                                {proc.name === 'admin' && (
-                                  <button
-                                    className={iconBtnAccent}
-                                    onClick={requestSelfUpdate}
-                                    disabled={isOperationRunning || isOperating}
-                                    title="Self-Update"
-                                  >
-                                    {Icons.update}
-                                  </button>
-                                )}
-                              </>
-                            ) : !isOperating ? (
-                              <button className={iconBtnStart} onClick={() => requestProcessAction(proc.name, 'start')} disabled={isOperationRunning || isOperating} title="Start">{Icons.play}</button>
-                            ) : null}
-                            <button
-                              className={iconBtnLogs(logSelected)}
-                              onClick={() => setLogSource({ type: 'service', name: logName })}
-                              title="View Logs"
-                            >
-                              {Icons.logs}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </section>
+              <ServicesSection
+                processes={processes}
+                processSummary={processSummary}
+                operatingServices={operatingServices}
+                snapshotOp={snapshotOp}
+                isOperationRunning={isOperationRunning}
+                logSource={logSource}
+                onProcessAction={requestProcessAction}
+                onSnapshot={takeSnapshot}
+                onSelfUpdate={requestSelfUpdate}
+                onViewLogs={setLogSource}
+              />
 
               {/* Live activity feed (SSE) */}
               <EventFeed
@@ -1299,76 +627,11 @@ export function AdminPage() {
                 }}
               />
 
-              {/* Log Viewer */}
-              <section className="rounded-lg border border-hairline bg-surface p-6">
-                <div className="mb-5 flex flex-wrap items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
-                  {Icons.logs}
-                  <h2 className="flex-1 font-mono text-[12px] font-semibold text-text-strong">{getLogSourceLabel(logSource)}</h2>
-                  {logSource && (
-                    <>
-                      <div className="flex flex-wrap gap-1">
-                        <button
-                          className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${logFilters.error ? 'border-sell/30 bg-sell-soft text-sell' : 'border-transparent text-muted hover:text-text'}`}
-                          onClick={() => toggleFilter('error')}
-                        >
-                          Error
-                        </button>
-                        <button
-                          className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${logFilters.warn ? 'border-warn/30 bg-warn-soft text-warn' : 'border-transparent text-muted hover:text-text'}`}
-                          onClick={() => toggleFilter('warn')}
-                        >
-                          Warn
-                        </button>
-                        <button
-                          className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${logFilters.info ? 'border-accent/30 bg-accent-soft text-accent' : 'border-transparent text-muted hover:text-text'}`}
-                          onClick={() => toggleFilter('info')}
-                        >
-                          Info
-                        </button>
-                        <button
-                          className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${logFilters.debug ? 'border-hairline-strong bg-surface-2 text-text' : 'border-transparent text-muted hover:text-text'}`}
-                          onClick={() => toggleFilter('debug')}
-                        >
-                          Debug
-                        </button>
-                      </div>
-                      <button
-                        className="rounded-full border border-hairline px-3 py-1 text-[11px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-text"
-                        onClick={() => setLogSource(null)}
-                      >
-                        Clear
-                      </button>
-                    </>
-                  )}
-                </div>
-                <div
-                  className="h-80 overflow-y-auto rounded-md border border-hairline bg-bg font-mono text-[12px] leading-relaxed"
-                  ref={logsRef}
-                >
-                  {logSource ? (
-                    filteredLogs.length > 0 ? (
-                      filteredLogs.map((line, i) => {
-                        const level = getLogLevel(line);
-                        const lineClass =
-                          level === 'error' ? 'border-l-sell bg-sell-soft text-text'
-                          : level === 'warn' ? 'border-l-warn bg-warn-soft text-text'
-                          : level === 'info' ? 'border-l-accent text-text'
-                          : 'border-l-transparent text-muted';
-                        return (
-                          <div key={i} className={`flex items-start whitespace-pre-wrap break-all border-l-2 py-px pr-3 ${lineClass}`}>
-                            <span className="w-10 flex-shrink-0 select-none px-3 text-right text-[10px] text-faint">{i + 1}</span>
-                            <span className="flex-1">{line}</span>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="py-6 text-center italic text-muted">No logs match the current filters</div>
-                    )
-                  ) : (
-                    <div className="py-6 text-center italic text-muted">Click a log button on any node or service to view its logs</div>
-                  )}
-                </div>
-              </section>
+              <LogViewer
+                logSource={logSource}
+                logs={logs}
+                onClear={() => setLogSource(null)}
+              />
             </main>
           </>
         )}
