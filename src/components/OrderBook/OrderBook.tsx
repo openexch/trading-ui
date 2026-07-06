@@ -102,7 +102,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* ── Header ── */}
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-hairline px-4 py-3.5">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-hairline px-4 py-2">
         <div className="flex items-center gap-2">
           <svg className="h-3.5 w-3.5 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 3v18h18" />
@@ -165,19 +165,26 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
         /* ═══ VERTICAL LAYOUT ═══ */
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* Column headers */}
-          <div className={`grid flex-shrink-0 grid-cols-3 gap-1 border-b border-hairline px-4 py-2 ${colHead}`}>
+          <div className={`grid flex-shrink-0 grid-cols-3 gap-1 border-b border-hairline px-4 py-1.5 ${colHead}`}>
             <span className="text-left">Price</span>
             <span className="text-right">Amount</span>
             <span className="text-right">Total</span>
           </div>
 
-          {/* Asks section (reversed — lowest at bottom) */}
+          {/* Asks section (reversed — lowest at bottom). A fixed 20-slot grid:
+              every level is always visible regardless of viewport height —
+              rows share the side's height equally. (The old justify-end
+              scroll container could not scroll: flex-end overflow is
+              unreachable in CSS, which is why deep asks were clipped.) */}
           {showAsks && (
-            <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto overflow-x-hidden">
+            <div className="grid min-h-0 flex-1 grid-rows-[repeat(20,minmax(0,1fr))] overflow-hidden">
+              {Array.from({ length: Math.max(0, RENDER_DEPTH - displayAsks.length) }).map((_, i) => (
+                <div key={`pad-${i}`} aria-hidden />
+              ))}
               {displayAsks.map((level) => (
                 <div
                   key={level.price}
-                  className={`relative grid cursor-pointer grid-cols-3 gap-1 px-4 py-[3px] text-[11.5px] leading-[1.9] hover:bg-surface-2 ${getAnimationClass(level.price, 'ask')}`}
+                  className={`relative grid cursor-pointer grid-cols-3 items-center gap-1 px-4 text-[12px] leading-none hover:bg-surface-2 ${getAnimationClass(level.price, 'ask')}`}
                   onClick={() => handlePriceClick(level.price)}
                   title="Click to set price"
                 >
@@ -195,7 +202,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
           )}
 
           {/* Spread indicator */}
-          <div className="flex flex-shrink-0 items-center justify-between border-y border-hairline px-4 py-2">
+          <div className="flex flex-shrink-0 items-center justify-between border-y border-hairline px-4 py-1.5">
             <span className="font-mono text-sm font-semibold tabular-nums tracking-tight text-text-strong">${formatPrice(midPrice)}</span>
             <span className="font-mono text-[10px] tabular-nums text-muted">
               Spread: ${formatPrice(spread)} ({spreadPercent.toFixed(3)}%)
@@ -204,11 +211,11 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
 
           {/* Bids section (highest at top) */}
           {showBids && (
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+            <div className="grid min-h-0 flex-1 grid-rows-[repeat(20,minmax(0,1fr))] overflow-hidden">
               {bidLevels.map((level) => (
                 <div
                   key={level.price}
-                  className={`relative grid cursor-pointer grid-cols-3 gap-1 px-4 py-[3px] text-[11.5px] leading-[1.9] hover:bg-surface-2 ${getAnimationClass(level.price, 'bid')}`}
+                  className={`relative grid cursor-pointer grid-cols-3 items-center gap-1 px-4 text-[12px] leading-none hover:bg-surface-2 ${getAnimationClass(level.price, 'bid')}`}
                   onClick={() => handlePriceClick(level.price)}
                   title="Click to set price"
                 >
@@ -241,7 +248,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
 
           <div className="grid min-h-0 flex-1 grid-cols-2 overflow-hidden">
             <div className="flex min-h-0 flex-col overflow-hidden border-r border-hairline">
-              <div className={`grid flex-shrink-0 grid-cols-3 gap-1 border-b border-hairline px-4 py-2 ${colHead}`}>
+              <div className={`grid flex-shrink-0 grid-cols-3 gap-1 border-b border-hairline px-4 py-1.5 ${colHead}`}>
                 <span className="text-left">Total</span>
                 <span className="text-center">Amount</span>
                 <span className="text-right">Bid Price</span>
@@ -250,7 +257,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                 {bidLevels.map((level) => (
                   <div
                     key={level.price}
-                    className={`relative grid cursor-pointer grid-cols-3 gap-1 px-4 py-[3px] text-[11.5px] leading-[1.9] hover:bg-surface-2 ${getAnimationClass(level.price, 'bid')}`}
+                    className={`relative grid cursor-pointer grid-cols-3 items-center gap-1 px-4 text-[12px] leading-none hover:bg-surface-2 ${getAnimationClass(level.price, 'bid')}`}
                     onClick={() => handlePriceClick(level.price)}
                     title="Click to set price"
                   >
@@ -268,7 +275,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
             </div>
 
             <div className="flex min-h-0 flex-col overflow-hidden">
-              <div className={`grid flex-shrink-0 grid-cols-3 gap-1 border-b border-hairline px-4 py-2 ${colHead}`}>
+              <div className={`grid flex-shrink-0 grid-cols-3 gap-1 border-b border-hairline px-4 py-1.5 ${colHead}`}>
                 <span className="text-left">Ask Price</span>
                 <span className="text-center">Amount</span>
                 <span className="text-right">Total</span>
@@ -277,7 +284,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                 {askLevels.map((level) => (
                   <div
                     key={level.price}
-                    className={`relative grid cursor-pointer grid-cols-3 gap-1 px-4 py-[3px] text-[11.5px] leading-[1.9] hover:bg-surface-2 ${getAnimationClass(level.price, 'ask')}`}
+                    className={`relative grid cursor-pointer grid-cols-3 items-center gap-1 px-4 text-[12px] leading-none hover:bg-surface-2 ${getAnimationClass(level.price, 'ask')}`}
                     onClick={() => handlePriceClick(level.price)}
                     title="Click to set price"
                   >

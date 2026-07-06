@@ -24,7 +24,6 @@ import { OrderHistory } from './components/OrderHistory/OrderHistory';
 import { AccountDrawer } from './components/Account/AccountDrawer';
 import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
-import { BackgroundFX } from './components/BackgroundFX';
 import { AdminPage } from './pages/AdminPage';
 import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
@@ -359,8 +358,7 @@ function MarketPage() {
   return (
     <div className="mx-auto flex h-screen max-w-[1920px] flex-col px-2">
       {/* ── Header ── */}
-      <header className="relative isolate flex flex-shrink-0 items-center justify-between overflow-hidden border-b border-hairline py-2.5">
-        <BackgroundFX />
+      <header className="flex flex-shrink-0 items-center justify-between border-b border-hairline py-2.5">
         <div className="flex items-center gap-5">
           <div className="flex select-none items-center gap-2.5">
             <LogoMark />
