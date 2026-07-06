@@ -100,10 +100,11 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
   // sides of the market meet, so it carries the same live pulse as the rail.
   const prevMidRef = useRef(0);
   const [midTick, setMidTick] = useState<'up' | 'down' | null>(null);
+  const [midDir, setMidDir] = useState<'up' | 'down' | null>(null);
   useEffect(() => {
     if (midPrice > 0 && prevMidRef.current > 0) {
-      if (midPrice > prevMidRef.current) setMidTick('up');
-      else if (midPrice < prevMidRef.current) setMidTick('down');
+      if (midPrice > prevMidRef.current) { setMidTick('up'); setMidDir('up'); }
+      else if (midPrice < prevMidRef.current) { setMidTick('down'); setMidDir('down'); }
     }
     prevMidRef.current = midPrice;
     const id = window.setTimeout(() => setMidTick(null), 500);
@@ -227,9 +228,14 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                 midTick === 'up' ? 'text-buy' : midTick === 'down' ? 'text-sell' : 'text-text-strong'
               }`}
             >
-              {midTick && (
-                <span aria-hidden className="text-[9px] leading-none">{midTick === 'up' ? '\u25b2' : '\u25bc'}</span>
-              )}
+              <span
+                aria-hidden
+                className={`w-[9px] text-[9px] leading-none ${
+                  midDir ? (midDir === 'up' ? 'text-buy' : 'text-sell') : 'opacity-0'
+                }`}
+              >
+                {midDir === 'down' ? '\u25bc' : '\u25b2'}
+              </span>
               ${formatPrice(midPrice)}
             </span>
             <span className="font-mono text-[10px] tabular-nums text-muted">
