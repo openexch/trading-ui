@@ -15,6 +15,7 @@ import { NodesSection } from '../components/admin/NodesSection';
 import { ServicesSection } from '../components/admin/ServicesSection';
 import { LogViewer } from '../components/admin/LogViewer';
 import { getClusterStatus } from '../components/admin/status';
+import { GRAFANA_URL } from '../config';
 import { useAdminEvents, type AdminProgress } from '../hooks/useAdminEvents';
 import type {
   AdminTab,
@@ -639,6 +640,15 @@ function AdminConsole() {
           </h1>
         </div>
         <div className="ml-auto flex items-center gap-3">
+          <a
+            href={GRAFANA_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-text [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            <span>Grafana</span>
+            {Icons.external}
+          </a>
           <GatewayIndicator gatewayOk={gatewayOk} eventsConnected={eventsConnected} />
           <ThemeToggle theme={theme} onToggle={toggle} />
         </div>
