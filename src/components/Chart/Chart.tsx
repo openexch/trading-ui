@@ -183,6 +183,15 @@ function getMaValueAtIndex(maData: (LineData | null)[], index: number): number |
   return maData[index]?.value ?? null;
 }
 
+// lightweight-charts draws UNIX timestamps as UTC, so the axis/crosshair ran
+// 3h behind local wall clocks. Shift each candle to the viewer's local time
+// at that instant (per-timestamp offset, so DST transitions stay correct).
+// Display-only: the shift lives entirely inside this component — candle data
+// upstream stays true UTC.
+function toLocalChartTime(utcSeconds: number): number {
+  return utcSeconds - new Date(utcSeconds * 1000).getTimezoneOffset() * 60;
+}
+
 function isValidCandle(c: CandleData | null): c is CandleData {
   if (!c) return false;
   return (
@@ -196,9 +205,28 @@ function isValidCandle(c: CandleData | null): c is CandleData {
 }
 
 // ── Component ──────────────────────────────────────────────────
-export function Chart({ candles, currentCandle, symbol, onIntervalChange, activeInterval, theme, loading }: ChartProps) {
+export function Chart({ candles: utcCandles, currentCandle: utcCurrentCandle, symbol, onIntervalChange, activeInterval, theme, loading }: ChartProps) {
+  // Local-time shadows of the candle props — everything below renders these,
+  // so the whole component (axis, crosshair lookups, MAs, updates) stays
+  // consistent in one clock.
+  const candles = useMemo(
+    () => utcCandles.map(c => (c?.time != null ? { ...c, time: toLocalChartTime(c.time) } : c)),
+    [utcCandles]
+  );
+  const currentCandle = useMemo(
+    () => (utcCurrentCandle?.time != null
+      ? { ...utcCurrentCandle, time: toLocalChartTime(utcCurrentCandle.time) }
+      : utcCurrentCandle),
+    [utcCurrentCandle]
+  );
+
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+
+  // The crosshair handler lives in the mount-once init effect; give it a ref
+  // so it reads the current candles, not the mount-time (empty) array.
+  const candlesRef = useRef<CandleData[]>(candles);
+  candlesRef.current = candles;
 
   // Live palette ref so data/update effects can color series without
   // re-subscribing to `theme` (keeps the chart from being recreated).
@@ -359,7 +387,7 @@ export function Chart({ candles, currentCandle, symbol, onIntervalChange, active
       if (!candleItem) {
         // Find candle by time
         const t = param.time;
-        const found = candles.find(c => c.time === t);
+        const found = candlesRef.current.find(c => c.time === t);
         if (found) {
           candleItem = {
             time: found.time as Time,
