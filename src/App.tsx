@@ -11,6 +11,7 @@ import { useOrders } from './hooks/useOrders';
 import { useOmsSocket } from './hooks/useOmsSocket';
 import { useTheme } from './hooks/useTheme';
 import { useAuth } from './auth/AuthContext';
+import { STACK_VERSION } from './config';
 import { AuthModal } from './components/Auth/AuthModal';
 import { OrderBook } from './components/OrderBook/OrderBook';
 import { TradeList } from './components/Trades/TradeList';
@@ -608,7 +609,7 @@ function MarketPage() {
             </span>
             <span>Open Exchange Trading Engine</span>
             <span className="text-hairline-strong">|</span>
-            <span className="font-mono text-[10px] text-muted">v1.0.0</span>
+            <span className="font-mono text-[10px] text-muted">{STACK_VERSION}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse-soft" />
