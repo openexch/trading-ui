@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { AggregatedTrade } from '../../types/market';
+import type { TapeTrade } from '../../types/market';
 import { formatPrice, formatQuantity, formatTime } from '../../utils/formatters';
 
 interface TradeListProps {
-  trades: AggregatedTrade[];
+  trades: TapeTrade[];
 }
 
 export function TradeList({ trades }: TradeListProps) {
@@ -47,12 +47,12 @@ export function TradeList({ trades }: TradeListProps) {
             const isBuy = trade.side != null
               ? trade.side === 'BUY'
               : prev == null || trade.price >= prev.price;
-            // No per-row mount animation: batches prepend every second, so
-            // index-shifted keys remounted every row and restarted its
-            // fade-in — the whole tape rendered permanently half-faded.
+            // Stable per-row key from the ingest-assigned seq: batches prepend
+            // every second, and an index-shifted key remounted every row (and,
+            // with any per-row mount animation, left the tape half-faded).
             return (
               <div
-                key={`${trade.timestamp}-${trade.price}-${trade.quantity}-${index}`}
+                key={trade.seq}
                 className="grid grid-cols-[1fr_1fr_70px] gap-1.5 px-4 py-1 font-mono text-[12px] leading-[1.8] tabular-nums transition-colors hover:bg-surface-2"
               >
                 <span

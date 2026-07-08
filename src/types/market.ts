@@ -47,6 +47,13 @@ export interface TradesBatchMessage {
   timestamp: number;
 }
 
+/** A trade-tape row: an aggregated trade tagged at ingest with a client-side
+ *  monotonic `seq`. The wire payload carries no id, so `seq` is the stable
+ *  React key that survives batch prepends (DESIGN.md: stable seq keys). */
+export interface TapeTrade extends AggregatedTrade {
+  seq: number;
+}
+
 export interface BookSnapshotMessage {
   type: 'BOOK_SNAPSHOT';
   marketId: number;

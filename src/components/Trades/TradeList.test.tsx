@@ -9,10 +9,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { TradeList } from './TradeList';
-import type { AggregatedTrade } from '../../types/market';
+import type { TapeTrade } from '../../types/market';
 
-function trade(over: Partial<AggregatedTrade>): AggregatedTrade {
-  return { price: 100, quantity: 1, tradeCount: 1, timestamp: 1000, ...over };
+let nextSeq = 0;
+function trade(over: Partial<TapeTrade>): TapeTrade {
+  return { price: 100, quantity: 1, tradeCount: 1, timestamp: 1000, seq: nextSeq++, ...over };
 }
 
 /** Price-cell color per row, top (newest) first. */
