@@ -40,6 +40,23 @@ export interface ClusterStatus {
   // Archive is now per-node (in NodeStatus), these are deprecated
   archiveBytes?: number;
   archiveDiskBytes?: number;
+  // Live stack runtime profile (light/dev/demo/performance/ultra); updates as a
+  // profile switch completes.
+  activeProfile?: string;
+}
+
+// One runtime profile as reported by GET /api/admin/profile's `available` set.
+export interface ProfileInfo {
+  name: string;
+  description: string;
+  nodeHeapMB: number;
+  idleMode: string;
+  driverMode: string;
+  pinning: string;
+  bookCapacity: number;
+  minMemMB: number;
+  simGlobalOps: number;
+  governor: string;
 }
 
 export interface ProcessInfo {
@@ -75,10 +92,12 @@ export type ConfirmAction = {
   type: 'stop-node' | 'restart-node' | 'start-node' |
         'process-action' | 'self-update' |
         'rolling-update' | 'housekeeping' | 'housekeeping-force' |
-        'stop-all-nodes' | 'start-all-nodes' | 'cleanup';
+        'stop-all-nodes' | 'start-all-nodes' | 'cleanup' |
+        'apply-profile' | 'apply-profile-force';
   nodeId?: number;
   service?: string;
   action?: 'start' | 'stop' | 'restart';
+  profileName?: string;
   title: string;
   message: string;
   confirmLabel: string;
