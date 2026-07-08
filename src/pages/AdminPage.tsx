@@ -14,6 +14,7 @@ import { ClusterStatusBar } from '../components/admin/ClusterStatusBar';
 import { NodesSection } from '../components/admin/NodesSection';
 import { ServicesSection } from '../components/admin/ServicesSection';
 import { LogViewer } from '../components/admin/LogViewer';
+import { ProfileSelector } from '../components/admin/ProfileSelector';
 import { getClusterStatus } from '../components/admin/status';
 import { GRAFANA_URL } from '../config';
 import { useAdminEvents, type AdminProgress } from '../hooks/useAdminEvents';
@@ -24,6 +25,7 @@ import type {
   LogSource,
   ProcessInfo,
   ProcessSummary,
+  ProfileInfo,
 } from '../components/admin/types';
 
 const ADMIN_BASE = import.meta.env.VITE_ADMIN_API_URL || '';
@@ -78,6 +80,10 @@ function AdminConsole() {
   const [logs, setLogs] = useState<string[]>([]);
   const [pendingAction, setPendingAction] = useState<ConfirmAction | null>(null);
   const [feedOpen, setFeedOpen] = useState(false);
+  // Runtime profiles (available set is static; the active one rides the status
+  // poll, seeded from the initial GET so the header shows it pre-first-status).
+  const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
+  const [seedProfile, setSeedProfile] = useState('');
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -233,6 +239,18 @@ function AdminConsole() {
     const interval = setInterval(fetchProcesses, 5000);
     return () => clearInterval(interval);
   }, [fetchProcesses]);
+
+  // Load the runtime-profile set once (available profiles are static; the active
+  // one comes live from status).
+  useEffect(() => {
+    fetch(`${ADMIN_BASE}/api/admin/profile`)
+      .then((r) => r.json())
+      .then((d) => {
+        setProfiles(d.available ?? []);
+        setSeedProfile(d.active ?? '');
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (logSource) {
@@ -564,6 +582,52 @@ function AdminConsole() {
     }
   };
 
+  // ── Runtime profile switch ──
+
+  const activeProfileName = status?.activeProfile ?? seedProfile;
+
+  const requestProfileSwitch = (name: string) => {
+    if (progress?.operation && !progress.complete) return;
+    if (!name || name === activeProfileName) return;
+    const target = profiles.find((p) => p.name === name);
+    setPendingAction({
+      type: 'apply-profile',
+      profileName: name,
+      title: `Switch to the ${name} profile?`,
+      message: `${target?.description ?? ''} Applying rolls every service onto the new profile — cluster nodes one at a time (quorum held), then gateways and the sim. Expect a brief blip; no code is rebuilt.`,
+      confirmLabel: 'Apply Profile',
+      confirmStyle: 'warning',
+    });
+  };
+
+  const executeProfileSwitch = async (name: string, force: boolean) => {
+    try {
+      const response = await fetch(`${ADMIN_BASE}/api/admin/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(force ? { name, force: true } : { name }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 409 && !force && data.error && /memory|insufficient/i.test(data.error)) {
+          // Switch-up headroom guard refused. Offer an explicit force.
+          setPendingAction({
+            type: 'apply-profile-force',
+            profileName: name,
+            title: 'Not enough memory — force the switch?',
+            message: `The server refused: ${data.error} Forcing commits the larger heaps anyway; only continue if the box can take it.`,
+            confirmLabel: 'Force Switch',
+            confirmStyle: 'danger',
+          });
+          return;
+        }
+        toast({ tone: 'error', text: data.error || `Profile switch failed (HTTP ${response.status})`, sticky: true });
+      }
+    } catch {
+      toast({ tone: 'error', text: 'Failed to switch profile', sticky: true });
+    }
+  };
+
   // ── Confirm action dispatch ──
 
   const confirmAction = async () => {
@@ -605,6 +669,12 @@ function AdminConsole() {
       case 'cleanup':
         await executeCleanup();
         break;
+      case 'apply-profile':
+        if (action.profileName) await executeProfileSwitch(action.profileName, false);
+        break;
+      case 'apply-profile-force':
+        if (action.profileName) await executeProfileSwitch(action.profileName, true);
+        break;
     }
   };
 
@@ -640,6 +710,12 @@ function AdminConsole() {
           </h1>
         </div>
         <div className="ml-auto flex items-center gap-3">
+          <ProfileSelector
+            profiles={profiles}
+            active={activeProfileName}
+            disabled={isOperationRunning}
+            onSelect={requestProfileSwitch}
+          />
           <a
             href={GRAFANA_URL}
             target="_blank"
