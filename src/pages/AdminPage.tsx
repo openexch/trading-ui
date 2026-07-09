@@ -617,13 +617,24 @@ function AdminConsole() {
     if (stackBusy) return;
     if (!name || name === activeProfileName) return;
     const target = profiles.find((p) => p.name === name);
+    const active = profiles.find((p) => p.name === activeProfileName);
+    // The embedded↔external driver-mode boundary can't be rolled node-by-node:
+    // the whole cluster stops briefly and restarts (state preserved). Tell the
+    // operator the truth and tone it as the outage it is.
+    const driverModeChange = !!(target && active && target.driverMode !== active.driverMode);
     setPendingAction({
       type: 'apply-profile',
       profileName: name,
       title: `Switch to the ${name} profile?`,
-      message: `${target?.description ?? ''} Applying rolls every service onto the new profile — cluster nodes one at a time (quorum held), then gateways and the sim. Expect a brief blip; no code is rebuilt.`,
+      message: driverModeChange
+        ? `${target?.description ?? ''} This switch moves the media driver ${
+            target?.driverMode === 'embedded'
+              ? 'into the node process (embedded)'
+              : 'out to dedicated driver processes (external)'
+          } — the WHOLE cluster stops briefly and restarts. State is preserved (same membership; nodes recover from snapshot + log). Trading pauses until the cluster is back.`
+        : `${target?.description ?? ''} Applying rolls every service onto the new profile — cluster nodes one at a time (quorum held), then gateways and the sim. Expect a brief blip; no code is rebuilt.`,
       confirmLabel: 'Apply Profile',
-      confirmStyle: 'warning',
+      confirmStyle: driverModeChange ? 'danger' : 'warning',
     });
   };
 
