@@ -110,6 +110,22 @@ export interface ProfileInfo {
   governor: string;
 }
 
+/** The complete profile record from GET /api/admin/profiles (the CRUD
+ *  surface). `available` on GET /api/admin/profile now carries the same full
+ *  field set — a strict superset of ProfileInfo, so the header selector keeps
+ *  parsing unchanged. Everything except `name`/`builtin` is editable and
+ *  rides the POST /api/admin/profiles `profile` body. */
+export interface FullProfile extends ProfileInfo {
+  builtin: boolean;
+  omsHeapMB: number;
+  marketHeapMB: number;
+  backupHeapMB: number;
+  preTouch: boolean;
+  driverProfile: string;
+  logTermLength: string;
+  thp: string;
+}
+
 export interface ProcessInfo {
   name: string;
   display: string;
@@ -163,4 +179,4 @@ export type ConfirmAction = {
   confirmStyle: 'danger' | 'warning' | 'primary';
 };
 
-export type AdminTab = 'overview' | 'clusters' | 'services' | 'risk' | 'backup';
+export type AdminTab = 'overview' | 'clusters' | 'services' | 'profiles' | 'risk' | 'backup';

@@ -15,6 +15,7 @@ import { OverviewDashboard } from '../components/admin/OverviewDashboard';
 import { ServicesSection } from '../components/admin/ServicesSection';
 import { LogViewer } from '../components/admin/LogViewer';
 import { ProfileSelector } from '../components/admin/ProfileSelector';
+import { ProfilesEditor } from '../components/admin/ProfilesEditor';
 import { adminUrl, normalizeStatus } from '../components/admin/api';
 import { GRAFANA_URL } from '../config';
 import { useAdminEvents, type AdminProgress } from '../hooks/useAdminEvents';
@@ -264,17 +265,23 @@ function AdminConsole() {
     return () => clearInterval(interval);
   }, [fetchProcesses]);
 
-  // Load the runtime-profile set once (available profiles are static; the active
-  // one comes live from status).
-  useEffect(() => {
-    fetch(adminUrl('/api/admin/profile'))
-      .then((r) => r.json())
-      .then((d) => {
-        setProfiles(d.available ?? []);
-        setSeedProfile(d.active ?? '');
-      })
-      .catch(() => {});
+  // Load the runtime-profile set for the header selector. Fetched once on
+  // mount and re-fetched by the Profiles editor after a save/delete so new
+  // customs show up in the header <select> immediately.
+  const fetchProfiles = useCallback(async () => {
+    try {
+      const r = await fetch(adminUrl('/api/admin/profile'));
+      const d = await r.json();
+      setProfiles(d.available ?? []);
+      setSeedProfile(d.active ?? '');
+    } catch {
+      // Header select keeps its last-known set; the pill carries connectivity.
+    }
   }, []);
+
+  useEffect(() => {
+    fetchProfiles();
+  }, [fetchProfiles]);
 
   useEffect(() => {
     if (logSource) {
@@ -819,6 +826,7 @@ function AdminConsole() {
           <button className={tabClass(tab === 'overview')} onClick={() => setTab('overview')}>Overview</button>
           <button className={tabClass(tab === 'clusters')} onClick={() => setTab('clusters')}>Clusters</button>
           <button className={tabClass(tab === 'services')} onClick={() => setTab('services')}>Services</button>
+          <button className={tabClass(tab === 'profiles')} onClick={() => setTab('profiles')}>Profiles</button>
           <button className={tabClass(tab === 'risk')} onClick={() => setTab('risk')}>Risk</button>
           <button className={tabClass(tab === 'backup')} onClick={() => setTab('backup')}>Backup</button>
         </nav>
@@ -844,6 +852,15 @@ function AdminConsole() {
             onProcessAction={requestProcessAction}
             onSelfUpdate={requestSelfUpdate}
             onViewLogs={setLogSource}
+          />
+        )}
+
+        {tab === 'profiles' && (
+          <ProfilesEditor
+            activeName={activeProfileName}
+            stackBusy={stackBusy}
+            onApply={requestProfileSwitch}
+            onChanged={fetchProfiles}
           />
         )}
 
