@@ -146,13 +146,17 @@ export type ConfirmAction = {
         'process-action' | 'self-update' |
         'rolling-update' | 'housekeeping' | 'housekeeping-force' | 'snapshot' |
         'stop-all-nodes' | 'start-all-nodes' | 'cleanup' |
-        'apply-profile' | 'apply-profile-force';
+        'apply-profile' | 'apply-profile-force' | 'cluster-topology';
   /** Cluster the action targets (rides the `?cluster=` query). */
   cluster?: string;
   nodeId?: number;
   service?: string;
   action?: 'start' | 'stop' | 'restart';
   profileName?: string;
+  /** Target node count for a cluster-topology change (genesis re-form). */
+  nodeCount?: number;
+  /** Typed confirmation phrase the modal demands before enabling confirm. */
+  requireText?: string;
   title: string;
   message: string;
   confirmLabel: string;

@@ -39,7 +39,7 @@ const assetsBlock = (over: Partial<ClusterBlock> = {}): ClusterBlock => ({
 
 const noop = () => {};
 const handlers = {
-  onNodeAction: noop, onAllNodes: noop, onCleanup: noop,
+  onNodeAction: noop, onAllNodes: noop, onCleanup: noop, onTopologyChange: noop,
   onRollingUpdate: noop, onHousekeeping: noop, onSnapshot: noop, onViewLogs: noop,
 };
 
