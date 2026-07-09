@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 export type ConfirmTone = 'danger' | 'warning' | 'primary';
 
@@ -20,6 +20,10 @@ interface ConfirmModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   busy?: boolean;
+  /** Typed confirmation: the confirm button stays disabled until the operator
+   *  types this phrase exactly. Reserved for data-loss operations (topology
+   *  re-forms) — a click is too cheap for a wipe. */
+  requireText?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -32,9 +36,12 @@ export function ConfirmModal({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   busy = false,
+  requireText,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const [typed, setTyped] = useState('');
+  const confirmBlocked = !!requireText && typed !== requireText;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !busy) onCancel();
@@ -55,6 +62,23 @@ export function ConfirmModal({
           <h3 className="font-display text-[15px] font-semibold text-text-strong">{title}</h3>
         </div>
         <div className="px-5 py-4 text-[13px] leading-relaxed text-muted">{body}</div>
+        {requireText && (
+          <div className="px-5 pb-4">
+            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-faint">
+              Type <span className="select-all font-mono text-sell">{requireText}</span> to confirm
+            </label>
+            <input
+              type="text"
+              autoFocus
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={requireText}
+              disabled={busy}
+              aria-label="Confirmation phrase"
+              className="w-full rounded-md border border-hairline bg-surface-2 px-3 py-1.5 font-mono text-[13px] text-text placeholder:text-faint focus:border-sell/50 focus:outline-none disabled:opacity-50"
+            />
+          </div>
+        )}
         <div className="flex justify-end gap-2 border-t border-hairline px-5 py-3">
           <button
             onClick={onCancel}
@@ -65,7 +89,7 @@ export function ConfirmModal({
           </button>
           <button
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || confirmBlocked}
             className={`rounded-md px-3 py-1.5 text-[13px] font-semibold transition-[filter] disabled:opacity-50 ${CONFIRM_BTN[tone]}`}
           >
             {busy ? 'Working…' : confirmLabel}

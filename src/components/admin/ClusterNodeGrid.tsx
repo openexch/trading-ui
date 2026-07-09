@@ -23,8 +23,14 @@ interface ClusterNodeGridProps {
   onNodeAction: (cluster: string, type: 'stop-node' | 'restart-node' | 'start-node', nodeId: number) => void;
   onAllNodes: (cluster: string, type: 'stop-all-nodes' | 'start-all-nodes') => void;
   onCleanup: (cluster: string) => void;
+  /** Topology change (node count): a genesis RE-FORM — wipes cluster state
+   *  behind a typed confirmation upstream. */
+  onTopologyChange: (cluster: string, nodeCount: number) => void;
   onViewLogs: (source: LogSource) => void;
 }
+
+/** Raft-sane member counts (odd → a majority always exists). */
+const NODE_COUNTS = [1, 3, 5, 7];
 
 function NodeDetailsTooltip({ node }: { node: NodeStatus }) {
   return (
@@ -67,6 +73,7 @@ export function ClusterNodeGrid({
   onNodeAction,
   onAllNodes,
   onCleanup,
+  onTopologyChange,
   onViewLogs,
 }: ClusterNodeGridProps) {
   const nodes = cluster.nodes;
@@ -77,6 +84,27 @@ export function ClusterNodeGrid({
       <div className="mb-3.5 flex flex-wrap items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
         {Icons.server}
         <h2 className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Cluster Nodes</h2>
+        {/* Topology: a select, not a button row — changing it is rare and
+            destructive (genesis re-form), confirmed upstream with a typed
+            phrase. Controlled by the live count so a cancelled confirm snaps
+            straight back. */}
+        <label className="flex items-center gap-1.5 text-[11px] font-medium text-faint" title={busyTitle}>
+          <span className="select-none uppercase tracking-wide">Nodes</span>
+          <select
+            aria-label={`${cluster.display} node count`}
+            value={cluster.nodeCount}
+            disabled={stackBusy}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (n !== cluster.nodeCount) onTopologyChange(cluster.name, n);
+            }}
+            className="rounded-md border border-hairline bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-text transition-colors hover:text-text-strong focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {NODE_COUNTS.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
         <div className="flex flex-wrap gap-1.5">
           <button
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-sell disabled:opacity-30 [&_svg]:h-3 [&_svg]:w-3"

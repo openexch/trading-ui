@@ -376,6 +376,43 @@ function AdminConsole() {
     }
   };
 
+  // ── Topology change (node count): a genesis RE-FORM, data loss by design ──
+
+  const requestTopologyChange = (cluster: string, nodeCount: number) => {
+    if (stackBusy) return;
+    const disp = clusterDisplayOf(cluster);
+    const wipes = cluster === 'match'
+      ? 'its cluster + archive state AND all orders, trades and balances in Redis/Postgres/Timescale (users and risk config are preserved; the sim re-funds its bots)'
+      : 'its cluster + archive state';
+    setPendingAction({
+      type: 'cluster-topology',
+      cluster,
+      nodeCount,
+      requireText: 'DELETE-CLUSTER-STATE',
+      title: `Re-form the ${disp} with ${nodeCount} node${nodeCount === 1 ? '' : 's'}?`,
+      message: `Aeron membership is static, so changing the node count re-forms the cluster FROM GENESIS. This WIPES ${wipes}. The cluster is down until the new member set elects a leader.`,
+      confirmLabel: 'Re-form Cluster',
+      confirmStyle: 'danger',
+    });
+  };
+
+  const executeTopologyChange = async (cluster: string, nodeCount: number) => {
+    setActiveOpCluster(cluster);
+    try {
+      const response = await fetch(adminUrl('/api/admin/cluster-topology', { cluster }), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodeCount, confirm: 'DELETE-CLUSTER-STATE' }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast({ tone: 'error', text: data.error || `Topology change failed (HTTP ${response.status})`, sticky: true });
+      }
+    } catch {
+      toast({ tone: 'error', text: 'Failed to trigger the topology change', sticky: true });
+    }
+  };
+
   const executeCleanup = async (cluster: string) => {
     setActiveOpCluster(cluster);
     try {
@@ -710,6 +747,9 @@ function AdminConsole() {
       case 'cleanup':
         if (action.cluster) await executeCleanup(action.cluster);
         break;
+      case 'cluster-topology':
+        if (action.cluster && action.nodeCount) await executeTopologyChange(action.cluster, action.nodeCount);
+        break;
       case 'apply-profile':
         if (action.profileName) await executeProfileSwitch(action.profileName, false);
         break;
@@ -832,6 +872,7 @@ function AdminConsole() {
                     onNodeAction={requestNodeAction}
                     onAllNodes={requestAllNodes}
                     onCleanup={requestCleanup}
+                    onTopologyChange={requestTopologyChange}
                     onRollingUpdate={requestRollingUpdate}
                     onHousekeeping={requestHousekeeping}
                     onSnapshot={requestSnapshot}
@@ -873,6 +914,7 @@ function AdminConsole() {
           body={pendingAction.message}
           tone={pendingAction.confirmStyle}
           confirmLabel={pendingAction.confirmLabel}
+          requireText={pendingAction.requireText}
           onConfirm={confirmAction}
           onCancel={() => setPendingAction(null)}
         />

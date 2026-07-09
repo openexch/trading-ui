@@ -23,6 +23,7 @@ export interface ClusterSectionProps {
   onNodeAction: (cluster: string, type: 'stop-node' | 'restart-node' | 'start-node', nodeId: number) => void;
   onAllNodes: (cluster: string, type: 'stop-all-nodes' | 'start-all-nodes') => void;
   onCleanup: (cluster: string) => void;
+  onTopologyChange: (cluster: string, nodeCount: number) => void;
   onRollingUpdate: (cluster: string) => void;
   onHousekeeping: (cluster: string) => void;
   onSnapshot: (cluster: string) => void;
@@ -39,6 +40,7 @@ export function ClusterSection({
   onNodeAction,
   onAllNodes,
   onCleanup,
+  onTopologyChange,
   onRollingUpdate,
   onHousekeeping,
   onSnapshot,
@@ -69,6 +71,7 @@ export function ClusterSection({
         onNodeAction={onNodeAction}
         onAllNodes={onAllNodes}
         onCleanup={onCleanup}
+        onTopologyChange={onTopologyChange}
         onViewLogs={onViewLogs}
       />
     </section>
