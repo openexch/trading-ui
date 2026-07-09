@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Process-manager service cards (everything that isn't a cluster node):
-// per-service stats and lifecycle actions. Fleet-level counts live in the
-// cluster rail, not here.
+// Process-manager service cards — shared services only. Every process that is
+// a cluster node (node0-2, ae0, …) is filtered out via the `hidden` set the
+// page computes from clusters[], so a node never shows up here regardless of
+// its backend role. Fleet-level counts live on the Overview tab; per-cluster
+// snapshots live on each cluster rail — neither belongs here.
 import { Icons } from '../Icons';
 import { STATUS_DOT_COLOR } from './status';
 import { formatBytes, formatUptime, isSameLogSource, processToLogName } from './format';
@@ -11,12 +13,13 @@ import type { LogSource, ProcessInfo } from './types';
 interface ServicesSectionProps {
   /** null = never loaded (skeletons); [] = loaded-and-empty (quiet notice). */
   processes: ProcessInfo[] | null;
+  /** Process names that are cluster nodes — filtered out of the service grid. */
+  hidden: Set<string>;
   operatingServices: Set<string>;
-  snapshotOp: boolean;
-  isOperationRunning: boolean;
+  /** ANY cluster op running → disable service actions too (global lock). */
+  stackBusy: boolean;
   logSource: LogSource | null;
   onProcessAction: (service: string, action: 'start' | 'stop' | 'restart') => void;
-  onSnapshot: () => void;
   onSelfUpdate: () => void;
   onViewLogs: (source: LogSource) => void;
 }
@@ -34,16 +37,17 @@ function getProcessIcon(name: string) {
 
 export function ServicesSection({
   processes,
+  hidden,
   operatingServices,
-  snapshotOp,
-  isOperationRunning,
+  stackBusy,
   logSource,
   onProcessAction,
-  onSnapshot,
   onSelfUpdate,
   onViewLogs,
 }: ServicesSectionProps) {
-  const serviceProcesses = (processes ?? []).filter(p => p.role !== 'cluster');
+  // Hide cluster nodes: role==='cluster' catches the classic node0-2/backup,
+  // and the `hidden` set catches any node (e.g. ae0) whatever its role.
+  const serviceProcesses = (processes ?? []).filter(p => p.role !== 'cluster' && !hidden.has(p.name));
 
   return (
     <section>
@@ -97,23 +101,13 @@ export function ServicesSection({
                 <div className="flex justify-end gap-1.5">
                   {!isOperating && proc.running ? (
                     <>
-                      <button className={iconBtnStop} onClick={() => onProcessAction(proc.name, 'stop')} disabled={isOperationRunning || isOperating} title="Stop">{Icons.stop}</button>
-                      <button className={iconBtnRestart} onClick={() => onProcessAction(proc.name, 'restart')} disabled={isOperationRunning || isOperating} title="Restart">{Icons.restart}</button>
-                      {proc.name === 'backup' && (
-                        <button
-                          className={iconBtnAccent}
-                          onClick={onSnapshot}
-                          disabled={snapshotOp || isOperationRunning}
-                          title="Take Snapshot"
-                        >
-                          {Icons.snapshot}
-                        </button>
-                      )}
+                      <button className={iconBtnStop} onClick={() => onProcessAction(proc.name, 'stop')} disabled={stackBusy || isOperating} title="Stop">{Icons.stop}</button>
+                      <button className={iconBtnRestart} onClick={() => onProcessAction(proc.name, 'restart')} disabled={stackBusy || isOperating} title="Restart">{Icons.restart}</button>
                       {proc.name === 'admin' && (
                         <button
                           className={iconBtnAccent}
                           onClick={onSelfUpdate}
-                          disabled={isOperationRunning || isOperating}
+                          disabled={stackBusy || isOperating}
                           title="Self-Update"
                         >
                           {Icons.update}
@@ -121,7 +115,7 @@ export function ServicesSection({
                       )}
                     </>
                   ) : !isOperating ? (
-                    <button className={iconBtnStart} onClick={() => onProcessAction(proc.name, 'start')} disabled={isOperationRunning || isOperating} title="Start">{Icons.play}</button>
+                    <button className={iconBtnStart} onClick={() => onProcessAction(proc.name, 'start')} disabled={stackBusy || isOperating} title="Start">{Icons.play}</button>
                   ) : null}
                   <button
                     className={iconBtnLogs(logSelected)}

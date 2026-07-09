@@ -105,16 +105,20 @@ data loud and chrome quiet.
 
 ### Signature element: the cluster rail
 
-The admin mirror of the ticker rail (`ClusterStatusBar.tsx`). Fixed-height
-(64px) surface; a state-toned `border-l-2` rule + status dot + display-face
-hero title ("Cluster Healthy") on the left; tabular stat tiles (Nodes,
-Leader, Services, Memory, Commit) in the middle; cluster operations on the
-right. Invariants:
+The admin mirror of the ticker rail (`ClusterRail.tsx`, one per cluster since
+the multi-cluster restructure). Fixed-height (64px) surface; a state-toned
+`border-l-2` rule + status dot + display-face hero title ("Cluster Healthy")
+on the left; a display-name chip + tabular stat tiles (Nodes, Leader, Commit)
+in the middle; cluster operations on the right. The fleet Services/Memory
+tiles moved OFF the rail to the Overview tab (they are stack-wide, not
+per-cluster). Invariants:
 
 - The thin hairline across the rail's top edge is the **operation progress
   bar** — it is data, not ornament. Keep it.
-- The operations slot is **reserved-width**: Rolling Update / Housekeeping
-  buttons swap with the operation percent without the rail ever resizing.
+- The operations slot is **reserved-width** AND **capability-gated**: Rolling
+  Update / Housekeeping / Snapshot render only for clusters that support them,
+  and swap with the operation percent without the rail ever resizing. A
+  cluster with no ops shows a faint dash so the slot never collapses.
 - The rail chrome mounts immediately; tiles render pulsing dashes until
   data arrives. The rail itself must **never** swap with a skeleton.
 
@@ -162,7 +166,13 @@ one step.
 
 ### Where things live
 
-- Sections: `src/components/admin/{ClusterStatusBar,NodesSection,ServicesSection,LogViewer,EventFeed,RiskAdmin,BackupOps}.tsx`
+- Multi-cluster IA (Proposal A): fixed tabs Overview | Clusters | Services |
+  Risk | Backup. The Clusters tab stacks one `ClusterSection` per `clusters[]`
+  entry (rail + assets-only `MoneyHealthPanel` + node grid).
+- Sections: `src/components/admin/{ClusterSection,ClusterRail,ClusterNodeGrid,MoneyHealthPanel,OverviewDashboard,ServicesSection,LogViewer,EventFeed,RiskAdmin,BackupOps}.tsx`
+  (`ClusterRail`/`ClusterNodeGrid` were generalized in place from the former
+  single-cluster `ClusterStatusBar`/`NodesSection`).
 - Primitives: `src/components/admin/{ConfirmModal,Toasts}.tsx`, shared icons in `src/components/Icons.tsx`
-- Semantics/shapes/format: `src/components/admin/{status,types,format,buttonStyles}.ts`
+- Semantics/shapes/format/URLs: `src/components/admin/{status,types,format,buttonStyles,api}.ts`
+  (`api.ts` = `ADMIN_BASE` + `adminUrl` + `normalizeStatus` dual-read)
 - Page state + fetch/SSE wiring: `src/pages/AdminPage.tsx` (+ `src/hooks/useAdminEvents.ts`)

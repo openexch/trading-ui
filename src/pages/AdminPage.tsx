@@ -10,25 +10,23 @@ import { BackupOps } from '../components/admin/BackupOps';
 import { EventFeed } from '../components/admin/EventFeed';
 import { ConfirmModal } from '../components/admin/ConfirmModal';
 import { ToastProvider, useToast } from '../components/admin/Toasts';
-import { ClusterStatusBar } from '../components/admin/ClusterStatusBar';
-import { NodesSection } from '../components/admin/NodesSection';
+import { ClusterSection, ClusterSkeleton } from '../components/admin/ClusterSection';
+import { OverviewDashboard } from '../components/admin/OverviewDashboard';
 import { ServicesSection } from '../components/admin/ServicesSection';
 import { LogViewer } from '../components/admin/LogViewer';
 import { ProfileSelector } from '../components/admin/ProfileSelector';
-import { getClusterStatus } from '../components/admin/status';
+import { adminUrl, normalizeStatus } from '../components/admin/api';
 import { GRAFANA_URL } from '../config';
 import { useAdminEvents, type AdminProgress } from '../hooks/useAdminEvents';
 import type {
+  AdminStatus,
   AdminTab,
-  ClusterStatus,
   ConfirmAction,
   LogSource,
   ProcessInfo,
   ProcessSummary,
   ProfileInfo,
 } from '../components/admin/types';
-
-const ADMIN_BASE = import.meta.env.VITE_ADMIN_API_URL || '';
 
 export function AdminPage() {
   return (
@@ -64,18 +62,23 @@ function GatewayIndicator({ gatewayOk, eventsConnected }: { gatewayOk: boolean; 
 function AdminConsole() {
   const { theme, toggle } = useTheme();
   const toast = useToast();
-  const [tab, setTab] = useState<AdminTab>('cluster');
-  const [status, setStatus] = useState<ClusterStatus | null>(null);
+  const [tab, setTab] = useState<AdminTab>('overview');
+  const [status, setStatus] = useState<AdminStatus | null>(null);
   // REST reachability: connectivity is persistent state (the header pill),
   // never a banner or a per-poll toast.
   const [gatewayOk, setGatewayOk] = useState(true);
   const [progress, setProgress] = useState<AdminProgress | null>(null);
+  // Which cluster the (single, shared) backend progress record belongs to.
+  // The backend Progress has no cluster field — only one op runs at a time
+  // across ALL clusters — so we attribute it client-side.
+  const [activeOpCluster, setActiveOpCluster] = useState<string | null>(null);
   // null = never loaded (skeletons); [] = loaded-and-empty (quiet notice).
   const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
   const [logsUnavailable, setLogsUnavailable] = useState(false);
   const [processSummary, setProcessSummary] = useState<ProcessSummary | null>(null);
   const [operatingServices, setOperatingServices] = useState<Set<string>>(new Set());
-  const [snapshotOp, setSnapshotOp] = useState(false);
+  // Per-cluster snapshot-button busy (5s blind window), keyed by cluster name.
+  const [snapshotOps, setSnapshotOps] = useState<Set<string>>(new Set());
   const [logSource, setLogSource] = useState<LogSource | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [pendingAction, setPendingAction] = useState<ConfirmAction | null>(null);
@@ -85,11 +88,24 @@ function AdminConsole() {
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [seedProfile, setSeedProfile] = useState('');
 
+  // The generic clusters[] the whole console renders. normalizeStatus makes
+  // this work against BOTH the new (clusters[]) and legacy (flat) backend and
+  // guarantees ≥1 block once status has loaded.
+  const clusters = status ? normalizeStatus(status) : null;
+  const clusterDisplayOf = useCallback(
+    (name: string) => clusters?.find(c => c.name === name)?.display ?? name,
+    [clusters],
+  );
+
+  // GLOBAL lock: any op running anywhere disables every mutating button and
+  // the ProfileSelector. Only ONE backend operation runs at a time.
+  const stackBusy = !!(progress?.operation && !progress.complete);
+
   const fetchStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/status`);
+      const response = await fetch(adminUrl('/api/admin/status'));
       if (response.ok) {
-        const data = await response.json() as ClusterStatus;
+        const data = await response.json() as AdminStatus;
         setStatus(data);
         setGatewayOk(true);
       } else {
@@ -103,15 +119,16 @@ function AdminConsole() {
 
   const fetchProgress = useCallback(async () => {
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/progress`);
+      const response = await fetch(adminUrl('/api/admin/progress'));
       if (response.ok) {
         const data = await response.json() as AdminProgress;
         if (data.operation || data.currentStep > 0) {
           setProgress(data);
           if (data.complete) {
             setTimeout(async () => {
-              await fetch(`${ADMIN_BASE}/api/admin/progress?reset=true`);
+              await fetch(adminUrl('/api/admin/progress?reset=true'));
               setProgress(null);
+              setActiveOpCluster(null);
             }, 3000);
           }
         } else {
@@ -129,9 +146,9 @@ function AdminConsole() {
   const fetchLogs = useCallback(async () => {
     if (!logSource) return;
     try {
-      let url = `${ADMIN_BASE}/api/admin/logs?lines=200`;
+      let url = adminUrl('/api/admin/logs') + '?lines=200';
       if (logSource.type === 'node') {
-        url += `&node=${logSource.id}`;
+        url += `&node=${logSource.id}&cluster=${encodeURIComponent(logSource.cluster)}`;
       } else {
         url += `&service=${logSource.name}`;
       }
@@ -151,8 +168,8 @@ function AdminConsole() {
   const fetchProcesses = useCallback(async () => {
     try {
       const [listRes, summaryRes] = await Promise.all([
-        fetch(`${ADMIN_BASE}/api/admin/processes`),
-        fetch(`${ADMIN_BASE}/api/admin/processes/summary`),
+        fetch(adminUrl('/api/admin/processes')),
+        fetch(adminUrl('/api/admin/processes/summary')),
       ]);
       if (listRes.ok) {
         setProcesses(await listRes.json());
@@ -195,7 +212,13 @@ function AdminConsole() {
   const eventsConnectedRef = useRef(eventsConnected);
   eventsConnectedRef.current = eventsConnected;
   const operationActiveRef = useRef(false);
-  operationActiveRef.current = !!(progress?.operation && !progress.complete);
+  operationActiveRef.current = stackBusy;
+
+  // Attribution catch-all: once no op is running, drop the cluster tag so a
+  // later auto/unattributed op doesn't inherit a stale target.
+  useEffect(() => {
+    if (!stackBusy) setActiveOpCluster(null);
+  }, [stackBusy]);
 
   // Events arriving while the panel is open are already "seen".
   useEffect(() => {
@@ -208,8 +231,9 @@ function AdminConsole() {
       setProgress(sseProgress);
       if (sseProgress.complete) {
         setTimeout(async () => {
-          await fetch(`${ADMIN_BASE}/api/admin/progress?reset=true`);
+          await fetch(adminUrl('/api/admin/progress?reset=true'));
           setProgress(null);
+          setActiveOpCluster(null);
         }, 3000);
       }
     } else {
@@ -243,7 +267,7 @@ function AdminConsole() {
   // Load the runtime-profile set once (available profiles are static; the active
   // one comes live from status).
   useEffect(() => {
-    fetch(`${ADMIN_BASE}/api/admin/profile`)
+    fetch(adminUrl('/api/admin/profile'))
       .then((r) => r.json())
       .then((d) => {
         setProfiles(d.available ?? []);
@@ -260,80 +284,72 @@ function AdminConsole() {
     }
   }, [logSource, fetchLogs]);
 
-  // ── Node action handlers (unchanged — still use /api/admin/status for transitional state) ──
+  // ── Node action handlers (cluster-scoped) ──
 
-  const requestStopNode = (nodeId: number) => {
-    if (progress?.operation && !progress.complete) return;
-    setPendingAction({
-      type: 'stop-node',
-      nodeId,
-      title: `Stop Node ${nodeId}?`,
-      message: 'This will stop the cluster node. The cluster will continue with remaining nodes.',
-      confirmLabel: 'Stop Node',
-      confirmStyle: 'danger',
-    });
+  const requestNodeAction = (cluster: string, type: 'stop-node' | 'restart-node' | 'start-node', nodeId: number) => {
+    if (stackBusy) return;
+    const disp = clusterDisplayOf(cluster);
+    const copy: Record<typeof type, { title: string; message: string; confirmLabel: string; confirmStyle: 'danger' | 'warning' | 'primary' }> = {
+      'stop-node': {
+        title: `Stop Node ${nodeId}?`,
+        message: `This will stop node ${nodeId} of the ${disp}. The cluster will continue with remaining nodes.`,
+        confirmLabel: 'Stop Node',
+        confirmStyle: 'danger',
+      },
+      'restart-node': {
+        title: `Restart Node ${nodeId}?`,
+        message: `This will restart node ${nodeId} of the ${disp}. It will temporarily leave the cluster and rejoin.`,
+        confirmLabel: 'Restart Node',
+        confirmStyle: 'warning',
+      },
+      'start-node': {
+        title: `Start Node ${nodeId}?`,
+        message: `This will start node ${nodeId} of the ${disp} and it will attempt to rejoin the cluster.`,
+        confirmLabel: 'Start Node',
+        confirmStyle: 'primary',
+      },
+    };
+    setPendingAction({ type, cluster, nodeId, ...copy[type] });
   };
 
-  const requestRestartNode = (nodeId: number) => {
-    if (progress?.operation && !progress.complete) return;
-    setPendingAction({
-      type: 'restart-node',
-      nodeId,
-      title: `Restart Node ${nodeId}?`,
-      message: 'This will restart the cluster node. It will temporarily leave the cluster and rejoin.',
-      confirmLabel: 'Restart Node',
-      confirmStyle: 'warning',
-    });
+  const requestAllNodes = (cluster: string, type: 'stop-all-nodes' | 'start-all-nodes') => {
+    if (stackBusy) return;
+    const disp = clusterDisplayOf(cluster);
+    if (type === 'stop-all-nodes') {
+      setPendingAction({
+        type, cluster,
+        title: 'Stop All Nodes?',
+        message: `This will stop all ${disp} nodes. The cluster will become completely unavailable.`,
+        confirmLabel: 'Stop All',
+        confirmStyle: 'danger',
+      });
+    } else {
+      setPendingAction({
+        type, cluster,
+        title: 'Start All Nodes?',
+        message: `This will start all ${disp} nodes and form a new cluster.`,
+        confirmLabel: 'Start All',
+        confirmStyle: 'primary',
+      });
+    }
   };
 
-  const requestStartNode = (nodeId: number) => {
-    if (progress?.operation && !progress.complete) return;
+  const requestCleanup = (cluster: string) => {
+    if (stackBusy) return;
+    const disp = clusterDisplayOf(cluster);
     setPendingAction({
-      type: 'start-node',
-      nodeId,
-      title: `Start Node ${nodeId}?`,
-      message: 'This will start the cluster node and it will attempt to rejoin the cluster.',
-      confirmLabel: 'Start Node',
-      confirmStyle: 'primary',
-    });
-  };
-
-  const requestStopAllNodes = () => {
-    if (progress?.operation && !progress.complete) return;
-    setPendingAction({
-      type: 'stop-all-nodes',
-      title: 'Stop All Nodes?',
-      message: 'This will stop all cluster nodes. The cluster will become completely unavailable.',
-      confirmLabel: 'Stop All',
-      confirmStyle: 'danger',
-    });
-  };
-
-  const requestStartAllNodes = () => {
-    if (progress?.operation && !progress.complete) return;
-    setPendingAction({
-      type: 'start-all-nodes',
-      title: 'Start All Nodes?',
-      message: 'This will start all cluster nodes and form a new cluster.',
-      confirmLabel: 'Start All',
-      confirmStyle: 'primary',
-    });
-  };
-
-  const requestCleanup = () => {
-    if (progress?.operation && !progress.complete) return;
-    setPendingAction({
-      type: 'cleanup',
+      type: 'cleanup', cluster,
       title: 'Clean Aeron State?',
-      message: 'This will remove stale Aeron files (shared memory, locks). All nodes must be stopped first.',
+      message: `This will remove stale Aeron files (shared memory, locks) for the ${disp}. All its nodes must be stopped first.`,
       confirmLabel: 'Clean State',
       confirmStyle: 'warning',
     });
   };
 
-  const executeNodeAction = async (action: string, nodeId: number) => {
+  const executeNodeAction = async (cluster: string, action: string, nodeId: number) => {
+    setActiveOpCluster(cluster);
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/${action}`, {
+      const response = await fetch(adminUrl(`/api/admin/${action}`, { cluster }), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nodeId }),
@@ -347,10 +363,40 @@ function AdminConsole() {
     }
   };
 
-  // ── Generic process action handler (replaces all per-service handlers) ──
+  const executeAllNodes = async (cluster: string, action: 'stop-all-nodes' | 'start-all-nodes') => {
+    setActiveOpCluster(cluster);
+    try {
+      const response = await fetch(adminUrl(`/api/admin/${action}`, { cluster }), { method: 'POST' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        toast({ tone: 'error', text: data.error || `Failed to ${action.replace(/-/g, ' ')} (HTTP ${response.status})`, sticky: true });
+      }
+    } catch {
+      toast({ tone: 'error', text: `Failed to ${action.replace(/-/g, ' ')}`, sticky: true });
+    }
+  };
+
+  const executeCleanup = async (cluster: string) => {
+    setActiveOpCluster(cluster);
+    try {
+      const response = await fetch(adminUrl('/api/admin/cleanup', { cluster }), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true }),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        toast({ tone: 'error', text: data.error || 'Cleanup failed', sticky: true });
+      }
+    } catch {
+      toast({ tone: 'error', text: 'Failed to cleanup state', sticky: true });
+    }
+  };
+
+  // ── Generic process action handler (shared services) ──
 
   const requestProcessAction = (service: string, action: 'start' | 'stop' | 'restart') => {
-    if (operatingServices.has(service) || (progress?.operation && !progress.complete)) return;
+    if (operatingServices.has(service) || stackBusy) return;
 
     const displayName = processes?.find(p => p.name === service)?.display || service;
     const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
@@ -402,7 +448,7 @@ function AdminConsole() {
       return next;
     });
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/processes/${service}/${action}`, { method: 'POST' });
+      const response = await fetch(adminUrl(`/api/admin/processes/${service}/${action}`), { method: 'POST' });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         toast({ tone: 'error', text: data.error || `Failed to ${action} ${service} (HTTP ${response.status})`, sticky: true });
@@ -423,7 +469,7 @@ function AdminConsole() {
   // ── Self-update (admin gateway rebuild) ──
 
   const requestSelfUpdate = () => {
-    if (operatingServices.has('admin') || (progress?.operation && !progress.complete)) return;
+    if (operatingServices.has('admin') || stackBusy) return;
     setPendingAction({
       type: 'self-update',
       title: 'Self-Update Admin Gateway?',
@@ -436,7 +482,7 @@ function AdminConsole() {
   const executeSelfUpdate = async () => {
     setOperatingServices(prev => new Set(prev).add('admin'));
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/rebuild-admin`, { method: 'POST' });
+      const response = await fetch(adminUrl('/api/admin/rebuild-admin'), { method: 'POST' });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         toast({ tone: 'error', text: data.error || `Self-update refused (HTTP ${response.status})`, sticky: true });
@@ -458,42 +504,61 @@ function AdminConsole() {
     }
   };
 
-  // ── Snapshot ──
+  // ── Snapshot (per cluster, from the rail) ──
 
-  const takeSnapshot = async () => {
-    if (snapshotOp || (progress?.operation && !progress.complete)) return;
-    setSnapshotOp(true);
+  const requestSnapshot = (cluster: string) => {
+    if (stackBusy || snapshotOps.has(cluster)) return;
+    const disp = clusterDisplayOf(cluster);
+    setPendingAction({
+      type: 'snapshot', cluster,
+      title: `Take a snapshot of the ${disp}?`,
+      message: `Captures a consistent snapshot of the ${disp} cluster state for fast recovery. Safe to run on the live cluster.`,
+      confirmLabel: 'Take Snapshot',
+      confirmStyle: 'primary',
+    });
+  };
+
+  const executeSnapshot = async (cluster: string) => {
+    setSnapshotOps(prev => new Set(prev).add(cluster));
+    setActiveOpCluster(cluster);
+    const clear = () => setSnapshotOps(prev => {
+      const next = new Set(prev);
+      next.delete(cluster);
+      return next;
+    });
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/snapshot`, { method: 'POST' });
+      const response = await fetch(adminUrl('/api/admin/snapshot', { cluster }), { method: 'POST' });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         toast({ tone: 'error', text: data.error || `Failed to take snapshot (HTTP ${response.status})`, sticky: true });
-        setSnapshotOp(false);
+        clear();
         return;
       }
-      setTimeout(() => { setSnapshotOp(false); }, 5000);
+      setTimeout(clear, 5000);
     } catch {
       toast({ tone: 'error', text: 'Failed to take snapshot', sticky: true });
-      setSnapshotOp(false);
+      clear();
     }
   };
 
-  // ── Rolling operations ──
+  // ── Rolling operations (per cluster) ──
 
-  const requestRollingUpdate = () => {
-    if (progress?.operation && !progress.complete) return;
+  const requestRollingUpdate = (cluster: string) => {
+    if (stackBusy) return;
+    const disp = clusterDisplayOf(cluster);
     setPendingAction({
-      type: 'rolling-update',
+      type: 'rolling-update', cluster,
       title: 'Start Rolling Update?',
-      message: 'This will rebuild the application and restart all cluster nodes one by one. The cluster will remain available during the update.',
+      message: `This will rebuild the application and restart all ${disp} nodes one by one. The cluster will remain available during the update.`,
       confirmLabel: 'Start Update',
       confirmStyle: 'warning',
     });
   };
 
-  const executeRollingUpdate = async () => {
+  const executeRollingUpdate = async (cluster: string) => {
+    setActiveOpCluster(cluster);
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/rolling-update`, { method: 'POST' });
+      const response = await fetch(adminUrl('/api/admin/rolling-update', { cluster }), { method: 'POST' });
       if (!response.ok) {
         const data = await response.json();
         toast({ tone: 'error', text: data.error || 'Rolling update failed', sticky: true });
@@ -503,20 +568,22 @@ function AdminConsole() {
     }
   };
 
-  const requestHousekeeping = () => {
-    if (progress?.operation && !progress.complete) return;
+  const requestHousekeeping = (cluster: string) => {
+    if (stackBusy) return;
+    const disp = clusterDisplayOf(cluster);
     setPendingAction({
-      type: 'housekeeping',
+      type: 'housekeeping', cluster,
       title: 'Start Archive Housekeeping?',
-      message: 'Reclaims archive disk on the live cluster by purging log segments below the latest snapshot. Live-safe; refused if any node is down or lagging.',
+      message: `Reclaims archive disk on the live ${disp} by purging log segments below the latest snapshot. Live-safe; refused if any node is down or lagging.`,
       confirmLabel: 'Start Housekeeping',
       confirmStyle: 'warning',
     });
   };
 
-  const executeHousekeeping = async (force: boolean) => {
+  const executeHousekeeping = async (cluster: string, force: boolean) => {
+    setActiveOpCluster(cluster);
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/housekeeping`, {
+      const response = await fetch(adminUrl('/api/admin/housekeeping', { cluster }), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(force ? { force: true } : {}),
@@ -527,7 +594,7 @@ function AdminConsole() {
           // The lag guard refused (a node is down/lagging — purging would
           // strand it). Offer an explicit, clearly-dangerous override.
           setPendingAction({
-            type: 'housekeeping-force',
+            type: 'housekeeping-force', cluster,
             title: 'Housekeeping Refused — Force?',
             message: `The server refused: ${data.error}. Forcing while a member is down or lagging can strand it permanently. Only continue if you know why.`,
             confirmLabel: 'Force Housekeeping',
@@ -542,52 +609,12 @@ function AdminConsole() {
     }
   };
 
-  const executeStopAllNodes = async () => {
-    try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/stop-all-nodes`, { method: 'POST' });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        toast({ tone: 'error', text: data.error || `Failed to stop all nodes (HTTP ${response.status})`, sticky: true });
-      }
-    } catch {
-      toast({ tone: 'error', text: 'Failed to stop all nodes', sticky: true });
-    }
-  };
-
-  const executeStartAllNodes = async () => {
-    try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/start-all-nodes`, { method: 'POST' });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        toast({ tone: 'error', text: data.error || `Failed to start all nodes (HTTP ${response.status})`, sticky: true });
-      }
-    } catch {
-      toast({ tone: 'error', text: 'Failed to start all nodes', sticky: true });
-    }
-  };
-
-  const executeCleanup = async () => {
-    try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/cleanup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force: true }),
-      });
-      const data = await response.json();
-      if (!data.success) {
-        toast({ tone: 'error', text: data.error || 'Cleanup failed', sticky: true });
-      }
-    } catch {
-      toast({ tone: 'error', text: 'Failed to cleanup state', sticky: true });
-    }
-  };
-
   // ── Runtime profile switch ──
 
   const activeProfileName = status?.activeProfile ?? seedProfile;
 
   const requestProfileSwitch = (name: string) => {
-    if (progress?.operation && !progress.complete) return;
+    if (stackBusy) return;
     if (!name || name === activeProfileName) return;
     const target = profiles.find((p) => p.name === name);
     setPendingAction({
@@ -602,7 +629,7 @@ function AdminConsole() {
 
   const executeProfileSwitch = async (name: string, force: boolean) => {
     try {
-      const response = await fetch(`${ADMIN_BASE}/api/admin/profile`, {
+      const response = await fetch(adminUrl('/api/admin/profile'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(force ? { name, force: true } : { name }),
@@ -639,8 +666,8 @@ function AdminConsole() {
       case 'stop-node':
       case 'restart-node':
       case 'start-node':
-        if (action.nodeId !== undefined) {
-          await executeNodeAction(action.type, action.nodeId);
+        if (action.nodeId !== undefined && action.cluster) {
+          await executeNodeAction(action.cluster, action.type, action.nodeId);
         }
         break;
       case 'process-action':
@@ -652,22 +679,25 @@ function AdminConsole() {
         await executeSelfUpdate();
         break;
       case 'rolling-update':
-        await executeRollingUpdate();
+        if (action.cluster) await executeRollingUpdate(action.cluster);
         break;
       case 'housekeeping':
-        await executeHousekeeping(false);
+        if (action.cluster) await executeHousekeeping(action.cluster, false);
         break;
       case 'housekeeping-force':
-        await executeHousekeeping(true);
+        if (action.cluster) await executeHousekeeping(action.cluster, true);
+        break;
+      case 'snapshot':
+        if (action.cluster) await executeSnapshot(action.cluster);
         break;
       case 'stop-all-nodes':
-        await executeStopAllNodes();
+        if (action.cluster) await executeAllNodes(action.cluster, 'stop-all-nodes');
         break;
       case 'start-all-nodes':
-        await executeStartAllNodes();
+        if (action.cluster) await executeAllNodes(action.cluster, 'start-all-nodes');
         break;
       case 'cleanup':
-        await executeCleanup();
+        if (action.cluster) await executeCleanup(action.cluster);
         break;
       case 'apply-profile':
         if (action.profileName) await executeProfileSwitch(action.profileName, false);
@@ -680,9 +710,11 @@ function AdminConsole() {
 
   // ── Derived state ──
 
-  const clusterStatus = getClusterStatus(progress, status?.nodes || []);
-  const isOperationRunning = !!(progress?.operation && !progress.complete);
-  const operationProgress = isOperationRunning ? (progress?.progress || 0) : 0;
+  // Every process that is a cluster node (node0-2, ae0, …) is filtered out of
+  // the Services tab, whatever its backend role.
+  const clusterNodeNames = new Set<string>(
+    clusters?.flatMap(c => c.nodes.map(n => n.procName ?? (c.kind === 'match' ? `node${n.id}` : `${c.name}${n.id}`))) ?? [],
+  );
 
   const tabClass = (active: boolean) =>
     `relative -mb-px border-b-2 px-4 py-2.5 text-[13px] font-medium font-display transition-colors ${
@@ -713,7 +745,7 @@ function AdminConsole() {
           <ProfileSelector
             profiles={profiles}
             active={activeProfileName}
-            disabled={isOperationRunning}
+            disabled={stackBusy}
             onSelect={requestProfileSwitch}
           />
           <a
@@ -733,81 +765,97 @@ function AdminConsole() {
       {/* Tab bar */}
       <div className="border-b border-hairline bg-surface px-6">
         <nav className="mx-auto flex max-w-[1280px] gap-1">
-          <button className={tabClass(tab === 'cluster')} onClick={() => setTab('cluster')}>Cluster</button>
+          <button className={tabClass(tab === 'overview')} onClick={() => setTab('overview')}>Overview</button>
+          <button className={tabClass(tab === 'clusters')} onClick={() => setTab('clusters')}>Clusters</button>
+          <button className={tabClass(tab === 'services')} onClick={() => setTab('services')}>Services</button>
           <button className={tabClass(tab === 'risk')} onClick={() => setTab('risk')}>Risk</button>
           <button className={tabClass(tab === 'backup')} onClick={() => setTab('backup')}>Backup</button>
         </nav>
       </div>
 
       <div className="mx-auto max-w-[1280px] px-6 pb-12 pt-6">
-        {tab === 'risk' && <RiskAdmin />}
-        {tab === 'backup' && <BackupOps nodes={status?.nodes} />}
+        {tab === 'overview' && (
+          <OverviewDashboard
+            clusters={clusters}
+            status={status}
+            processSummary={processSummary}
+            onOpenClusters={() => setTab('clusters')}
+          />
+        )}
 
-        {tab === 'cluster' && (
-          <>
-            <ClusterStatusBar
-              status={status}
-              processSummary={processSummary}
-              clusterStatus={clusterStatus}
-              isOperationRunning={isOperationRunning}
-              operationProgress={operationProgress}
-              onRollingUpdate={requestRollingUpdate}
-              onHousekeeping={requestHousekeeping}
+        {tab === 'services' && (
+          <ServicesSection
+            processes={processes}
+            hidden={clusterNodeNames}
+            operatingServices={operatingServices}
+            stackBusy={stackBusy}
+            logSource={logSource}
+            onProcessAction={requestProcessAction}
+            onSelfUpdate={requestSelfUpdate}
+            onViewLogs={setLogSource}
+          />
+        )}
+
+        {tab === 'risk' && <RiskAdmin />}
+        {tab === 'backup' && <BackupOps clusters={clusters ?? undefined} />}
+
+        {tab === 'clusters' && (
+          <main className="flex flex-col gap-8">
+            {clusters === null ? (
+              <ClusterSkeleton />
+            ) : (
+              clusters.map((c) => {
+                // The shared progress record belongs to exactly one cluster;
+                // default unattributed/auto ops to 'match'. Only the targeted
+                // cluster shows the % hero + swapped slot; others stay locked.
+                const operation = stackBusy && (activeOpCluster ?? 'match') === c.name ? progress : null;
+                return (
+                  <ClusterSection
+                    key={c.name}
+                    cluster={c}
+                    processes={processes ?? []}
+                    operation={operation}
+                    stackBusy={stackBusy}
+                    snapshotBusy={snapshotOps.has(c.name)}
+                    logSource={logSource}
+                    onNodeAction={requestNodeAction}
+                    onAllNodes={requestAllNodes}
+                    onCleanup={requestCleanup}
+                    onRollingUpdate={requestRollingUpdate}
+                    onHousekeeping={requestHousekeeping}
+                    onSnapshot={requestSnapshot}
+                    onViewLogs={setLogSource}
+                  />
+                );
+              })
+            )}
+
+            {/* Live activity feed (SSE) */}
+            <EventFeed
+              entries={feedEntries}
+              connected={eventsConnected}
+              open={feedOpen}
+              unseen={feedUnseen}
+              onToggle={() => {
+                setFeedOpen((o) => {
+                  if (!o) markFeedSeen();
+                  return !o;
+                });
+              }}
             />
 
-            <main className="flex flex-col gap-8">
-              <NodesSection
-                status={status}
-                processes={processes ?? []}
-                isOperationRunning={isOperationRunning}
-                logSource={logSource}
-                onStopNode={requestStopNode}
-                onRestartNode={requestRestartNode}
-                onStartNode={requestStartNode}
-                onStopAll={requestStopAllNodes}
-                onStartAll={requestStartAllNodes}
-                onCleanup={requestCleanup}
-                onViewLogs={setLogSource}
-              />
-
-              <ServicesSection
-                processes={processes}
-                operatingServices={operatingServices}
-                snapshotOp={snapshotOp}
-                isOperationRunning={isOperationRunning}
-                logSource={logSource}
-                onProcessAction={requestProcessAction}
-                onSnapshot={takeSnapshot}
-                onSelfUpdate={requestSelfUpdate}
-                onViewLogs={setLogSource}
-              />
-
-              {/* Live activity feed (SSE) */}
-              <EventFeed
-                entries={feedEntries}
-                connected={eventsConnected}
-                open={feedOpen}
-                unseen={feedUnseen}
-                onToggle={() => {
-                  setFeedOpen((o) => {
-                    if (!o) markFeedSeen();
-                    return !o;
-                  });
-                }}
-              />
-
-              <LogViewer
-                logSource={logSource}
-                logs={logs}
-                unavailable={logsUnavailable}
-                onClear={() => setLogSource(null)}
-              />
-            </main>
-          </>
+            <LogViewer
+              logSource={logSource}
+              logs={logs}
+              unavailable={logsUnavailable}
+              resolveClusterDisplay={clusterDisplayOf}
+              onClear={() => setLogSource(null)}
+            />
+          </main>
         )}
       </div>
 
-      {/* Confirmation Modal (cluster actions) */}
+      {/* Confirmation Modal (cluster + service actions) */}
       {pendingAction && (
         <ConfirmModal
           title={pendingAction.title}
