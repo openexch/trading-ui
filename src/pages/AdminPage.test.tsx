@@ -127,6 +127,17 @@ const PROCESSES = [
 
 const SUMMARY = { total: 8, running: 8, stopped: 0, failed: 0, totalMemoryMB: 1792, lastPollMs: 0 };
 
+/** Full profile records for GET /api/admin/profiles (the Profiles tab). */
+const fullProfile = (name: string, builtin: boolean) => ({
+  name, builtin, description: `${name} profile`,
+  nodeHeapMB: 768, omsHeapMB: 512, marketHeapMB: 512, backupHeapMB: 512,
+  preTouch: false, idleMode: 'backoff', driverProfile: 'dev', driverMode: 'embedded',
+  bookCapacity: 16384, logTermLength: '16m', minMemMB: 1024, simGlobalOps: 60,
+  governor: 'schedutil', thp: 'madvise', pinning: 'none',
+});
+
+const FULL_PROFILES = [fullProfile('light', true), fullProfile('demo', true), fullProfile('demo-lite', false)];
+
 /** fetch mock returning valid admin-gateway shapes per route. */
 function stubFetch() {
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -144,6 +155,9 @@ function stubFetch() {
       body = PROCESSES;
     } else if (url.includes('/api/admin/logs')) {
       body = { logs: ['[INFO] node ready'] };
+    } else if (url.includes('/api/admin/profiles')) {
+      // Must match BEFORE '/api/admin/profile' — it is a prefix of this path.
+      body = { profiles: FULL_PROFILES };
     } else if (url.includes('/api/admin/profile')) {
       body = { active: 'demo', available: [] };
     } else if (url.includes('/api/admin/auto-snapshot')) {
@@ -292,6 +306,22 @@ describe('AdminPage smoke (multi-cluster)', () => {
     // Cluster nodes are filtered out regardless of backend role
     expect(screen.queryByText('Cluster Node 0')).toBeNull();
     expect(screen.queryByText('Assets Engine Node')).toBeNull();
+  });
+
+  it('renders the Profiles tab with the editor shell', async () => {
+    renderAdmin();
+    await screen.findByText('demo');
+    fireEvent.click(screen.getByRole('button', { name: 'Profiles' }));
+
+    // The editor fetched GET /api/admin/profiles: list rows with BUILT-IN
+    // chips, plus the apply-tier legend above the selected profile's form.
+    expect(await screen.findByText('light')).toBeTruthy();
+    expect(screen.getByText('demo-lite')).toBeTruthy();
+    expect(screen.getAllByText('Built-in').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/quorum-safe live roll/)).toBeTruthy();
+    await waitFor(() =>
+      expect(fetchStub.calls.some(c => c.url.includes('/api/admin/profiles'))).toBe(true),
+    );
   });
 
   it('switches to the Risk and Backup tabs', async () => {
