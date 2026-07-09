@@ -11,10 +11,12 @@ interface LogViewerProps {
   logs: string[];
   /** The 2s tail poll is failing — shown inline, never as a toast. */
   unavailable?: boolean;
+  /** Maps a cluster name to its display so node labels read "Matching Engine · Node 0". */
+  resolveClusterDisplay?: (name: string) => string;
   onClear: () => void;
 }
 
-export function LogViewer({ logSource, logs, unavailable = false, onClear }: LogViewerProps) {
+export function LogViewer({ logSource, logs, unavailable = false, resolveClusterDisplay, onClear }: LogViewerProps) {
   const [logFilters, setLogFilters] = useState({ error: true, warn: true, info: true, debug: true });
   const logsRef = useRef<HTMLDivElement>(null);
 
@@ -42,7 +44,7 @@ export function LogViewer({ logSource, logs, unavailable = false, onClear }: Log
         <span className="flex-1">
           {logSource ? (
             <span className="rounded-full bg-surface-2 px-2.5 py-0.5 font-mono text-[11px] font-medium text-text">
-              {getLogSourceLabel(logSource)}
+              {getLogSourceLabel(logSource, resolveClusterDisplay)}
             </span>
           ) : (
             <span className="text-[11px] text-faint">{getLogSourceLabel(null)}</span>

@@ -1,23 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
-// Cluster node cards: role badge, status dot, replication positions, live
-// process stats, and per-node/section-wide actions.
+// Cluster node cards for ONE cluster: role badge, status dot, replication
+// positions, live process stats, and per-node/section-wide actions. Every
+// action callback carries the cluster name so a stacked N-cluster console
+// routes each mutation to the right engine.
+//
+// Generalized from the former single-cluster NodesSection: the skeleton now
+// renders `cluster.nodeCount` cards (never a literal 3), the node→process
+// join uses `node.procName ?? node<id>`, and the section actions gate on the
+// cluster's capabilities.
 import { Icons } from '../Icons';
 import { STATUS_DOT_COLOR, NODE_CARD_BORDER, NODE_ROLE_BADGE } from './status';
 import { formatBytes, formatPosition, formatUptime, isSameLogSource } from './format';
 import { iconBtnStop, iconBtnRestart, iconBtnStart, iconBtnLogs } from './buttonStyles';
-import type { ClusterStatus, LogSource, NodeStatus, ProcessInfo } from './types';
+import type { ClusterBlock, LogSource, NodeStatus, ProcessInfo } from './types';
 
-interface NodesSectionProps {
-  status: ClusterStatus | null;
+interface ClusterNodeGridProps {
+  cluster: ClusterBlock;
   processes: ProcessInfo[];
-  isOperationRunning: boolean;
+  /** ANY op running anywhere → disable mutating buttons. */
+  stackBusy: boolean;
   logSource: LogSource | null;
-  onStopNode: (nodeId: number) => void;
-  onRestartNode: (nodeId: number) => void;
-  onStartNode: (nodeId: number) => void;
-  onStopAll: () => void;
-  onStartAll: () => void;
-  onCleanup: () => void;
+  onNodeAction: (cluster: string, type: 'stop-node' | 'restart-node' | 'start-node', nodeId: number) => void;
+  onAllNodes: (cluster: string, type: 'stop-all-nodes' | 'start-all-nodes') => void;
+  onCleanup: (cluster: string) => void;
   onViewLogs: (source: LogSource) => void;
 }
 
@@ -54,19 +59,19 @@ function NodeDetailsTooltip({ node }: { node: NodeStatus }) {
   );
 }
 
-export function NodesSection({
-  status,
+export function ClusterNodeGrid({
+  cluster,
   processes,
-  isOperationRunning,
+  stackBusy,
   logSource,
-  onStopNode,
-  onRestartNode,
-  onStartNode,
-  onStopAll,
-  onStartAll,
+  onNodeAction,
+  onAllNodes,
   onCleanup,
   onViewLogs,
-}: NodesSectionProps) {
+}: ClusterNodeGridProps) {
+  const nodes = cluster.nodes;
+  const busyTitle = stackBusy ? 'Another operation is running' : undefined;
+
   return (
     <section>
       <div className="mb-3.5 flex flex-wrap items-center gap-2.5 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-faint">
@@ -75,46 +80,48 @@ export function NodesSection({
         <div className="flex flex-wrap gap-1.5">
           <button
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-sell disabled:opacity-30 [&_svg]:h-3 [&_svg]:w-3"
-            onClick={onStopAll}
-            disabled={isOperationRunning}
-            title="Stop All Nodes"
+            onClick={() => onAllNodes(cluster.name, 'stop-all-nodes')}
+            disabled={stackBusy}
+            title={busyTitle ?? 'Stop All Nodes'}
           >
             {Icons.stop}
             <span>Stop All</span>
           </button>
           <button
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-buy disabled:opacity-30 [&_svg]:h-3 [&_svg]:w-3"
-            onClick={onStartAll}
-            disabled={isOperationRunning}
-            title="Start All Nodes"
+            onClick={() => onAllNodes(cluster.name, 'start-all-nodes')}
+            disabled={stackBusy}
+            title={busyTitle ?? 'Start All Nodes'}
           >
             {Icons.play}
             <span>Start All</span>
           </button>
-          <button
-            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-warn disabled:opacity-30 [&_svg]:h-3 [&_svg]:w-3"
-            onClick={onCleanup}
-            disabled={isOperationRunning}
-            title="Clean Aeron State"
-          >
-            {Icons.restart}
-            <span>Cleanup</span>
-          </button>
+          {cluster.capabilities.cleanup && (
+            <button
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-warn disabled:opacity-30 [&_svg]:h-3 [&_svg]:w-3"
+              onClick={() => onCleanup(cluster.name)}
+              disabled={stackBusy}
+              title={busyTitle ?? 'Clean Aeron State'}
+            >
+              {Icons.restart}
+              <span>Cleanup</span>
+            </button>
+          )}
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {!status ? (
-          <>
-            <div className="h-[200px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-            <div className="h-[200px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-            <div className="h-[200px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
-          </>
-        ) : status.nodes.map((node) => {
+        {nodes.length === 0 ? (
+          // Never-populated: pulse a card per known node (nodeCount), never a
+          // literal 3 — an assets cluster is a single node.
+          Array.from({ length: Math.max(cluster.nodeCount, 1) }).map((_, i) => (
+            <div key={i} data-skeleton className="h-[200px] animate-pulse rounded-lg border border-hairline bg-surface-2" />
+          ))
+        ) : nodes.map((node) => {
           const nodeState = node.status || node.role;
           const isTransitioning = ['STOPPING', 'STARTING', 'REJOINING', 'ELECTION'].includes(nodeState);
           const stateClass = nodeState.toLowerCase();
-          const logSelected = isSameLogSource(logSource, { type: 'node', id: node.id });
-          const nodeProc = processes.find(p => p.name === `node${node.id}`);
+          const logSelected = isSameLogSource(logSource, { type: 'node', cluster: cluster.name, id: node.id });
+          const nodeProc = processes.find(p => p.name === (node.procName ?? `node${node.id}`));
 
           return (
             <div
@@ -166,21 +173,21 @@ export function NodesSection({
               <div className="mt-auto flex gap-1.5">
                 {node.running && !isTransitioning ? (
                   <>
-                    <button className={iconBtnStop} onClick={() => onStopNode(node.id)} disabled={isOperationRunning} title="Stop">
+                    <button className={iconBtnStop} onClick={() => onNodeAction(cluster.name, 'stop-node', node.id)} disabled={stackBusy} title="Stop">
                       {Icons.stop}
                     </button>
-                    <button className={iconBtnRestart} onClick={() => onRestartNode(node.id)} disabled={isOperationRunning} title="Restart">
+                    <button className={iconBtnRestart} onClick={() => onNodeAction(cluster.name, 'restart-node', node.id)} disabled={stackBusy} title="Restart">
                       {Icons.restart}
                     </button>
                   </>
                 ) : !node.running && !isTransitioning ? (
-                  <button className={iconBtnStart} onClick={() => onStartNode(node.id)} disabled={isOperationRunning} title="Start">
+                  <button className={iconBtnStart} onClick={() => onNodeAction(cluster.name, 'start-node', node.id)} disabled={stackBusy} title="Start">
                     {Icons.play}
                   </button>
                 ) : null}
                 <button
                   className={iconBtnLogs(logSelected)}
-                  onClick={() => onViewLogs({ type: 'node', id: node.id })}
+                  onClick={() => onViewLogs({ type: 'node', cluster: cluster.name, id: node.id })}
                   title="View Logs"
                 >
                   {Icons.logs}

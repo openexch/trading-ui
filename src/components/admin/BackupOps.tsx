@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useBackupOps, type RecoverResult } from '../../hooks/useBackupOps';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from './Toasts';
-import type { NodeStatus } from './types';
+import type { ClusterBlock } from './types';
 
 function Pill({ ok, label, title, alert }: { ok: boolean; label: string; title?: string; alert?: boolean }) {
   // alert renders the not-ok state as a genuine warning (sell tint) instead
@@ -32,13 +32,26 @@ function Card({ title, children, action }: { title: string; children: React.Reac
 }
 
 interface BackupOpsProps {
-  /** Live cluster nodes — the recovery target list derives from these. */
-  nodes?: NodeStatus[];
+  /** All clusters — the selector offers backup-capable ones; the recovery
+   *  target list derives from the selected cluster's nodes. */
+  clusters?: ClusterBlock[];
 }
 
-export function BackupOps({ nodes }: BackupOpsProps) {
-  const { autoSnapshot, backupInfo, loading, error, refresh, enableAutoSnapshot, disableAutoSnapshot, takeSnapshot, recover } = useBackupOps();
+export function BackupOps({ clusters }: BackupOpsProps) {
   const toast = useToast();
+
+  // Only backup-capable clusters can be selected; default to match.
+  const backupClusters = useMemo(
+    () => (clusters ?? []).filter(c => c.capabilities.backup),
+    [clusters],
+  );
+  const [selectedCluster, setSelectedCluster] = useState('match');
+  const cluster = backupClusters.some(c => c.name === selectedCluster)
+    ? selectedCluster
+    : (backupClusters[0]?.name ?? 'match');
+  const nodes = backupClusters.find(c => c.name === cluster)?.nodes;
+
+  const { autoSnapshot, backupInfo, loading, error, refresh, enableAutoSnapshot, disableAutoSnapshot, takeSnapshot, recover } = useBackupOps(cluster);
 
   const [interval, setIntervalMin] = useState('30');
   const [busy, setBusy] = useState(false);
@@ -82,6 +95,21 @@ export function BackupOps({ nodes }: BackupOpsProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      {backupClusters.length > 1 && (
+        <label className="flex items-center gap-2 text-[11px] text-muted">
+          <span className="font-semibold uppercase tracking-wide">Cluster</span>
+          <select
+            aria-label="Backup cluster"
+            value={cluster}
+            onChange={e => { setSelectedCluster(e.target.value); setRecoverNode(0); setDryRunResult(null); }}
+            className="rounded-md border border-hairline bg-surface-2 px-2 py-1 text-[12px] text-text focus:border-accent focus:outline-none"
+          >
+            {backupClusters.map(c => (
+              <option key={c.name} value={c.name}>{c.display}</option>
+            ))}
+          </select>
+        </label>
+      )}
       {error && <div className="rounded-md bg-sell-soft px-3 py-2 text-[13px] text-sell">{error}</div>}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -182,7 +210,7 @@ export function BackupOps({ nodes }: BackupOpsProps) {
               onChange={e => { setRecoverNode(Number(e.target.value)); setDryRunResult(null); }}
               className="rounded-md border border-hairline bg-surface-2 px-2 py-1.5 text-[12px] focus:border-accent focus:outline-none"
             >
-              {(nodes && nodes.length > 0 ? nodes.map(n => n.id) : [0, 1, 2]).map(id => {
+              {(nodes && nodes.length > 0 ? nodes.map(n => n.id) : (cluster === 'match' ? [0, 1, 2] : [0])).map(id => {
                 const node = nodes?.find(n => n.id === id);
                 return (
                   <option key={id} value={id}>

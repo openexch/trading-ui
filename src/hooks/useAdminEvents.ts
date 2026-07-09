@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-const ADMIN_BASE = import.meta.env.VITE_ADMIN_API_URL || '';
+import { ADMIN_BASE } from '../components/admin/api';
 
 const MAX_EVENTS = 200;
 const MAX_RECONNECT_ATTEMPTS = 10;

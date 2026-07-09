@@ -30,9 +30,15 @@ export function formatUptime(ms: number): string {
   return `${seconds}s`;
 }
 
-export function getLogSourceLabel(source: LogSource | null): string {
+export function getLogSourceLabel(
+  source: LogSource | null,
+  resolveClusterDisplay?: (name: string) => string,
+): string {
   if (!source) return 'Select a service or node to view logs';
-  if (source.type === 'node') return `Node ${source.id}`;
+  if (source.type === 'node') {
+    const display = resolveClusterDisplay?.(source.cluster) ?? source.cluster;
+    return `${display} · Node ${source.id}`;
+  }
   switch (source.name) {
     case 'backup': return 'Backup Node';
     case 'market-gateway': return 'Market Gateway';
@@ -55,7 +61,7 @@ export function processToLogName(name: string): string {
 export function isSameLogSource(selected: LogSource | null, source: LogSource): boolean {
   if (!selected) return false;
   if (source.type === 'node' && selected.type === 'node') {
-    return source.id === selected.id;
+    return source.cluster === selected.cluster && source.id === selected.id;
   }
   if (source.type === 'service' && selected.type === 'service') {
     return source.name === selected.name;

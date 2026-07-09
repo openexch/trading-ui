@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Shared shapes for the admin console: cluster status from
-// /api/admin/status, process-manager records, and the confirm-dialog
-// dispatch payload.
+// /api/admin/status (the generic multi-cluster envelope), process-manager
+// records, and the confirm-dialog dispatch payload.
 
-export type NodeStatusType = 'LEADER' | 'FOLLOWER' | 'OFFLINE' | 'STOPPING' | 'STARTING' | 'REJOINING' | 'ELECTION';
+export type NodeStatusType =
+  | 'LEADER' | 'FOLLOWER' | 'OFFLINE' | 'DEAD'
+  | 'STOPPING' | 'STARTING' | 'REJOINING' | 'ELECTION';
 
 export interface NodeStatus {
   id: number;
@@ -12,7 +14,11 @@ export interface NodeStatus {
   role: NodeStatusType;
   status?: NodeStatusType;
   healthy?: boolean;
-  // Per-node data
+  /** Process-manager key for this node (join to /api/admin/processes for
+   *  mem/cpu/uptime). Falls back to `node<id>` when absent. */
+  procName?: string;
+  // Per-node data (matching engine fills all; assets fills only the CnC
+  // subset — the rich replication fields are absent and render as `--`).
   logPosition?: number;      // From recording-log (stale, term boundaries only)
   commitPosition?: number;   // Real-time from Aeron counters
   snapshotPosition?: number;
@@ -25,24 +31,69 @@ export interface NodeStatus {
 export interface GatewayStatus {
   running: boolean;
   port: number;
+  healthy?: boolean;
 }
 
-export interface ClusterStatus {
-  nodes: NodeStatus[];
+/** The kind of engine a cluster runs. Open for future kinds without a
+ *  breaking change (`string & {}` keeps literal autocomplete while allowing
+ *  unknown backend values). */
+export type ClusterKind = 'match' | 'assets' | (string & {});
+
+/** What operations a cluster supports — the rail/grid gate their buttons on
+ *  these so a cluster never offers an action its backend would 400. */
+export interface ClusterCapabilities {
+  rollingUpdate: boolean;
+  snapshot: boolean;
+  cleanup: boolean;
+  housekeeping: boolean;
+  backup: boolean;
+  separateDriver: boolean;
+}
+
+/** Assets-engine ledger-integrity readout. Not emitted by the current build;
+ *  the panel and rail degrade gracefully when it is absent. */
+export interface MoneyHealth {
+  conservationOk: boolean;
+  lastAppliedTradeId: number;
+  settlementLagMs?: number;
+  imbalanceMinor?: number;
+  checkedAt?: string;
+}
+
+/** One cluster block from GET /api/admin/status `clusters[]`. */
+export interface ClusterBlock {
+  name: string;
+  display: string;
+  kind: ClusterKind;
+  nodeCount: number;
   leader: number;
-  backup: { running: boolean; pid?: number };
-  gateway: { running: boolean; port: number };
+  allNodesHealthy: boolean;
+  capabilities: ClusterCapabilities;
+  nodes: NodeStatus[];
+  backup?: { running: boolean; fresh?: boolean; reason?: string };
+  money?: MoneyHealth;
+}
+
+/** The full GET /api/admin/status envelope. `clusters[]` is the generic
+ *  array the console renders; the flat legacy keys are back-compat aliases of
+ *  clusters[0] and are kept optional so a raw response still type-checks. */
+export interface AdminStatus {
+  clusters: ClusterBlock[];
   gateways: {
     market: GatewayStatus;
-    order: GatewayStatus;
+    order?: GatewayStatus;
     admin: GatewayStatus;
+    oms?: GatewayStatus;
   };
-  // Archive is now per-node (in NodeStatus), these are deprecated
-  archiveBytes?: number;
-  archiveDiskBytes?: number;
-  // Live stack runtime profile (light/dev/demo/performance/ultra); updates as a
-  // profile switch completes.
   activeProfile?: string;
+  backup?: { running: boolean; fresh?: boolean; reason?: string };
+  demoHealthy?: boolean;
+  demo?: { running: boolean; healthy: boolean; port: number };
+  // Legacy flat shape (alias of clusters[0]) — kept so the pre-multi-cluster
+  // backend still parses and normalizeStatus() can synthesize a match block.
+  nodes?: NodeStatus[];
+  leader?: number;
+  allNodesHealthy?: boolean;
 }
 
 // One runtime profile as reported by GET /api/admin/profile's `available` set.
@@ -84,16 +135,20 @@ export interface ProcessSummary {
   lastPollMs: number;
 }
 
+/** A log tail target. Node sources are cluster-qualified so stacked clusters
+ *  with the same node ids never collide. */
 export type LogSource =
-  | { type: 'node'; id: number }
+  | { type: 'node'; cluster: string; id: number }
   | { type: 'service'; name: string };
 
 export type ConfirmAction = {
   type: 'stop-node' | 'restart-node' | 'start-node' |
         'process-action' | 'self-update' |
-        'rolling-update' | 'housekeeping' | 'housekeeping-force' |
+        'rolling-update' | 'housekeeping' | 'housekeeping-force' | 'snapshot' |
         'stop-all-nodes' | 'start-all-nodes' | 'cleanup' |
         'apply-profile' | 'apply-profile-force';
+  /** Cluster the action targets (rides the `?cluster=` query). */
+  cluster?: string;
   nodeId?: number;
   service?: string;
   action?: 'start' | 'stop' | 'restart';
@@ -104,4 +159,4 @@ export type ConfirmAction = {
   confirmStyle: 'danger' | 'warning' | 'primary';
 };
 
-export type AdminTab = 'cluster' | 'risk' | 'backup';
+export type AdminTab = 'overview' | 'clusters' | 'services' | 'risk' | 'backup';
