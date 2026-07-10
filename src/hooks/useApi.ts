@@ -4,6 +4,7 @@ import type { OrderRequest } from '../types/market';
 import { MARKETS } from '../types/market';
 import { API_BASE, getAuthHeaders } from '../config';
 import { toWireMoney } from '../utils/money';
+import { formatRejectReason } from '../utils/rejectReasons';
 
 interface ApiState {
   loading: boolean;
@@ -58,7 +59,7 @@ export function useApi() {
         setState({ loading: false, error: null });
         return { success: true, message: `Order accepted (${data.omsOrderId})` };
       } else {
-        const error = data.rejectReason || `Error: ${response.status}`;
+        const error = data.rejectReason ? formatRejectReason(data.rejectReason) : `Error: ${response.status}`;
         setState({ loading: false, error });
         return { success: false, message: error };
       }

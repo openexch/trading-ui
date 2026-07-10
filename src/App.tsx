@@ -31,6 +31,7 @@ import { AdminPage } from './pages/AdminPage';
 import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
 import { mergeLiveCandle } from './utils/candles';
+import { formatRejectReason } from './utils/rejectReasons';
 
 // Mobile detection hook
 function useIsMobile(breakpoint = 768) {
@@ -90,17 +91,19 @@ function MarketPage() {
   const { clusterState, handleClusterStatus, handleClusterEvent, clearClusterEvents } = useClusterState();
   const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
 
-  // Async engine rejections (off-tick/out-of-range price, full book) arrive
-  // as REJECTED events on the user's order stream — surface them, never let
-  // an accepted order silently vanish. rejectReason is populated for OMS
-  // risk rejects; engine rejects carry no reason until match#75 lands.
-  const [rejectNotice, setRejectNotice] = useState<string | null>(null);
+  // Async engine/OMS rejections (off-tick/out-of-range price, full book,
+  // risk checks, ...) arrive as REJECTED events on the user's order stream —
+  // surface them, never let an accepted order silently vanish. rejectReason
+  // is populated on every reject path now (engine rejects since match#75;
+  // OMS risk rejects always carried one) and rendered as friendly text; the
+  // raw code stays available via the notice's title attribute.
+  const [rejectNotice, setRejectNotice] = useState<{ text: string; code: string | null } | null>(null);
   const rejectTimerRef = useRef<number | null>(null);
   const handleOrderRejected = useCallback((event: OmsOrderEvent) => {
-    const detail = event.rejectReason
-      ? `Order rejected: ${event.rejectReason}`
-      : 'Order rejected by the exchange. Check the price is on the market tick and inside the allowed range.';
-    setRejectNotice(detail);
+    setRejectNotice({
+      text: `Order rejected: ${formatRejectReason(event.rejectReason)}`,
+      code: event.rejectReason,
+    });
     if (rejectTimerRef.current) window.clearTimeout(rejectTimerRef.current);
     rejectTimerRef.current = window.setTimeout(() => setRejectNotice(null), 8000);
   }, []);
