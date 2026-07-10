@@ -562,6 +562,11 @@ export function Chart({ candles: utcCandles, currentCandle: utcCurrentCandle, sy
         borderDownColor: p.down,
         wickUpColor: p.up,
         wickDownColor: p.down,
+        // The current price on the axis is drawn by our own up/down-colored dashed
+        // price line (createPriceLine below). Suppress the series' built-in
+        // last-value label + line so the axis doesn't show two identical prices.
+        lastValueVisible: false,
+        priceLineVisible: false,
       });
       candleSeriesRef.current = s;
     } else if (chartType === 'line') {
