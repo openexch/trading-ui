@@ -29,6 +29,7 @@ import { Icons } from './components/Icons';
 import { AdminPage } from './pages/AdminPage';
 import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
+import { mergeLiveCandle } from './utils/candles';
 
 // Mobile detection hook
 function useIsMobile(breakpoint = 768) {
@@ -185,21 +186,10 @@ function MarketPage() {
             if (chartIntervalRef.current === '1m') {
               // Update current candle for real-time chart updates
               setCurrentCandle(candleUpd.candle);
-              // If this is a new candle (different time from last in history), append to history
-              setCandles(prev => {
-                if (prev.length === 0) return [candleUpd.candle];
-                const last = prev[prev.length - 1];
-                if (candleUpd.candle.time > last.time) {
-                  // New candle bucket — append, capped so the live array
-                  // cannot grow without bound (trading-ui#24)
-                  const next = [...prev, candleUpd.candle];
-                  return next.length > MAX_LIVE_CANDLES
-                    ? next.slice(next.length - MAX_LIVE_CANDLES)
-                    : next;
-                }
-                // Same bucket — history will be updated via currentCandle overlay
-                return prev;
-              });
+              // Keep the history array authoritative for the live bucket (append on
+              // a new bucket, update-in-place on the same one) so a settled candle
+              // holds its FINAL value, not its first-tick value. See mergeLiveCandle.
+              setCandles(prev => mergeLiveCandle(prev, candleUpd.candle, MAX_LIVE_CANDLES));
             }
           }
           break;
