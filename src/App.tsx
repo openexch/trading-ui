@@ -17,6 +17,7 @@ import { OrderBook } from './components/OrderBook/OrderBook';
 import { TradeList } from './components/Trades/TradeList';
 import { Chart } from './components/Chart/Chart';
 import { ConnectionStatus } from './components/ConnectionStatus/ConnectionStatus';
+import { ClusterActivityLog } from './components/ClusterActivity/ClusterActivityLog';
 import { MarketSelector } from './components/MarketSelector/MarketSelector';
 import { MarketStats } from './components/MarketStats/MarketStats';
 import { OrderForm } from './components/OrderForm/OrderForm';
@@ -86,7 +87,7 @@ function MarketPage() {
     useOrderBook(() => requestRefreshRef.current());
   const { trades, handleTradesBatch, resetTrades } = useTrades();
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
-  const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
+  const { clusterState, handleClusterStatus, handleClusterEvent, clearClusterEvents } = useClusterState();
   const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
 
   // Async engine rejections (off-tick/out-of-range price, full book) arrive
@@ -388,6 +389,9 @@ function MarketPage() {
             </button>
           )}
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
+          {!isMobile && (
+            <ClusterActivityLog events={clusterState.events} onClear={clearClusterEvents} />
+          )}
           {!isMobile && (
             <Link
               to="/admin"
