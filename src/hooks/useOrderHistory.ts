@@ -19,7 +19,7 @@ export interface OrderHistoryEntry {
   remainingQty: number;
   stopPrice: number;
   status: string;
-  rejectReason: string;
+  rejectReason: string | null;
   createdAtMs: number;
   updatedAtMs: number;
 }

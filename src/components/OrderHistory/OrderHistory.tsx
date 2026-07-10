@@ -5,6 +5,7 @@ import { MARKETS } from '../../types/market';
 import { formatPrice, formatQuantity, formatTime } from '../../utils/formatters';
 import { useOrderHistory } from '../../hooks/useOrderHistory';
 import { useExecutions } from '../../hooks/useExecutions';
+import { formatRejectReason } from '../../utils/rejectReasons';
 
 interface OrderHistoryProps {
   market: Market;
@@ -118,10 +119,24 @@ export function OrderHistory({ market }: OrderHistoryProps) {
                   <td className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(o.price)}</td>
                   <td className={`${td} text-right font-mono tabular-nums text-text`}>{formatQuantity(o.quantity)}</td>
                   <td className={`${td} text-right font-mono tabular-nums text-muted`}>{formatQuantity(o.filledQty)}</td>
-                  <td className={td}>
-                    <span className={`inline-block rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLES[o.status] ?? 'text-muted bg-surface-2'}`}>
+                  <td className={`${td} whitespace-nowrap`}>
+                    <span
+                      className={`inline-block rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLES[o.status] ?? 'text-muted bg-surface-2'}`}
+                      title={o.status === 'REJECTED' && o.rejectReason ? formatRejectReason(o.rejectReason) : undefined}
+                    >
                       {o.status === 'PARTIALLY_FILLED' ? 'Partial' : o.status}
                     </span>
+                    {/* Same line, truncated, never wraps: cannot change row
+                        height (the row template stays identical). Full text
+                        is still on the badge's title tooltip above. */}
+                    {o.status === 'REJECTED' && o.rejectReason && (
+                      <span
+                        className="ml-1.5 inline-block max-w-[140px] truncate align-middle text-[10px] text-faint"
+                        title={formatRejectReason(o.rejectReason)}
+                      >
+                        {formatRejectReason(o.rejectReason)}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

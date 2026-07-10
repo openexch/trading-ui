@@ -21,8 +21,10 @@ interface OrderFormProps {
   onRequestSignIn: () => void;
   /** Async rejection of a previously accepted order (from the user's order
    *  stream) — surfaced here so a rejected order never just silently
-   *  disappears. */
-  rejectNotice?: string | null;
+   *  disappears. `code` is the raw rejectReason (or null pre-match#75); kept
+   *  as the notice's title attribute so it stays inspectable even though the
+   *  visible text is the friendly form. */
+  rejectNotice?: { text: string; code: string | null } | null;
 }
 
 const SYNTHETIC_TYPES: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
@@ -378,10 +380,14 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, compa
 
   return (
     <div className={`flex flex-col ${compact ? 'gap-2 p-3' : 'gap-3 p-4'}`}>
-      {/* Async order rejection (user's order stream) — never silent */}
+      {/* Async order rejection (user's order stream) — never silent. The raw
+          code rides along as a title attribute so it stays inspectable. */}
       {rejectNotice && (
-        <div className="rounded-md bg-sell-soft px-2.5 py-1.5 text-[11px] font-medium text-sell animate-fade-in">
-          {rejectNotice}
+        <div
+          className="rounded-md bg-sell-soft px-2.5 py-1.5 text-[11px] font-medium text-sell animate-fade-in"
+          title={rejectNotice.code ?? undefined}
+        >
+          {rejectNotice.text}
         </div>
       )}
 
