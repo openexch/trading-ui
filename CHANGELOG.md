@@ -2,9 +2,42 @@
 
 All notable changes to `trading-ui` (the Open Exchange trading and admin web
 interface) are documented here. The stack (`match`, `oms`, `admin-gateway`,
-`trading-ui`) is versioned together; one version spans all four repos.
+`trading-ui`, `assets`) is versioned together; one version spans all five repos.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [0.4.0-beta] - 2026-07-22
+
+Trader-first UI on a version-chained order book; the admin console moves out
+to admin-gateway.
+
+### Added
+- Trader-first desktop layout: always-visible order rail, stable chart,
+  smooth market switching (#39); full 20+20 order book always on screen
+  (#40); brand-ink dark theme visual identity — hero price, spread-row
+  signature (#41).
+- Version-chained order book synchronization (v4 protocol) (#35).
+- Tick-aware order form + visible order rejections (#37); friendly text for
+  engine/OMS reject reasons (#72); sign-in with backend-scoped orders,
+  working history, taker-side tape colors (#36).
+- Persistent cluster activity log in the topbar (#71).
+
+### Fixed
+- Order book depth and staleness after tab switches (#34).
+- Chart: candle times rendered in the local timezone — was 3h behind (#57);
+  settled candle keeps its final value on rollover (#69); single
+  current-price label on the axis (#70).
+- Tick arrows no longer flicker — persistent direction, reserved width (#42);
+  scrolling over a focused number input no longer changes its value (#38);
+  stable seq key for the trade tape (#63).
+- Footer shows the real stack version, not a hardcoded v1.0.0 (#59).
+
+### Changed
+- The admin console (built up here through #43-#45, #52-#56, #64-#68) was
+  extracted into a standalone subproject under admin-gateway
+  (openexch/admin-gateway#91); this repo is now the trading UI proper.
+- tsc emit artifacts dropped from the repo and ignored (#46).
+- Contact email is info@openexch.io (#58).
 
 ## [0.3.0-beta] - 2026-07-05
 
