@@ -9,13 +9,15 @@ interface AccountDrawerProps {
   onClose: () => void;
 }
 
+// Asset IDs are 0-based and MUST match the backend Asset enum (USD=0, BTC=1, ...).
+// (Was 1-based, so every deposit/withdraw hit the next asset — e.g. "USD" funded BTC.)
 const ASSETS = [
-  { id: 1, name: 'USD' },
-  { id: 2, name: 'BTC' },
-  { id: 3, name: 'ETH' },
-  { id: 4, name: 'SOL' },
-  { id: 5, name: 'XRP' },
-  { id: 6, name: 'DOGE' },
+  { id: 0, name: 'USD' },
+  { id: 1, name: 'BTC' },
+  { id: 2, name: 'ETH' },
+  { id: 3, name: 'SOL' },
+  { id: 4, name: 'XRP' },
+  { id: 5, name: 'DOGE' },
 ];
 
 const th =
@@ -34,7 +36,7 @@ export function AccountDrawer({ onClose }: AccountDrawerProps) {
   const { assets, refresh } = useBalances();
 
   const [loading, setLoading] = useState(false);
-  const [depositAsset, setDepositAsset] = useState(1); // USD
+  const [depositAsset, setDepositAsset] = useState(0); // USD (asset id 0)
   const [depositAmount, setDepositAmount] = useState('');
   const [actionMsg, setActionMsg] = useState('');
 
