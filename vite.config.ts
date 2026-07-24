@@ -40,7 +40,7 @@ export default defineConfig({
   },
   preview: {
     port: 80,
-    allowedHosts: ['trade.openexch.io', 'localhost'],
+    allowedHosts: ['trade.openexchange.dev', 'localhost'],
     proxy: {
       // Keep in sync with server.proxy above ('/ws/v1' before '/ws').
       '/ws/v1': {
