@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 
 // lightweight-charts needs a real canvas; the chart is not what a smoke
 // test exercises. Mocking the module also keeps jsdom from loading it.
