@@ -1,72 +1,89 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+/**
+ * useClusterState is what a TRADER needs from the cluster: who leads, and
+ * whether the exchange is mid-election or mid-update, so the connection pill
+ * can say "failing over" instead of "disconnected".
+ *
+ * The operator-facing activity log that used to live here moved to the admin
+ * console: the market socket only ever carried the matching engine, so this
+ * copy could never show the money ledger, and a browser's localStorage was the
+ * wrong home for an operations record.
+ */
+import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useClusterState } from './useClusterState';
-import type { ClusterEventMessage } from '../types/market';
+import type { ClusterEventMessage, ClusterStatusMessage } from '../types/market';
 
-const KEY = 'oe.clusterActivity.v1';
-
-const evt = (event: ClusterEventMessage['event'], timestamp: number, message: string = event): ClusterEventMessage => ({
-  type: 'CLUSTER_EVENT', event, message, timestamp,
+const evt = (event: ClusterEventMessage['event'], timestamp: number): ClusterEventMessage => ({
+  type: 'CLUSTER_EVENT', event, message: event, timestamp,
 });
 
-describe('useClusterState — persistent activity log', () => {
-  beforeEach(() => localStorage.clear());
+const status = (leaderId: number, nodeStatus = 'FOLLOWER'): ClusterStatusMessage => ({
+  type: 'CLUSTER_STATUS', leaderId, leadershipTermId: 1,
+  nodes: [{ id: 0, status: nodeStatus, healthy: true }],
+  gatewayConnected: true, timestamp: 999,
+} as ClusterStatusMessage);
 
-  it('accumulates events into a rolling log (not just the last)', () => {
+describe('useClusterState', () => {
+  it('starts with no leader and nothing in flight', () => {
     const { result } = renderHook(() => useClusterState());
-    act(() => result.current.handleClusterEvent(evt('LEADER_CHANGE', 1)));
-    act(() => result.current.handleClusterEvent(evt('NODE_DOWN', 2)));
-    act(() => result.current.handleClusterEvent(evt('NODE_UP', 3)));
-    expect(result.current.clusterState.events.map(e => e.event))
-      .toEqual(['LEADER_CHANGE', 'NODE_DOWN', 'NODE_UP']);
-    expect(result.current.clusterState.lastEvent?.event).toBe('NODE_UP');
+    expect(result.current.clusterState.leaderId).toBe(-1);
+    expect(result.current.clusterState.isElecting).toBe(false);
+    expect(result.current.clusterState.isRollingUpdate).toBe(false);
   });
 
-  it('persists to localStorage and hydrates a fresh hook from it (survives reload)', () => {
-    const { result, unmount } = renderHook(() => useClusterState());
-    act(() => result.current.handleClusterEvent(evt('ROLLING_UPDATE_START', 10)));
-    act(() => result.current.handleClusterEvent(evt('ROLLING_UPDATE_COMPLETE', 20)));
-    unmount();
-    expect(JSON.parse(localStorage.getItem(KEY)!)).toHaveLength(2);
-
-    // A brand-new hook instance (simulating a page reload) hydrates the log.
-    const { result: reloaded } = renderHook(() => useClusterState());
-    expect(reloaded.current.clusterState.events.map(e => e.event))
-      .toEqual(['ROLLING_UPDATE_START', 'ROLLING_UPDATE_COMPLETE']);
-  });
-
-  it('de-dupes an exact repeat of the last event (reconnect re-broadcast)', () => {
+  it('tracks the leader from the status stream', () => {
     const { result } = renderHook(() => useClusterState());
-    act(() => result.current.handleClusterEvent(evt('LEADER_CHANGE', 5, 'same')));
-    act(() => result.current.handleClusterEvent(evt('LEADER_CHANGE', 5, 'same')));
-    expect(result.current.clusterState.events).toHaveLength(1);
-    // A different timestamp is a genuine new event.
-    act(() => result.current.handleClusterEvent(evt('LEADER_CHANGE', 6, 'same')));
-    expect(result.current.clusterState.events).toHaveLength(2);
-  });
-
-  it('clear empties the log', () => {
-    const { result } = renderHook(() => useClusterState());
-    act(() => result.current.handleClusterEvent(evt('NODE_DOWN', 1)));
-    act(() => result.current.clearClusterEvents());
-    expect(result.current.clusterState.events).toHaveLength(0);
-    expect(JSON.parse(localStorage.getItem(KEY)!)).toHaveLength(0);
-  });
-
-  it('the frequent status stream never mutates the log (same array reference)', () => {
-    const { result } = renderHook(() => useClusterState());
-    act(() => result.current.handleClusterEvent(evt('NODE_UP', 1)));
-    const before = result.current.clusterState.events;
-    act(() => result.current.handleClusterStatus({
-      type: 'CLUSTER_STATUS', leaderId: 2, leadershipTermId: 1,
-      nodes: [{ id: 0, status: 'FOLLOWER', healthy: true }],
-      gatewayConnected: true, timestamp: 999,
-    } as never));
-    // status updates leader/nodes but leaves the events array identity intact,
-    // so the persist effect does not fire on every 2s tick.
-    expect(result.current.clusterState.events).toBe(before);
+    act(() => result.current.handleClusterStatus(status(2)));
     expect(result.current.clusterState.leaderId).toBe(2);
+    expect(result.current.clusterState.isElecting).toBe(false);
+  });
+
+  // A leaderless cluster is failing over, not down. The pill has to say so, or
+  // a routine election reads to a trader as an outage.
+  it('reports an election while there is no leader, and again on ELECTION status', () => {
+    const { result } = renderHook(() => useClusterState());
+
+    act(() => result.current.handleClusterStatus(status(-1)));
+    expect(result.current.clusterState.isElecting).toBe(true);
+
+    act(() => result.current.handleClusterStatus(status(0, 'ELECTION')));
+    expect(result.current.clusterState.isElecting).toBe(true);
+
+    act(() => result.current.handleClusterStatus(status(0)));
+    expect(result.current.clusterState.isElecting).toBe(false);
+  });
+
+  it('clears the election flag when the new leader is announced', () => {
+    const { result } = renderHook(() => useClusterState());
+    act(() => result.current.handleClusterStatus(status(-1)));
+    act(() => result.current.handleClusterEvent(evt('LEADER_CHANGE', 5)));
+    expect(result.current.clusterState.isElecting).toBe(false);
+    expect(result.current.clusterState.lastEvent?.event).toBe('LEADER_CHANGE');
+  });
+
+  it('brackets a rolling update between its start and complete events', () => {
+    const { result } = renderHook(() => useClusterState());
+
+    act(() => result.current.handleClusterEvent(evt('ROLLING_UPDATE_START', 10)));
+    expect(result.current.clusterState.isRollingUpdate).toBe(true);
+
+    act(() => result.current.handleClusterEvent(evt('ROLLING_UPDATE_COMPLETE', 20)));
+    expect(result.current.clusterState.isRollingUpdate).toBe(false);
+  });
+
+  // A market-plane reset (socket drop) must not claim a leader it can no longer
+  // see, but the last event stays as context for the reconnect.
+  it('reset drops the leader and keeps the last event', () => {
+    const { result } = renderHook(() => useClusterState());
+    act(() => result.current.handleClusterStatus(status(2)));
+    act(() => result.current.handleClusterEvent(evt('NODE_DOWN', 7)));
+
+    act(() => result.current.resetClusterState());
+
+    expect(result.current.clusterState.leaderId).toBe(-1);
+    expect(result.current.clusterState.gatewayConnected).toBe(false);
+    expect(result.current.clusterState.lastEvent?.event).toBe('NODE_DOWN');
   });
 });
