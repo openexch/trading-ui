@@ -152,8 +152,6 @@ export interface ClusterState {
   isRollingUpdate: boolean;
   isElecting: boolean;
   lastEvent: ClusterEventMessage | null;
-  /** Rolling, persisted history of cluster events (newest last), capped. */
-  events: ClusterEventMessage[];
   lastUpdate: number;
 }
 

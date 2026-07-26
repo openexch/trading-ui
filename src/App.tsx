@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useOrderBook } from './hooks/useOrderBook';
 import { useTrades } from './hooks/useTrades';
@@ -17,7 +17,6 @@ import { OrderBook } from './components/OrderBook/OrderBook';
 import { TradeList } from './components/Trades/TradeList';
 import { Chart } from './components/Chart/Chart';
 import { ConnectionStatus } from './components/ConnectionStatus/ConnectionStatus';
-import { ClusterActivityLog } from './components/ClusterActivity/ClusterActivityLog';
 import { MarketSelector } from './components/MarketSelector/MarketSelector';
 import { MarketStats } from './components/MarketStats/MarketStats';
 import { OrderForm } from './components/OrderForm/OrderForm';
@@ -26,8 +25,6 @@ import { OrderHistory } from './components/OrderHistory/OrderHistory';
 import { AccountDrawer } from './components/Account/AccountDrawer';
 import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
-import { Icons } from './components/Icons';
-import { AdminPage } from './pages/AdminPage';
 import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
 import { mergeLiveCandle } from './utils/candles';
@@ -88,7 +85,7 @@ function MarketPage() {
     useOrderBook(() => requestRefreshRef.current());
   const { trades, handleTradesBatch, resetTrades } = useTrades();
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
-  const { clusterState, handleClusterStatus, handleClusterEvent, clearClusterEvents } = useClusterState();
+  const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
   const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
 
   // Async engine/OMS rejections (off-tick/out-of-range price, full book,
@@ -392,18 +389,6 @@ function MarketPage() {
             </button>
           )}
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
-          {!isMobile && (
-            <ClusterActivityLog events={clusterState.events} onClear={clearClusterEvents} />
-          )}
-          {!isMobile && (
-            <Link
-              to="/admin"
-              title="Cluster Admin"
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-hairline bg-surface-2 text-muted transition-colors hover:border-hairline-strong hover:text-text [&_svg]:h-[17px] [&_svg]:w-[17px]"
-            >
-              {Icons.settings}
-            </Link>
-          )}
           <ConnectionStatus status={effectiveStatus} clusterState={clusterState} onReconnect={handleReconnect} />
         </div>
       </header>
@@ -646,7 +631,6 @@ function App() {
       <div aria-hidden className="bg-dotgrid pointer-events-none fixed inset-0 -z-10" />
       <Routes>
         <Route path="/" element={<MarketPage />} />
-        <Route path="/admin" element={<AdminPage />} />
       </Routes>
     </>
   );
