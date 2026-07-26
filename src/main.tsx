@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router'
 
 // Self-hosted fonts (no runtime Google Fonts request)
 import '@fontsource/inter/400.css'
