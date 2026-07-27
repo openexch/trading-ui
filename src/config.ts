@@ -6,7 +6,7 @@ export const API_BASE: string = import.meta.env.VITE_ORDER_API_URL || '';
 
 /** The coordinated stack release version (one version across all four
  *  repos; bumped manually at release time, like the website's site.ts). */
-export const STACK_VERSION = 'v0.3.0-beta';
+export const STACK_VERSION = 'v0.5.0-beta';
 
 /** Grafana for the admin console's header link. The default assumes the
  *  operator sits on the deployment box (Grafana binds loopback :3000);
