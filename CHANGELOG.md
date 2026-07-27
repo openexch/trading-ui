@@ -6,6 +6,23 @@ interface) are documented here. The stack (`match`, `oms`, `admin-gateway`,
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0-beta] - 2026-07-27
+
+The durability release. For the trading UI the change is a subtraction: the
+admin console leaves the trading surface entirely.
+
+### Changed
+- The duplicate admin console is retired from the trading UI and the last of
+  its leftovers deleted (#82, #84). It lives in its own repo behind its own
+  access control; keeping a second copy here meant the two had to be designed
+  as one, which is why the admin surface never got a design of its own.
+- The UI points at `openexchange.dev` (#81).
+
+### Fixed
+- Deposit and withdraw used 1-based asset ids against a 0-based API, so the
+  wrong asset was credited (#80).
+- The react-router CSRF advisory is closed (#83).
+
 ## [0.4.0-beta] - 2026-07-22
 
 Trader-first UI on a version-chained order book; the admin console moves out
