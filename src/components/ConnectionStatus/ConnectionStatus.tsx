@@ -5,9 +5,13 @@ interface ConnectionStatusProps {
   status: ExtendedConnectionStatus;
   clusterState?: ClusterState;
   onReconnect: () => void;
+  /** Drop the status word and keep the dot. The mobile header cannot afford
+   *  ~65px of prose; the colour already carries the state, and Reconnect
+   *  still appears when there is something to act on. */
+  compact?: boolean;
 }
 
-export function ConnectionStatus({ status, clusterState, onReconnect }: ConnectionStatusProps) {
+export function ConnectionStatus({ status, clusterState, onReconnect, compact = false }: ConnectionStatusProps) {
   const statusText: Record<ExtendedConnectionStatus, string> = {
     connecting: 'Connecting...',
     connected: 'Connected',
@@ -50,14 +54,17 @@ export function ConnectionStatus({ status, clusterState, onReconnect }: Connecti
 
   return (
     <div
-      className={`inline-flex h-8 items-center gap-2 rounded-full border bg-transparent px-3 font-sans text-[11px] font-medium transition-colors ${pillBorder}`}
+      className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-full border bg-transparent font-sans text-[11px] font-medium transition-colors ${pillBorder} ${compact ? 'px-2.5' : 'px-3'}`}
+      title={compact ? statusText[status] : undefined}
     >
       <span
         className={`h-[7px] w-[7px] shrink-0 rounded-full ${dotClass} ${dotPulse ? 'animate-pulse-soft' : ''}`}
       />
-      <span className={`text-[11px] ${isTransition ? 'text-warn' : 'text-muted'}`}>
-        {statusText[status]}
-      </span>
+      {!compact && (
+        <span className={`whitespace-nowrap text-[11px] ${isTransition ? 'text-warn' : 'text-muted'}`}>
+          {statusText[status]}
+        </span>
+      )}
       {showLeader && (
         <span
           title="Current cluster leader"
@@ -69,7 +76,7 @@ export function ConnectionStatus({ status, clusterState, onReconnect }: Connecti
       {showReconnect && (
         <button
           onClick={onReconnect}
-          className="ml-1 rounded-full border border-hairline px-2.5 py-0.5 text-[10px] font-semibold text-muted transition-colors hover:border-accent hover:text-accent"
+          className="ml-1 whitespace-nowrap rounded-full border border-hairline px-2.5 py-0.5 text-[10px] font-semibold text-muted transition-colors hover:border-accent hover:text-accent"
         >
           Reconnect
         </button>

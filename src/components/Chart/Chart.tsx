@@ -843,8 +843,13 @@ export function Chart({ candles: utcCandles, currentCandle: utcCurrentCandle, sy
     <div className="flex h-full w-full flex-col overflow-hidden">
       {/* Toolbar */}
       <div className="flex flex-shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-text">
+        {/* Empty on mobile (both children hide); dropped outright so its gap
+            does not indent the interval row. */}
+        <div className="flex items-center gap-3 max-md:hidden">
+          {/* The symbol is already in the ticker rail and the header picker on
+              mobile; keeping a third copy pushed the interval row 12px past a
+              360px screen and clipped "1D". */}
+          <div className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-text max-md:hidden">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-[15px] w-[15px] text-muted">
               <path d="M3 3v18h18"/>
               <path d="M7 14l4-4 4 4 5-5"/>
@@ -884,11 +889,14 @@ export function Chart({ candles: utcCandles, currentCandle: utcCurrentCandle, sy
             </button>
           </div>
         </div>
-        <div className="flex gap-0.5 rounded-md border border-hairline bg-surface-2 p-0.5">
+        {/* On mobile everything else in this row is hidden, so the intervals
+            take the full width and share it equally — a short pill group under
+            a full-width tab bar and over a full-width chart read as unfinished. */}
+        <div className="flex gap-0.5 rounded-md border border-hairline bg-surface-2 p-0.5 max-md:w-full">
           {INTERVALS.map(iv => (
             <button
               key={iv}
-              className={`rounded px-2.5 py-[3px] font-mono text-[11px] font-semibold uppercase tracking-wide transition-colors ${activeInterval === iv ? 'bg-accent-soft text-accent' : 'text-muted hover:text-text'}`}
+              className={`rounded px-2.5 py-[3px] font-mono text-[11px] font-semibold uppercase tracking-wide transition-colors max-md:flex-1 ${activeInterval === iv ? 'bg-accent-soft text-accent' : 'text-muted hover:text-text'}`}
               onClick={() => handleIntervalChange(iv)}
             >
               {iv}

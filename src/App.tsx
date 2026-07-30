@@ -354,20 +354,26 @@ function MarketPage() {
     <div className="mx-auto flex h-screen max-w-[1920px] flex-col px-2">
       {/* ── Header ── */}
       <header className="flex flex-shrink-0 items-center justify-between border-b border-hairline py-2.5">
-        <div className="flex items-center gap-5">
-          <div className="flex select-none items-center gap-2.5">
+        {/* The mobile header carries the logo mark without the wordmark: at
+            390px the full row wants ~500px, and letting flex shrink it wrapped
+            every label onto two lines (the market symbol became "BTC-" /
+            "USD"). The mark plus a compact status pill fit with room at 360px. */}
+        <div className={`flex min-w-0 items-center ${isMobile ? 'gap-2.5' : 'gap-5'}`}>
+          <div className="flex flex-shrink-0 select-none items-center gap-2.5">
             <LogoMark />
-            <span className="font-display text-[17px] font-bold leading-none tracking-tight">
-              <span className="text-accent">Open</span>{' '}
-              <span className="text-text-strong">Exchange</span>
-            </span>
+            {!isMobile && (
+              <span className="whitespace-nowrap font-display text-[17px] font-bold leading-none tracking-tight">
+                <span className="text-accent">Open</span>{' '}
+                <span className="text-text-strong">Exchange</span>
+              </span>
+            )}
           </div>
           {isMobile ? (
             <button
-              className="flex min-h-9 items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 font-mono text-[13px] font-medium text-text-strong"
+              className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 font-mono text-[13px] font-medium text-text-strong"
               onClick={() => setShowMarketSelector(true)}
             >
-              <span>{selectedMarket.symbol}</span>
+              <span className="whitespace-nowrap">{selectedMarket.symbol}</span>
               <svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor" className="text-faint">
                 <path d="M2 4l4 4 4-4" />
               </svg>
@@ -380,7 +386,7 @@ function MarketPage() {
             />
           )}
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-shrink-0 items-center gap-2.5">
           {session ? (
             <button
               onClick={() => {
@@ -398,19 +404,19 @@ function MarketPage() {
           ) : (
             <button
               onClick={() => setShowAuthModal(true)}
-              className="h-8 rounded-md border border-hairline bg-surface-2 px-3 text-xs font-medium text-text transition-colors hover:bg-surface-3"
+              className="h-8 whitespace-nowrap rounded-md border border-hairline bg-surface-2 px-3 text-xs font-medium text-text transition-colors hover:bg-surface-3"
             >
               Sign in
             </button>
           )}
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
-          <ConnectionStatus status={effectiveStatus} clusterState={clusterState} onReconnect={handleReconnect} />
+          <ConnectionStatus status={effectiveStatus} clusterState={clusterState} onReconnect={handleReconnect} compact={isMobile} />
         </div>
       </header>
 
       {/* ── Ticker rail (signature) ── */}
       <div className="flex-shrink-0 py-1.5">
-        <MarketStats market={selectedMarket} stats={stats} orderBook={orderBook} />
+        <MarketStats market={selectedMarket} stats={stats} orderBook={orderBook} compact={isMobile} />
       </div>
 
       {/* ── Main grid: book | chart + own orders | order rail + tape ── */}

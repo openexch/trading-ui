@@ -9,6 +9,11 @@ interface MarketStatsProps {
    *  values render as pulsing placeholders, never a misleading $0.00. */
   stats: Stats | null;
   orderBook: OrderBook;
+  /** Stack the supporting stats under the signature block instead of trailing
+   *  them in one row. The row needs ~700px; on a phone it turned the rail into
+   *  a horizontal scroller, which hides half the numbers behind a gesture
+   *  nobody thinks to make. */
+  compact?: boolean;
 }
 
 /** Pulsing placeholder for a value that hasn't arrived yet. */
@@ -20,7 +25,7 @@ function Pending() {
  * Ticker rail — the page's signature element. The symbol is set in the display
  * grotesk against a thin accent rule; the live price flashes on each tick.
  */
-export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
+export function MarketStats({ market, stats, orderBook, compact = false }: MarketStatsProps) {
   const hasBook = orderBook.bids.length > 0 && orderBook.asks.length > 0;
   const spread = hasBook ? orderBook.asks[0].price - orderBook.bids[0].price : 0;
   const spreadPercent = hasBook && spread > 0
@@ -56,9 +61,13 @@ export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
   }, [lastPrice]);
 
   return (
-    <div className="flex items-stretch gap-0 overflow-x-auto rounded-lg border border-hairline bg-surface">
+    <div
+      className={`rounded-lg border border-hairline bg-surface ${
+        compact ? 'flex flex-col' : 'flex items-stretch gap-0 overflow-x-auto'
+      }`}
+    >
       {/* Signature block: symbol + live price against an accent rule */}
-      <div className="flex flex-shrink-0 items-center gap-4 border-l-2 border-accent px-4 py-2">
+      <div className={`flex flex-shrink-0 items-center gap-4 border-l-2 border-accent px-4 py-2 ${compact ? 'min-w-0' : ''}`}>
         <div className="flex flex-col">
           <span className="font-display text-base font-bold leading-tight tracking-tight text-text-strong">
             {market.symbol}
@@ -100,7 +109,13 @@ export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
       </div>
 
       {/* Supporting stats */}
-      <div className="flex flex-1 items-center gap-6 border-l border-hairline px-5 py-2">
+      <div
+        className={
+          compact
+            ? 'grid grid-cols-2 gap-x-4 gap-y-2 border-t border-hairline px-4 py-2'
+            : 'flex flex-1 items-center gap-6 border-l border-hairline px-5 py-2'
+        }
+      >
         <Stat label="24h High" value={stats ? `$${formatPrice(stats.high24h)}` : null} />
         <Stat label="24h Low" value={stats ? `$${formatPrice(stats.low24h)}` : null} />
         <Stat label="24h Volume" value={stats ? `$${formatQuantity(stats.volume24h)}` : null} />
@@ -112,9 +127,12 @@ export function MarketStats({ market, stats, orderBook }: MarketStatsProps) {
 
 function Stat({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="flex flex-shrink-0 flex-col gap-0.5">
+    // min-w-0 + truncate is inert on the desktop row (flex-shrink-0 keeps the
+    // cell at its natural width) and stops a long 24h volume from bursting out
+    // of its column in the stacked mobile grid.
+    <div className="flex min-w-0 flex-shrink-0 flex-col gap-0.5">
       <span className="text-[10px] font-medium uppercase tracking-wide text-faint">{label}</span>
-      <span className="font-mono text-[13px] tabular-nums text-text">
+      <span className="truncate font-mono text-[13px] tabular-nums text-text">
         {value !== null ? value : <Pending />}
       </span>
     </div>
