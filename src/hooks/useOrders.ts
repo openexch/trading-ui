@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState, useCallback } from 'react';
+import { EV, track } from '../analytics';
 import type { UserOrder, OmsOrderEvent, OrderStatus, OrderType } from '../types/market';
 import { MARKETS } from '../types/market';
 import { API_BASE, getAuthHeaders } from '../config';
@@ -47,6 +48,11 @@ export function useOrders(onRejected?: (event: OmsOrderEvent) => void) {
     // signal is this event. Surface it before dropping the row.
     if (event.status === 'REJECTED') {
       onRejected?.(event);
+    }
+    // The lifecycle end, from the user's side of the socket. No quantities:
+    // whether it filled is the question, how much is not ours to export.
+    if (event.status === 'FILLED') {
+      track(EV.order_filled, { market_id: event.marketId, side: event.side, order_type: event.orderType });
     }
     setOrders(prev => {
       if (TERMINAL.has(event.status)) {

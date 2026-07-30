@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
+import { EV, track } from '../../analytics';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -25,6 +26,13 @@ export function AuthModal({ onClose }: AuthModalProps) {
     setError(null);
   };
 
+  // Fired here rather than at each button that opens the modal: there are
+  // four of them (header, two sign-in prompts, the order form) and they would
+  // drift apart.
+  useEffect(() => {
+    track(EV.auth_modal_open, {});
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = username.trim();
@@ -34,10 +42,21 @@ export function AuthModal({ onClose }: AuthModalProps) {
     }
     setBusy(true);
     setError(null);
+    // Never the username and obviously never the password: only which flow
+    // this was, and whether it worked.
+    track(EV.auth_submit, { mode });
+    const startedAt = Date.now();
     const result = mode === 'login' ? await login(name, password) : await register(name, password);
     setBusy(false);
-    if (result.ok) onClose();
-    else setError(result.error ?? 'Something went wrong');
+    if (result.ok) {
+      track(EV.auth_success, { mode, round_trip_ms: Date.now() - startedAt });
+      onClose();
+    } else {
+      // The error string comes from a fixed set the OMS returns (taken name,
+      // bad credentials, unreachable); it carries no user input back.
+      track(EV.auth_failure, { mode, reason: (result.error ?? 'unknown').slice(0, 120) });
+      setError(result.error ?? 'Something went wrong');
+    }
   };
 
   const tabClass = (active: boolean) =>

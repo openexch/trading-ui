@@ -29,6 +29,7 @@ import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, 
 import { MARKETS } from './types/market';
 import { mergeLiveCandle } from './utils/candles';
 import { formatRejectReason } from './utils/rejectReasons';
+import { EV, track, updateContext } from './analytics';
 
 // Mobile detection hook
 function useIsMobile(breakpoint = 768) {
@@ -269,6 +270,7 @@ function MarketPage() {
   }, []);
 
   const handleIntervalChange = useCallback((interval: string) => {
+    track(EV.chart_interval_change, { to: interval });
     chartIntervalRef.current = interval;
     setChartInterval(interval);
     setCandles([]);
@@ -291,6 +293,9 @@ function MarketPage() {
   }, [status, clusterState.isElecting, clusterState.isRollingUpdate]);
 
   const handleMarketChange = useCallback((market: Market) => {
+    track(EV.market_switch, { to: market.symbol });
+    // Every later event in this session is attributed to the market on screen.
+    updateContext({ market: market.symbol });
     selectedMarketIdRef.current = market.id;
     setSelectedMarket(market);
     chartIntervalRef.current = '1m';
@@ -312,7 +317,14 @@ function MarketPage() {
   // OMS REST keys on omsOrderId, NOT the engine orderId the WS feed uses (#25)
   const handleCancelOrder = useCallback(async (order: UserOrder) => {
     if (!order.omsOrderId) return; // not OMS-managed; nothing we can cancel
+    track(EV.order_cancel_submit, { market: order.market, side: order.side, order_type: order.type });
+    const startedAt = Date.now();
     const result = await cancelOrder(order.omsOrderId);
+    track(EV.order_cancel_result, {
+      market: order.market,
+      ok: result.success,
+      round_trip_ms: Date.now() - startedAt,
+    });
     if (result.success) {
       removeOrder(order.omsOrderId);
     }
@@ -371,7 +383,10 @@ function MarketPage() {
         <div className="flex items-center gap-2.5">
           {session ? (
             <button
-              onClick={() => setShowAccountDrawer(true)}
+              onClick={() => {
+                track(EV.account_drawer_open);
+                setShowAccountDrawer(true);
+              }}
               title="Account & balances"
               className="flex h-8 items-center gap-1.5 rounded-md border border-hairline bg-surface-2 px-2.5 text-xs font-medium text-text transition-colors hover:bg-surface-3"
             >
@@ -433,7 +448,10 @@ function MarketPage() {
                   className={`relative min-h-11 flex-1 py-2.5 text-[13px] font-medium transition-colors ${
                     mobileTab === t ? 'text-text-strong after:absolute after:inset-x-[20%] after:bottom-0 after:h-0.5 after:rounded-t after:bg-accent' : 'text-faint'
                   }`}
-                  onClick={() => setMobileTab(t)}
+                  onClick={() => {
+                    track(EV.mobile_tab_switch, { to: t });
+                    setMobileTab(t);
+                  }}
                 >
                   {t === 'chart' ? 'Chart' : t === 'orderbook' ? 'Order Book' : 'Trades'}
                 </button>

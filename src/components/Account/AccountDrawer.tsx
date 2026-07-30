@@ -128,11 +128,13 @@ export function AccountDrawer({ onClose }: AccountDrawerProps) {
                 {assets.map(a => (
                   <tr key={a.assetId} className="hover:bg-surface-2">
                     <td className={`${td} font-semibold text-text-strong`}>{a.asset}</td>
-                    <td className={`${td} text-buy`}>{formatPrice(a.available)}</td>
-                    <td className={`${td} text-warn`}>
+                    {/* Balances are TEXT, so maskAllInputs does not touch them.
+                        Tagged so session recordings show blocks, not amounts. */}
+                    <td data-ph-mask className={`${td} text-buy`}>{formatPrice(a.available)}</td>
+                    <td data-ph-mask className={`${td} text-warn`}>
                       {a.locked > 0 ? formatPrice(a.locked) : <span className="text-faint">-</span>}
                     </td>
-                    <td className={`${td} text-text`}>{formatPrice(a.total)}</td>
+                    <td data-ph-mask className={`${td} text-text`}>{formatPrice(a.total)}</td>
                   </tr>
                 ))}
               </tbody>

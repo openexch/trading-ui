@@ -23,6 +23,10 @@ jobs:
         env:
           VITE_ORDER_API_URL: ${{ vars.VITE_ORDER_API_URL }}
           VITE_MARKET_WS_URL: ${{ vars.VITE_MARKET_WS_URL }}
+          # PostHog's project key is write-only and ships in the client bundle
+          # by design, so it is a build-time variable. Unset (a fork, a local
+          # build) means posthog-js is not in the bundle at all.
+          VITE_POSTHOG_KEY: ${{ secrets.VITE_POSTHOG_KEY }}
 
       - uses: cloudflare/wrangler-action@v4
         with:

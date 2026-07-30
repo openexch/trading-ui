@@ -4,6 +4,7 @@ import type { Market, OrderSide, OrderType, OrderRequest, TimeInForce } from '..
 import { formatPrice } from '../../utils/formatters';
 import { snapPrice, isInPriceRange, tickLabel, priceRangeLabel } from '../../utils/ticks';
 import { useBalances } from '../../hooks/useBalances';
+import { EV, track } from '../../analytics';
 
 interface OrderFormProps {
   market: Market;
@@ -198,7 +199,37 @@ function OrderSideForm({
       timestamp: Date.now(),
     };
 
+    // Shape only: no price, no quantity, no total. scrubMoney would strip
+    // them anyway; not collecting them is the actual policy.
+    const submitProps = {
+      market: market.symbol,
+      order_type: orderType,
+      side,
+      time_in_force: timeInForce,
+      priced: needsPrice(orderType),
+      from_book_click: externalPrice != null,
+      used_slider: sliderValue > 0,
+    };
+    track(EV.order_submit, submitProps);
+    const startedAt = Date.now();
+
     const result = await onSubmitOrder(order);
+
+    // Round-trip as the user experiences it: submit to answer, including the
+    // network. Not the cluster's latency, and never presented as such.
+    const roundTripMs = Date.now() - startedAt;
+
+    if (result.success) {
+      track(EV.order_accepted, { ...submitProps, round_trip_ms: roundTripMs });
+    } else {
+      track(EV.order_rejected, {
+        ...submitProps,
+        round_trip_ms: roundTripMs,
+        // The friendly message, which is a fixed set of strings from
+        // formatRejectReason, not user input and not an amount.
+        reason: result.message.slice(0, 120),
+      });
+    }
 
     if (result.success) {
       setNotification({ type: 'success', message: `${isBuy ? 'Buy' : 'Sell'} order submitted` });

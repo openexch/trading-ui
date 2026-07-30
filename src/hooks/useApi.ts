@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState, useCallback } from 'react';
+import { EV, track } from '../analytics';
 import type { OrderRequest } from '../types/market';
 import { MARKETS } from '../types/market';
 import { API_BASE, getAuthHeaders } from '../config';
@@ -65,6 +66,9 @@ export function useApi() {
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Network error';
+      // A thrown fetch is the OMS being unreachable, which is different from
+      // the OMS rejecting an order and is the one worth paging about.
+      track(EV.api_error, { operation: 'submit_order', reason: error.slice(0, 120) });
       setState({ loading: false, error });
       return { success: false, message: error };
     }
@@ -96,6 +100,9 @@ export function useApi() {
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Network error';
+      // A thrown fetch is the OMS being unreachable, which is different from
+      // the OMS rejecting an order and is the one worth paging about.
+      track(EV.api_error, { operation: 'replace_order', reason: error.slice(0, 120) });
       setState({ loading: false, error });
       return { success: false, message: error };
     }
@@ -122,6 +129,9 @@ export function useApi() {
       }
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Network error';
+      // A thrown fetch is the OMS being unreachable, which is different from
+      // the OMS rejecting an order and is the one worth paging about.
+      track(EV.api_error, { operation: 'cancel_order', reason: error.slice(0, 120) });
       setState({ loading: false, error });
       return { success: false, message: error };
     }

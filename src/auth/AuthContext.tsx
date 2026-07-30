@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react';
+import { EV, track } from '../analytics';
 import type { ReactNode } from 'react';
 import { API_BASE } from '../config';
 import { getSession, isDevToken, loadSession, setSession, subscribeSession } from './session';
@@ -84,7 +85,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (username: string, password: string) => authCall('register', username, password),
     []
   );
-  const logout = useCallback(() => setSession(null), []);
+  const logout = useCallback(() => {
+    track(EV.sign_out, {});
+    setSession(null);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ session, ready, login, register, logout }}>

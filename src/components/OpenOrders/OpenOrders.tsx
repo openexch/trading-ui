@@ -122,8 +122,8 @@ export function OpenOrders({ orders, onCancelOrder, onReplaceOrder, loading }: O
                       </>
                     ) : (
                       <>
-                        <td className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(order.price)}</td>
-                        <td className={`${td} text-right font-mono tabular-nums text-text`}>{formatQuantity(order.originalQuantity)}</td>
+                        <td data-ph-mask className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(order.price)}</td>
+                        <td data-ph-mask className={`${td} text-right font-mono tabular-nums text-text`}>{formatQuantity(order.originalQuantity)}</td>
                       </>
                     )}
 
