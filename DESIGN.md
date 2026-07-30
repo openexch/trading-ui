@@ -30,13 +30,22 @@ Kraken-style right rail, chosen over a Binance-style center form:
 
 ## Non-negotiable behaviors (each fixed a reported problem)
 
-1. **Order book shows all 20 levels per side, no scrolling.** Both sides
-   are fixed 20-slot CSS grids (`grid-rows-[repeat(20,minmax(0,1fr))]`);
-   rows share the side's height at any viewport. Never revert to
-   content-height rows + scroll: a `justify-end` flex scroll container
-   cannot scroll to its overflow (that was the clipped-asks bug), and the
-   owner's goal is 20+20 visible at once. Asks stay bottom-anchored (pad
-   slots at the top) so the best ask touches the spread row.
+1. **The order book never scrolls, and a row is never shorter than its
+   text.** Both sides are equal-height CSS grids of N slots sharing the
+   side's height. N is not fixed: a `ResizeObserver` on the rendered side
+   sets it to `floor(height / 14px)`, clamped to 6..20. The goal is still
+   20+20 at once and large viewports get it, but when the side cannot fit
+   20 readable rows the book drops levels rather than shrinking rows —
+   a fixed 20 divided a 185px side into 9.25px slots and consecutive rows
+   overlapped on a laptop (1470x712). Depth bars keep scaling to the full
+   20-level cumulative so they do not rescale as the viewport changes.
+   Never revert to content-height rows + scroll: a `justify-end` flex
+   scroll container cannot scroll to its overflow (that was the
+   clipped-asks bug). Asks stay bottom-anchored (pad slots at the top) so
+   the best ask touches the spread row. The observed element is held in
+   state, not a ref, so the effect cleanup disconnects the observer it
+   created — a ref callback plus a mount-scoped cleanup measured once and
+   then went deaf under StrictMode.
 2. **Nothing flickers on market switch.** Stats are nullable and render
    dashes (never $0.00); the chart keeps old candles under a loading veil
    (never blanks); book/tape show pulse skeletons. `candlesMarketRef`

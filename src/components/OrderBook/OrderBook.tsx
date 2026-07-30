@@ -16,6 +16,40 @@ interface OrderBookProps {
 // backfill from below instead of shrinking the display.
 const RENDER_DEPTH = 20;
 
+// A row may never be shorter than the text inside it. The 20-slot grid
+// divides the side's height by 20 whatever that height is, so on a laptop
+// (1470x712 viewport => 10.6px slots for 12px type) consecutive rows
+// overlapped. Below the height that fits all 20, drop levels rather than
+// shrink rows: the top of the book is the part that matters, and scrolling
+// is ruled out (see DESIGN.md).
+const MIN_ROW_PX = 14;
+const MIN_DEPTH = 6;
+
+/** Levels per side that fit at a readable row height, observed from the
+ *  rendered side itself. Both sides are equal-height siblings, so one
+ *  measurement drives both. */
+function useFittedDepth() {
+  const [depth, setDepth] = useState(RENDER_DEPTH);
+  // The observed side is held in state, not a ref: the effect's cleanup then
+  // disconnects exactly the observer it created. A ref callback paired with a
+  // mount-scoped cleanup tore down the live observer under StrictMode's
+  // double-invoke, so the depth was measured once and never again.
+  const [sideEl, setSideEl] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!sideEl) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry.contentRect.height;
+      if (h <= 0) return;
+      setDepth(Math.min(RENDER_DEPTH, Math.max(MIN_DEPTH, Math.floor(h / MIN_ROW_PX))));
+    });
+    ro.observe(sideEl);
+    return () => ro.disconnect();
+  }, [sideEl]);
+
+  return [depth, setSideEl] as const;
+}
+
 // Skeleton widths (%) cycled per row — organic, not a flat block.
 const SKELETON_WIDTHS = [55, 70, 45, 65, 50, 75, 60, 40];
 
@@ -38,6 +72,7 @@ function SkeletonRows({ rows = 8 }: { rows?: number }) {
 export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookProps) {
   const { bids, asks } = orderBook;
   const [viewMode, setViewMode] = useState<ViewMode>('vertical');
+  const [fittedDepth, fitRef] = useFittedDepth();
 
   const { askLevels, bidLevels, maxCumulative } = useMemo(() => {
     let askCum = 0;
@@ -93,8 +128,12 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
   const showBids = viewMode === 'vertical' || viewMode === 'horizontal' || viewMode === 'bids-only';
   const isVertical = viewMode !== 'horizontal';
 
-  // For vertical mode, reverse asks so lowest price is at bottom (near spread)
-  const displayAsks = isVertical ? [...askLevels].reverse() : askLevels;
+  // For vertical mode, reverse asks so lowest price is at bottom (near spread).
+  // Depth bars keep scaling to the full 20-level cumulative so they do not
+  // rescale as the viewport changes how many rows fit.
+  const displayAsks = isVertical ? [...askLevels.slice(0, fittedDepth)].reverse() : askLevels;
+  const displayBids = isVertical ? bidLevels.slice(0, fittedDepth) : bidLevels;
+  const sideRows = { gridTemplateRows: `repeat(${fittedDepth}, minmax(0, 1fr))` };
 
   // Directional tick on the mid price — the spread row is where the two
   // sides of the market meet, so it carries the same live pulse as the rail.
@@ -186,14 +225,15 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
             <span className="text-right">Total</span>
           </div>
 
-          {/* Asks section (reversed — lowest at bottom). A fixed 20-slot grid:
-              every level is always visible regardless of viewport height —
-              rows share the side's height equally. (The old justify-end
-              scroll container could not scroll: flex-end overflow is
-              unreachable in CSS, which is why deep asks were clipped.) */}
+          {/* Asks section (reversed — lowest at bottom). An N-slot grid sized
+              to what fits at a readable row height: every rendered level is
+              always fully visible, rows share the side's height equally, and
+              nothing scrolls. (The old justify-end scroll container could not
+              scroll: flex-end overflow is unreachable in CSS, which is why
+              deep asks were clipped.) */}
           {showAsks && (
-            <div className="grid min-h-0 flex-1 grid-rows-[repeat(20,minmax(0,1fr))] overflow-hidden">
-              {Array.from({ length: Math.max(0, RENDER_DEPTH - displayAsks.length) }).map((_, i) => (
+            <div ref={fitRef} className="grid min-h-0 flex-1 overflow-hidden" style={sideRows}>
+              {Array.from({ length: Math.max(0, fittedDepth - displayAsks.length) }).map((_, i) => (
                 <div key={`pad-${i}`} aria-hidden />
               ))}
               {displayAsks.map((level) => (
@@ -245,8 +285,8 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
 
           {/* Bids section (highest at top) */}
           {showBids && (
-            <div className="grid min-h-0 flex-1 grid-rows-[repeat(20,minmax(0,1fr))] overflow-hidden">
-              {bidLevels.map((level) => (
+            <div ref={showAsks ? undefined : fitRef} className="grid min-h-0 flex-1 overflow-hidden" style={sideRows}>
+              {displayBids.map((level) => (
                 <div
                   key={level.price}
                   className={`relative grid cursor-pointer grid-cols-3 items-center gap-1 px-4 text-[12px] leading-none hover:bg-surface-2 ${getAnimationClass(level.price, 'bid')}`}
@@ -262,7 +302,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                   <span className={`${cellNum} text-right text-muted`}>{formatQuantity(level.cumulative)}</span>
                 </div>
               ))}
-              {bidLevels.length === 0 && <SkeletonRows />}
+              {displayBids.length === 0 && <SkeletonRows />}
             </div>
           )}
         </div>
