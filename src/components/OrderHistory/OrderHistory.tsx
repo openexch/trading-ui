@@ -116,9 +116,9 @@ export function OrderHistory({ market }: OrderHistoryProps) {
                   <td className={`${td} font-mono text-muted`}>{symbolFor(o.marketId)}</td>
                   <td className={`${td} font-medium ${o.side === 'BUY' ? 'text-buy' : 'text-sell'}`}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</td>
                   <td className={`${td} text-muted`}>{o.orderType}</td>
-                  <td className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(o.price)}</td>
-                  <td className={`${td} text-right font-mono tabular-nums text-text`}>{formatQuantity(o.quantity)}</td>
-                  <td className={`${td} text-right font-mono tabular-nums text-muted`}>{formatQuantity(o.filledQty)}</td>
+                  <td data-ph-mask className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(o.price)}</td>
+                  <td data-ph-mask className={`${td} text-right font-mono tabular-nums text-text`}>{formatQuantity(o.quantity)}</td>
+                  <td data-ph-mask className={`${td} text-right font-mono tabular-nums text-muted`}>{formatQuantity(o.filledQty)}</td>
                   <td className={`${td} whitespace-nowrap`}>
                     <span
                       className={`inline-block rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLES[o.status] ?? 'text-muted bg-surface-2'}`}
@@ -163,9 +163,9 @@ export function OrderHistory({ market }: OrderHistoryProps) {
                   <td className={`${td} font-mono tabular-nums text-faint`}>{formatTime(t.executedAtMs)}</td>
                   <td className={`${td} font-mono text-muted`}>{symbolFor(t.marketId)}</td>
                   <td className={`${td} font-medium ${t.side === 'BUY' ? 'text-buy' : 'text-sell'}`}>{t.side === 'BUY' ? 'Buy' : 'Sell'}</td>
-                  <td className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(t.price)}</td>
-                  <td className={`${td} text-right font-mono tabular-nums text-text`}>{formatQuantity(t.quantity)}</td>
-                  <td className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(t.price * t.quantity)}</td>
+                  <td data-ph-mask className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(t.price)}</td>
+                  <td data-ph-mask className={`${td} text-right font-mono tabular-nums text-text`}>{formatQuantity(t.quantity)}</td>
+                  <td data-ph-mask className={`${td} text-right font-mono tabular-nums text-text`}>${formatPrice(t.price * t.quantity)}</td>
                   <td className={`${td} text-muted`}>{t.maker ? 'Maker' : 'Taker'}</td>
                 </tr>
               ))}

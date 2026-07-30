@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { Theme } from '../../hooks/useTheme';
+import { EV, track, updateContext } from '../../analytics';
 
 interface ThemeToggleProps {
   theme: Theme;
@@ -9,10 +10,16 @@ interface ThemeToggleProps {
 /** Sun/moon theme switch. Shared by the trading header and admin top bar. */
 export function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
   const isDark = theme === 'dark';
+  const handleToggle = () => {
+    const next = isDark ? 'light' : 'dark';
+    onToggle();
+    track(EV.theme_change, { from: theme, to: next });
+    updateContext({ color_scheme: next });
+  };
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={handleToggle}
       title={isDark ? 'Switch to light' : 'Switch to dark'}
       aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
       className="flex h-8 w-8 items-center justify-center rounded-md border border-hairline bg-surface-2 text-muted transition-colors hover:border-hairline-strong hover:text-text"

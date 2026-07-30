@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { EV, track } from '../analytics';
 import type { ConnectionStatus, WebSocketMessage } from '../types/market';
 import { MessageConflator } from '../utils/conflation';
 
@@ -144,6 +145,14 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
       ws.onopen = () => {
         console.log('[WS] Connected to', getWebSocketUrl());
         setStatus('connected');
+        // Only the recovery is interesting, not the first connect: a trader
+        // who cannot see the book does not file a ticket, they leave.
+        if (isReconnectRef.current) {
+          track(EV.socket_reconnected, {
+            socket: 'market',
+            attempts: reconnectAttemptRef.current,
+          });
+        }
         reconnectAttemptRef.current = 0;
 
         // Subscribe to market (use ref for current marketId)
@@ -198,6 +207,12 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
       ws.onclose = (event) => {
         console.log('[WS] Connection closed:', event.code, event.reason || '(no reason)');
         setStatus('disconnected');
+        track(EV.socket_disconnected, {
+          socket: 'market',
+          code: event.code,
+          clean: event.wasClean,
+          attempts: reconnectAttemptRef.current,
+        });
         clearTimers();
 
         // Attempt reconnect with exponential backoff

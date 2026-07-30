@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { EV, track } from '../analytics';
 import type { ConnectionStatus, OmsOrderEvent } from '../types/market';
 
 interface UseOmsSocketOptions {
@@ -98,6 +99,12 @@ export function useOmsSocket({ token, onOrderEvent, onConnected }: UseOmsSocketO
       ws.onopen = () => {
         console.log('[OMS WS] Connected');
         setStatus('connected');
+        // This is the socket the user's own order events arrive on. Losing it
+        // means fills stop appearing on screen while the orders are real, so a
+        // reconnect here matters more than one on the public market feed.
+        if (reconnectAttemptRef.current > 0) {
+          track(EV.socket_reconnected, { socket: 'oms', attempts: reconnectAttemptRef.current });
+        }
         reconnectAttemptRef.current = 0;
         ws.send(JSON.stringify({ op: 'subscribe', channels: ['orders'] }));
         onConnectedRef.current?.();
@@ -123,6 +130,12 @@ export function useOmsSocket({ token, onOrderEvent, onConnected }: UseOmsSocketO
       ws.onclose = (event) => {
         console.log('[OMS WS] Connection closed:', event.code, event.reason || '(no reason)');
         setStatus('disconnected');
+        track(EV.socket_disconnected, {
+          socket: 'oms',
+          code: event.code,
+          clean: event.wasClean,
+          attempts: reconnectAttemptRef.current,
+        });
         clearTimers();
         if (wsRef.current !== ws) return; // superseded by a newer socket
         wsRef.current = null;
