@@ -5,6 +5,19 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # react and react-dom must move TOGETHER: react-dom refuses to run against a
+    # different react version ("Incompatible React versions"), so a PR that bumps
+    # one alone fails every test suite that renders anything. Ungrouped, that is
+    # what dependabot opened on 2026-07-27 (#90) and again on 2026-08-13 (#96) —
+    # both red, neither wrong about the version, both unmergeable on their own.
+    # Their @types ride along so a types bump cannot outrun its runtime either.
+    groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
 
   - package-ecosystem: github-actions
     directory: /
