@@ -27,6 +27,9 @@ jobs:
           # by design, so it is a build-time variable. Unset (a fork, a local
           # build) means posthog-js is not in the bundle at all.
           VITE_POSTHOG_KEY: ${{ secrets.VITE_POSTHOG_KEY }}
+          # The same bundle also answers on trading-ui-6fj.pages.dev, which a
+          # bot swept on 2026-10-02. Only the custom domain reports.
+          VITE_POSTHOG_ALLOWED_HOSTS: trade.openexchange.dev
 
       - uses: cloudflare/wrangler-action@v4
         with:

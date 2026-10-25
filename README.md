@@ -83,6 +83,7 @@ analytics only if you configure your own project.
 ```bash
 VITE_POSTHOG_KEY=phc_...   # write-only project key, safe in a public bundle
 VITE_POSTHOG_HOST=         # optional; defaults to /ph (see functions/ph/)
+VITE_POSTHOG_ALLOWED_HOSTS= # optional; comma-separated hostnames that may report, empty = all
 ```
 
 Three rules the implementation enforces, in `src/analytics.ts`:
