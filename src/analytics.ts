@@ -36,6 +36,29 @@ const HOST: string = import.meta.env.VITE_POSTHOG_HOST || '/ph';
 
 const UI_HOST = 'https://eu.posthog.com';
 
+/**
+ * Hostnames allowed to report, comma-separated. The same build is served on
+ * the custom domain and on the Pages preview address (*.pages.dev), and on
+ * 2026-10-02 a proxy-driven bot swept the preview address: 71 of the month's
+ * 135 "users" in three hours. Unset means no restriction, so an integrator who
+ * configures only a key still gets their data.
+ */
+const ALLOWED_HOSTS: string | undefined = import.meta.env.VITE_POSTHOG_ALLOWED_HOSTS;
+
+/** Exact, case-insensitive hostname match. Exported for the test. */
+export function hostAllowed(hostname: string, allowed: string | undefined): boolean {
+  if (!allowed || !allowed.trim()) return true;
+  const host = hostname.toLowerCase();
+  return allowed
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .some((h) => h !== '' && h === host);
+}
+
+function onAllowedHost(): boolean {
+  return hostAllowed(window.location.hostname, ALLOWED_HOSTS);
+}
+
 let ph: PostHogClient | null = null;
 let starting = false;
 
@@ -129,7 +152,7 @@ function privacySignalSet(): boolean {
 
 export function initAnalytics(): void {
   if (typeof window === 'undefined' || !KEY || ph || starting) return;
-  if (privacySignalSet()) return;
+  if (!onAllowedHost() || privacySignalSet()) return;
   starting = true;
 
   void import('posthog-js')
@@ -202,7 +225,7 @@ export function setStackVersion(v: string): void {
 
 /** Record an event. No-op without a key; queued until the SDK loads. */
 export function track(event: EventName | string, props: Record<string, unknown> = {}): void {
-  if (typeof window === 'undefined' || !KEY) return;
+  if (typeof window === 'undefined' || !KEY || !onAllowedHost()) return;
   const safe = scrubMoney(props);
   if (ph) {
     ph.capture(event, safe);

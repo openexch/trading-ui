@@ -1,6 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, it, expect } from 'vitest';
-import { scrubMoney, EV, analyticsConfigured, track, updateContext } from '../analytics';
+import { scrubMoney, EV, analyticsConfigured, track, updateContext, hostAllowed } from '../analytics';
+
+describe('hostAllowed', () => {
+  it('allows every host when no allowlist is set', () => {
+    expect(hostAllowed('trading-ui-6fj.pages.dev', undefined)).toBe(true);
+    expect(hostAllowed('example.com', '')).toBe(true);
+    expect(hostAllowed('example.com', ' ')).toBe(true);
+  });
+
+  it('allows only exact matches when an allowlist is set', () => {
+    const allowed = 'trade.openexchange.dev';
+    expect(hostAllowed('trade.openexchange.dev', allowed)).toBe(true);
+    expect(hostAllowed('trading-ui-6fj.pages.dev', allowed)).toBe(false);
+    expect(hostAllowed('abc123.trading-ui-6fj.pages.dev', allowed)).toBe(false);
+    expect(hostAllowed('localhost', allowed)).toBe(false);
+  });
+
+  it('does not treat a suffix as a match', () => {
+    expect(hostAllowed('evil-trade.openexchange.dev', 'trade.openexchange.dev')).toBe(false);
+    expect(hostAllowed('openexchange.dev', 'trade.openexchange.dev')).toBe(false);
+  });
+
+  it('trims and ignores case across a comma-separated list', () => {
+    const allowed = ' Trade.OpenExchange.dev , demo.example.com ,';
+    expect(hostAllowed('trade.openexchange.dev', allowed)).toBe(true);
+    expect(hostAllowed('DEMO.example.com', allowed)).toBe(true);
+    expect(hostAllowed('other.example.com', allowed)).toBe(false);
+  });
+});
 
 // scrubMoney is the only thing standing between an instrumented order form and
 // an analytics pipeline holding customer position sizes, so it is tested
