@@ -20,11 +20,19 @@
  *   staged, a menu or popover open), or after a wheel or jump. A wheel or jump
  *   pin lasts until `recentre()` (the Re-centre button or the C key).
  * - The ladder never scrolls as a container: the wheel moves a virtual centre.
+ *   With `touchDrag` (the phone), a vertical finger drag moves it the same
+ *   way and holds it like a wheel; the tap that ends a drag stages nothing.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /** Desktop rung height. */
 export const RUNG_PX = 22;
+
+/** Phone rung height: a whole rung is a 44px touch target. */
+export const PHONE_RUNG_PX = 44;
+
+/** How far a finger travels before a touch counts as a drag, not a tap. */
+export const DRAG_SLOP_PX = 8;
 
 /** Rungs that fit in `height`, rounded down to an odd count. */
 export function rowsForHeight(height: number, rungPx: number = RUNG_PX): number {
@@ -62,6 +70,8 @@ export interface LadderWindowOptions {
   /** Pin reasons owned by the caller (an order staged, a menu open). */
   hold?: boolean;
   rungPx?: number;
+  /** A vertical touch drag moves the window (the phone). */
+  touchDrag?: boolean;
 }
 
 export interface LadderWindowState {
@@ -96,7 +106,7 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
-  const { anchor, settleAt = null, empty = false, resetKey, groupTicks, minRung, maxRung, hold = false, rungPx = RUNG_PX } =
+  const { anchor, settleAt = null, empty = false, resetKey, groupTicks, minRung, maxRung, hold = false, rungPx = RUNG_PX, touchDrag = false } =
     opts;
 
   const [measureEl, setMeasureEl] = useState<HTMLElement | null>(null);
@@ -159,19 +169,67 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
         return { ...prev, centre: clamp(prev.centre - steps, lo, hi), held: true };
       });
     };
+    // Touch drag (phone): the finger carries the rungs, so dragging down
+    // shows higher prices. Past the slop the touch is a drag, and the click
+    // that the browser fires when it ends is swallowed before a cell sees it.
+    let drag: { id: number; startY: number; lastY: number; acc: number; moved: boolean } | null = null;
+    let swallowClick = false;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!touchDrag || e.pointerType === 'mouse') return;
+      drag = { id: e.pointerId, startY: e.clientY, lastY: e.clientY, acc: 0, moved: false };
+      swallowClick = false;
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (!drag.moved && Math.abs(e.clientY - drag.startY) < DRAG_SLOP_PX) return;
+      drag.moved = true;
+      drag.acc += e.clientY - drag.lastY;
+      drag.lastY = e.clientY;
+      const steps = Math.trunc(drag.acc / rungPx);
+      if (steps === 0) return;
+      drag.acc -= steps * rungPx;
+      setS(prev => {
+        if (prev.centre === null) return prev;
+        const { minRung: lo, maxRung: hi } = live.current;
+        return { ...prev, centre: clamp(prev.centre + steps, lo, hi), held: true };
+      });
+    };
+    const onPointerEnd = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      swallowClick = drag.moved;
+      drag = null;
+    };
+    const onClickCapture = (e: MouseEvent) => {
+      if (!swallowClick) return;
+      swallowClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    };
     region.addEventListener('pointerenter', onEnter);
     region.addEventListener('pointerleave', onLeave);
     region.addEventListener('focusin', onFocusIn);
     region.addEventListener('focusout', onFocusOut);
     region.addEventListener('wheel', onWheel, { passive: false });
+    if (touchDrag) {
+      region.addEventListener('pointerdown', onPointerDown);
+      region.addEventListener('pointermove', onPointerMove);
+      region.addEventListener('pointerup', onPointerEnd);
+      region.addEventListener('pointercancel', onPointerEnd);
+      region.addEventListener('click', onClickCapture, true);
+    }
     return () => {
       region.removeEventListener('pointerenter', onEnter);
       region.removeEventListener('pointerleave', onLeave);
       region.removeEventListener('focusin', onFocusIn);
       region.removeEventListener('focusout', onFocusOut);
       region.removeEventListener('wheel', onWheel);
+      region.removeEventListener('pointerdown', onPointerDown);
+      region.removeEventListener('pointermove', onPointerMove);
+      region.removeEventListener('pointerup', onPointerEnd);
+      region.removeEventListener('pointercancel', onPointerEnd);
+      region.removeEventListener('click', onClickCapture, true);
     };
-  }, [region, rungPx]);
+  }, [region, rungPx, touchDrag]);
 
   // Derive the centre for this render. Adjusting state during render (not in
   // an effect) means a re-centre never paints one stale frame first.

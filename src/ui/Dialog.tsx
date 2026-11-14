@@ -10,6 +10,8 @@
  * - Esc closes it; so does a click on the backdrop unless `dismissOnBackdrop`
  *   is false (use that for a confirm step that must be answered).
  * - Keyboard events stay inside the dialog.
+ * - `sheet` docks it to the bottom edge at full width (the phone), clear of
+ *   the home indicator through the safe-area inset.
  */
 import { useEffect, useId, useRef } from 'react';
 import type { KeyboardEvent, ReactNode, RefObject } from 'react';
@@ -33,6 +35,8 @@ export interface DialogProps {
   /** Tailwind width class for the panel, for example "max-w-[880px]". */
   widthClass?: string;
   className?: string;
+  /** Bottom sheet instead of a centred window. */
+  sheet?: boolean;
 }
 
 export function Dialog(props: DialogProps) {
@@ -63,6 +67,7 @@ function OpenDialog({
   showClose = true,
   widthClass = 'max-w-[560px]',
   className = '',
+  sheet = false,
 }: DialogProps) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -96,7 +101,9 @@ function OpenDialog({
   return createPortal(
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 motion-safe:animate-overlay-in"
+      className={`fixed inset-0 z-50 grid bg-black/50 motion-safe:animate-overlay-in ${
+        sheet ? 'items-end' : 'place-items-center p-4'
+      }`}
       onPointerDown={(e) => {
         if (dismissOnBackdrop && e.target === e.currentTarget) onClose();
       }}
@@ -109,7 +116,11 @@ function OpenDialog({
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className={`flex max-h-[calc(100dvh-32px)] w-full flex-col overflow-hidden rounded-[14px] border border-[color:var(--ctl,var(--hairline-strong))] bg-surface text-text shadow-lg outline-none ${widthClass} ${className}`}
+        className={`flex w-full flex-col overflow-hidden border ${
+          sheet
+            ? 'max-h-[85dvh] rounded-t-2xl border-b-0 pb-[env(safe-area-inset-bottom)]'
+            : 'max-h-[calc(100dvh-32px)] rounded-[14px]'
+        } border-[color:var(--ctl,var(--hairline-strong))] bg-surface text-text shadow-lg outline-none ${widthClass} ${className}`}
       >
         <div className="flex flex-none items-center gap-3.5 border-b border-hairline px-5 py-3">
           <div className="flex min-w-0 flex-1 flex-col">
@@ -128,7 +139,7 @@ function OpenDialog({
               type="button"
               aria-label="Close"
               onClick={onClose}
-              className="grid h-9 w-9 flex-none cursor-pointer place-items-center rounded-lg border border-[color:var(--ctl,var(--hairline-strong))] bg-transparent text-[16px] text-text hover:border-accent"
+              className={`grid ${sheet ? 'h-11 w-11' : 'h-9 w-9'} flex-none cursor-pointer place-items-center rounded-lg border border-[color:var(--ctl,var(--hairline-strong))] bg-transparent text-[16px] text-text hover:border-accent`}
             >
               <span aria-hidden>&times;</span>
             </button>

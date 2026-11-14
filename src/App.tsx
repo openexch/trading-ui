@@ -26,6 +26,7 @@ import { AccountDrawer } from './components/Account/AccountDrawer';
 import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
 import { TerminalDesktop } from './terminal/TerminalDesktop';
+import { TerminalPhone } from './terminal/TerminalPhone';
 import { isLadderUiRequested } from './terminal/ladderFlag';
 import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
@@ -349,12 +350,13 @@ function MarketPage() {
   const [bottomTab, setBottomTab] = useState<'orders' | 'history'>('orders');
 
   // The ladder shell renders only under ?ui=ladder (read once, never
-  // persisted). The phone keeps the current screen until its own branch.
+  // persisted): the phone branch at 768px and below, the desktop above.
   const [ladderUi] = useState(() => isLadderUiRequested());
-  if (ladderUi && !isMobile) {
+  if (ladderUi) {
+    const Shell = isMobile ? TerminalPhone : TerminalDesktop;
     return (
       <>
-        <TerminalDesktop
+        <Shell
           market={selectedMarket}
           markets={MARKETS}
           onSelectMarket={handleMarketChange}

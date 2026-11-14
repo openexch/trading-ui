@@ -33,6 +33,8 @@ export interface OrderPopoverProps {
   anchor: Anchor;
   onStage: (staged: Staged) => void;
   onClose: () => void;
+  /** 44px fields and buttons for touch (the phone). */
+  touch?: boolean;
 }
 
 const TITLE: Record<TicketKind, string> = {
@@ -56,7 +58,7 @@ function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return <label className="flex min-w-0 flex-col gap-1.5 text-[12px] text-muted">{label}{children}</label>;
 }
 
-export function OrderPopover({ market, kind, side, price, size: initialSize, tif: initialTif, anchor, onStage, onClose }: OrderPopoverProps) {
+export function OrderPopover({ market, kind, side, price, size: initialSize, tif: initialTif, anchor, onStage, onClose, touch = false }: OrderPopoverProps) {
   const titleId = useId();
   const firstRef = useRef<HTMLInputElement>(null);
   const [first, setFirst] = useState(String(price));
@@ -129,7 +131,14 @@ export function OrderPopover({ market, kind, side, price, size: initialSize, tif
   };
 
   return (
-    <Popover open onClose={onClose} anchor={anchor} labelledBy={titleId} initialFocusRef={firstRef} className="w-[300px]">
+    <Popover
+      open
+      onClose={onClose}
+      anchor={anchor}
+      labelledBy={titleId}
+      initialFocusRef={firstRef}
+      className={touch ? 'w-[320px] [&_button]:min-h-11 [&_input]:h-11 [&_select]:h-11' : 'w-[300px]'}
+    >
       <form aria-labelledby={titleId} onSubmit={stage} noValidate className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-2">
           <span id={titleId} className={`font-display text-[18px] font-bold ${buy ? 'text-buy' : 'text-sell'}`}>

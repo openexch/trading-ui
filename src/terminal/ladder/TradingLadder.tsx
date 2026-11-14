@@ -32,8 +32,15 @@
  *   handles moving focus and own orders (useLadderKeys) and hands the
  *   order-entry keys here (`onCommand`). Ctrl+Shift+X asks, Enter confirms.
  *   Keyboard feedback is announced through the strip only (rule 12).
+ * - Phone (`variant="phone"`): the same staging state, drawn for touch. The
+ *   defaults bar becomes a settings row (PhoneOrderBar), the strip becomes
+ *   a bottom sheet (PhoneSheet, portalled into the shell's sheet host so a
+ *   Cancel all asked from the Orders tab is answered on any tab), rungs are
+ *   44px, a long-press opens the rung menu and the sheet's "More order
+ *   types" does the same. One-click does not exist on the phone.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   ExtendedConnectionStatus,
   Market,
@@ -48,7 +55,7 @@ import type { LevelChange } from '../../hooks/useOrderBook';
 import { useBalances } from '../../hooks/useBalances';
 import { EV, track } from '../../analytics';
 import { marketUi } from '../../trading/marketUi';
-import { orderSubmitProps, snapPriceText } from '../../trading/orderDraft';
+import { orderSubmitProps, sizeForPercent, snapPriceText } from '../../trading/orderDraft';
 import {
   buildStaged,
   crossing,
@@ -64,7 +71,7 @@ import {
   tifChoice,
   typeLabel,
 } from '../../trading/staging';
-import { stepSize } from '../../trading/marketUi';
+import { groupingOptions, stepSize } from '../../trading/marketUi';
 import { cancelAllSummary, menuReference, oneClickPlaces, rungMenuSides } from '../../trading/orderActions';
 import type { CancelResult } from '../../trading/orderActions';
 import type { Anchor } from '../../ui';
@@ -81,6 +88,8 @@ import type { LadderHandle, PassedCommand } from './useLadderKeys';
 import { globalCommand, inOverlay, isTypingTarget } from './keymap';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { formatCompactSize } from './format';
+import { PhoneOrderBar } from '../phone/PhoneOrderBar';
+import { PhoneSheet } from '../phone/PhoneSheet';
 
 export interface TradingLadderProps {
   market: Market;
@@ -105,6 +114,15 @@ export interface TradingLadderProps {
    *  question and strip results as one made on the ladder. Null while there
    *  are none (signed out, no cancel handler). */
   onOrderActions?: (actions: LadderOrderActions | null) => void;
+  /** Desktop (defaults bar, strip, 22px rungs) or phone (settings row,
+   *  bottom sheet, 44px touch rungs, no one-click). */
+  variant?: 'desktop' | 'phone';
+  /** Phone: where the bottom sheet renders (above the nav, outside the
+   *  tab panels). */
+  sheetHost?: HTMLElement | null;
+  /** Phone: the ladder tab is on screen. The staged order's sheet shows only
+   *  then; results and the Cancel all question show on every tab. */
+  active?: boolean;
 }
 
 /** The ladder's own-order actions, as the side panels use them. */
@@ -139,7 +157,9 @@ export function TradingLadder(props: TradingLadderProps) {
   const { market, orderBook, signedIn, onSubmitOrder, onRequestSignIn, rejectNotice } = props;
   const { onCancelOrder, onReplaceOrder } = props;
   const status = props.status ?? 'connected';
-  const { refresh: refreshBalances } = useBalances();
+  const phone = props.variant === 'phone';
+  const active = props.active ?? true;
+  const { assets, refresh: refreshBalances } = useBalances();
 
   // Size belongs to the market it was typed on; a switch starts from the
   // next market's default preset. Type and TIF carry over.
@@ -162,7 +182,8 @@ export function TradingLadder(props: TradingLadderProps) {
   // on, so it reads as off the moment the market changes; the effect below
   // then clears it for good (switching back does not re-arm).
   const [armedOn, setArmedOn] = useState<number | null>(null);
-  const oneClickAvailable = signedIn && status === 'connected';
+  // Never on touch: a tap always stages (DESIGN.md rule 10).
+  const oneClickAvailable = !phone && signedIn && status === 'connected';
   const armed = armedOn !== null && armedOn === market.id && oneClickAvailable;
   useEffect(() => {
     setArmedOn(null);
@@ -203,6 +224,8 @@ export function TradingLadder(props: TradingLadderProps) {
   const [cancelAsk, setCancelAsk] = useState<{ marketId: number } | null>(null);
   const [cancelRun, setCancelRun] = useState<{ marketId: number; count: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  /** The phone sheet lives in a portal: Enter and Esc count there too. */
+  const sheetRef = useRef<HTMLDivElement>(null);
 
   const showResult = useCallback((r: StripResult | null) => {
     if (resultTimer.current) window.clearTimeout(resultTimer.current);
@@ -341,10 +364,13 @@ export function TradingLadder(props: TradingLadderProps) {
         ? ''
         : ` · ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${market.quoteAsset}`;
     const cross = crossing(effType, staged.side, staged.price, bestBid, bestAsk);
+    const summary = `${typeLabel(effType)} · ${tifChoice(eff.tif).label}`;
     return {
       side: staged.side,
       text: describeStaged(market, staged, defaults),
-      details: `${typeLabel(effType)} · ${tifChoice(eff.tif).label}${totalText}`,
+      details: `${summary}${totalText}`,
+      summary,
+      totalText: totalText === '' ? null : totalText.slice(3),
       problem: built.ok ? null : built.error,
       warning:
         cross === 'executes'
@@ -492,7 +518,8 @@ export function TradingLadder(props: TradingLadderProps) {
   useEffect(() => {
     if (!asking || !focusConfirm.current) return;
     focusConfirm.current = false;
-    rootRef.current?.querySelector<HTMLElement>('[data-cancel-all-confirm]')?.focus();
+    const sel = '[data-cancel-all-confirm]';
+    (rootRef.current?.querySelector<HTMLElement>(sel) ?? sheetRef.current?.querySelector<HTMLElement>(sel))?.focus();
   }, [asking]);
 
   const { onOrderActions } = props;
@@ -569,6 +596,10 @@ export function TradingLadder(props: TradingLadderProps) {
         return;
       }
       case 'toggleOneClick':
+        if (phone) {
+          announce('One-click is not available on a phone: a tap stages');
+          return;
+        }
         if (armed) {
           setArmedOn(null);
           return;
@@ -621,7 +652,8 @@ export function TradingLadder(props: TradingLadderProps) {
       const root = rootRef.current;
       const t = e.target;
       const onPage = t === document.body || t === document.documentElement || t === document;
-      const inRoot = root !== null && t instanceof Node && root.contains(t);
+      const sheet = sheetRef.current;
+      const inRoot = t instanceof Node && ((root !== null && root.contains(t)) || (sheet !== null && sheet.contains(t)));
       if (e.key === 'Escape') {
         let handled = false;
         // Esc disarms one-click wherever focus is (DESIGN.md rule 10).
@@ -667,6 +699,141 @@ export function TradingLadder(props: TradingLadderProps) {
   const reference = menuReference(props.lastPrice, bestBid, bestAsk);
   const hold = staged !== null || menuNow !== null || ticketNow !== null || chipOverlays > 0;
 
+  // ---- phone: grouping in the settings row, % sizing in the sheet ---------
+  const [groupSel, setGroupSel] = useState<{ marketId: number; mult: number } | null>(null);
+  const groupTicks = groupSel && groupSel.marketId === market.id ? groupSel.mult : ui.defaultGrouping;
+  const groupOptions = useMemo(() => groupingOptions(market), [market]);
+  const spendAsset = staged ? (staged.side === 'BID' ? market.quoteAsset : market.baseAsset) : null;
+  const spendBalance = spendAsset ? assets.find(a => a.asset === spendAsset) : undefined;
+  const percent =
+    phone && signedIn && staged && !staged.ticket && spendBalance
+      ? {
+          assetText: spendAsset!,
+          available: spendBalance.available,
+          onPick: (pct: number) =>
+            setSizeSel({
+              marketId: market.id,
+              size: sizeForPercent({
+                side: staged.side,
+                available: spendBalance.available,
+                percent: pct,
+                price: staged.price !== null ? String(staged.price) : '',
+                lastPrice: props.lastPrice,
+              }),
+            }),
+        }
+      : null;
+
+  const openRungMenu = (price: number, anchor: Anchor) => {
+    if (snap(price) === null) return;
+    setRungMenu({ marketId: market.id, price, anchor });
+  };
+
+  const overlays = (
+    <>
+      {menuNow && (
+        <RungMenu
+          anchor={menuNow.anchor}
+          priceText={formatPriceText(market, menuNow.price)}
+          sizeText={sizeOk ? `${size.trim()} ${market.baseAsset}` : null}
+          sides={rungMenuSides(menuNow.price, reference)}
+          limitIsClick={type === 'LIMIT'}
+          onClose={() => setRungMenu(null)}
+          onLimit={side => stage(side, menuNow.price, { type: 'LIMIT' })}
+          onStopLoss={side => stage(side, menuNow.price, { type: 'STOP_LOSS' })}
+          onTicket={(kind, side) =>
+            setTicket({ marketId: market.id, kind, side, price: menuNow.price, anchor: menuNow.anchor })
+          }
+          touch={phone}
+        />
+      )}
+      {ticketNow && (
+        <OrderPopover
+          key={`${ticketNow.kind}-${ticketNow.side}-${ticketNow.price}`}
+          market={market}
+          kind={ticketNow.kind}
+          side={ticketNow.side}
+          price={ticketNow.price}
+          size={size}
+          tif={tif}
+          anchor={ticketNow.anchor}
+          onClose={() => setTicket(null)}
+          onStage={s => {
+            setTicket(null);
+            setCancelAsk(null);
+            setStaged(s);
+          }}
+          touch={phone}
+        />
+      )}
+    </>
+  );
+
+  if (phone) {
+    const sheet = (
+      <PhoneSheet
+        sheetRef={sheetRef}
+        staged={active ? view : null}
+        placing={placing}
+        signedIn={signedIn}
+        result={shown}
+        cancelAll={cancelAllView}
+        onPlace={() => void place()}
+        onClear={clear}
+        onMoreTypes={
+          staged && staged.price !== null
+            ? el => openRungMenu(staged.price!, { current: el })
+            : null
+        }
+        percent={percent}
+      />
+    );
+    return (
+      <div
+        ref={rootRef}
+        className="flex min-h-0 flex-1 flex-col"
+        onPointerDownCapture={e => {
+          lastPointer.current = { x: e.clientX, y: e.clientY };
+        }}
+      >
+        <PhoneOrderBar
+          market={market}
+          value={defaults}
+          onSize={s => setSizeSel({ marketId: market.id, size: s })}
+          onType={setType}
+          onTif={setTif}
+          grouping={{
+            value: groupTicks,
+            options: groupOptions,
+            onChange: mult => setGroupSel({ marketId: market.id, mult }),
+          }}
+        />
+        <div className="flex min-h-0 flex-1 flex-col bg-surface">
+          <Ladder
+            market={market}
+            orderBook={orderBook}
+            levelChanges={props.levelChanges}
+            openOrders={props.openOrders}
+            lastPrice={props.lastPrice}
+            sizeText={sizeOk ? size.trim() : null}
+            onStage={onCellClick}
+            staged={staged && staged.price !== null && effType !== 'MARKET' ? { side: staged.side, price: staged.price } : null}
+            hold={hold}
+            onRungMenu={openRungMenu}
+            ownActions={ownActions}
+            onCommand={onCommand}
+            onAnnounce={announce}
+            handleRef={ladderHandle}
+            density="phone"
+            grouping={{ value: groupTicks, onChange: mult => setGroupSel({ marketId: market.id, mult }) }}
+          />
+        </div>
+        {props.sheetHost ? createPortal(sheet, props.sheetHost) : sheet}
+        {overlays}
+      </div>
+    );
+  }
+
   return (
     <div
       ref={rootRef}
@@ -710,10 +877,7 @@ export function TradingLadder(props: TradingLadderProps) {
           onStage={onCellClick}
           staged={staged && staged.price !== null && effType !== 'MARKET' ? { side: staged.side, price: staged.price } : null}
           hold={hold}
-          onRungMenu={(price, anchor) => {
-            if (snap(price) === null) return;
-            setRungMenu({ marketId: market.id, price, anchor });
-          }}
+          onRungMenu={openRungMenu}
           ownActions={ownActions}
           onCommand={onCommand}
           onAnnounce={announce}
@@ -721,40 +885,7 @@ export function TradingLadder(props: TradingLadderProps) {
         />
       </div>
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-
-      {menuNow && (
-        <RungMenu
-          anchor={menuNow.anchor}
-          priceText={formatPriceText(market, menuNow.price)}
-          sizeText={sizeOk ? `${size.trim()} ${market.baseAsset}` : null}
-          sides={rungMenuSides(menuNow.price, reference)}
-          limitIsClick={type === 'LIMIT'}
-          onClose={() => setRungMenu(null)}
-          onLimit={side => stage(side, menuNow.price, { type: 'LIMIT' })}
-          onStopLoss={side => stage(side, menuNow.price, { type: 'STOP_LOSS' })}
-          onTicket={(kind, side) =>
-            setTicket({ marketId: market.id, kind, side, price: menuNow.price, anchor: menuNow.anchor })
-          }
-        />
-      )}
-      {ticketNow && (
-        <OrderPopover
-          key={`${ticketNow.kind}-${ticketNow.side}-${ticketNow.price}`}
-          market={market}
-          kind={ticketNow.kind}
-          side={ticketNow.side}
-          price={ticketNow.price}
-          size={size}
-          tif={tif}
-          anchor={ticketNow.anchor}
-          onClose={() => setTicket(null)}
-          onStage={s => {
-            setTicket(null);
-            setCancelAsk(null);
-            setStaged(s);
-          }}
-        />
-      )}
+      {overlays}
     </div>
   );
 }

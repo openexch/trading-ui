@@ -2,7 +2,8 @@
 /**
  * "N above" / "N below": own resting orders outside the visible window. A
  * click pins the window to the nearest one (the window holds there until
- * Re-centre).
+ * Re-centre). `compact` is the phone form: a floating pill with the count
+ * and the nearest order only, 36px to the eye and 44px to the finger.
  */
 import type { OwnOutside } from './ladderModel';
 import { formatCompactSize, formatFixed } from './format';
@@ -13,9 +14,10 @@ export interface JumpMarkerProps {
   priceDecimals: number;
   sizeDecimals: number;
   onJump: (rung: number) => void;
+  compact?: boolean;
 }
 
-export function JumpMarker({ direction, outside, priceDecimals, sizeDecimals, onJump }: JumpMarkerProps) {
+export function JumpMarker({ direction, outside, priceDecimals, sizeDecimals, onJump, compact = false }: JumpMarkerProps) {
   const nearest = outside.nearest;
   if (outside.count === 0 || !nearest) return null;
   const o = nearest.order;
@@ -32,6 +34,24 @@ export function JumpMarker({ direction, outside, priceDecimals, sizeDecimals, on
 
   const rule = isBuy ? 'border-buy bg-buy-faint' : 'border-sell bg-sell-faint';
   const countCls = isBuy ? 'text-buy' : 'text-sell';
+
+  if (compact) {
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        onClick={() => onJump(nearest.rung)}
+        className={`relative flex h-9 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border bg-surface px-3 text-[12px] text-text-strong shadow-[var(--shadow-pop)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] ${
+          isBuy ? 'border-buy' : 'border-sell'
+        }`}
+      >
+        <span className={countCls}>{countText}</span>
+        <span className="truncate">
+          · {sideText} {size} @ {price}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <button
