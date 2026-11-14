@@ -506,13 +506,13 @@ function MarketPage() {
           ) : (
             <div className="flex flex-shrink-0 gap-2.5 border-t border-hairline bg-surface px-3 py-2">
               <button
-                className="min-h-12 flex-1 rounded-md border border-buy/30 bg-buy-soft py-3 text-[15px] font-bold text-buy active:brightness-95"
+                className="min-h-12 flex-1 rounded-md border border-buy/30 bg-buy-faint py-3 text-[15px] font-bold text-buy active:brightness-95"
                 onClick={() => setMobileOrderSide('BID')}
               >
                 Buy
               </button>
               <button
-                className="min-h-12 flex-1 rounded-md border border-sell/30 bg-sell-soft py-3 text-[15px] font-bold text-sell active:brightness-95"
+                className="min-h-12 flex-1 rounded-md border border-sell/30 bg-sell-faint py-3 text-[15px] font-bold text-sell active:brightness-95"
                 onClick={() => setMobileOrderSide('ASK')}
               >
                 Sell

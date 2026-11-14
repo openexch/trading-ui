@@ -14,9 +14,9 @@ interface OrderHistoryProps {
 const STATUS_STYLES: Record<string, string> = {
   NEW: 'text-accent bg-accent-soft',
   PARTIALLY_FILLED: 'text-warn bg-warn-soft',
-  FILLED: 'text-buy bg-buy-soft',
+  FILLED: 'text-buy bg-buy-faint',
   CANCELLED: 'text-faint bg-surface-2',
-  REJECTED: 'text-sell bg-sell-soft',
+  REJECTED: 'text-sell bg-sell-faint',
 };
 
 function symbolFor(marketId: number): string {
@@ -95,7 +95,7 @@ export function OrderHistory({ market }: OrderHistoryProps) {
               : 'Your fills will appear here'}
         </div>
       ) : subTab === 'orders' ? (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto scrollbar-gutter-stable">
           <table className="w-full border-collapse text-[12px]">
             <thead className="sticky top-0 z-10 bg-surface">
               <tr className="border-b border-hairline">
@@ -144,7 +144,7 @@ export function OrderHistory({ market }: OrderHistoryProps) {
           </table>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto scrollbar-gutter-stable">
           <table className="w-full border-collapse text-[12px]">
             <thead className="sticky top-0 z-10 bg-surface">
               <tr className="border-b border-hairline">

@@ -21,6 +21,7 @@ import type {
   IPriceLine,
 } from 'lightweight-charts';
 import type { CandleData } from '../../types/market';
+import { CHART_PALETTES as PALETTES, CHART_FONT_FAMILY, type ChartPalette } from './palette';
 
 // ── Types ──────────────────────────────────────────────────────
 type Theme = 'light' | 'dark';
@@ -66,61 +67,6 @@ const MA_COLORS = {
   ma25: '#c084fc',
   ma99: '#818cf8',
 } as const;
-
-// ── Theme palettes ─────────────────────────────────────────────
-// lightweight-charts renders to canvas and cannot read CSS variables,
-// so the chart's colors live here as JS values mirroring the app tokens.
-interface ChartPalette {
-  background: string;
-  textColor: string;
-  gridLine: string;
-  border: string;
-  crosshair: string;
-  crosshairLabelBg: string;
-  up: string;
-  down: string;
-  upVol: string;
-  downVol: string;
-  volMa: string;
-  accent: string;
-  accentArea0: string;
-  accentArea1: string;
-}
-
-const PALETTES: Record<Theme, ChartPalette> = {
-  dark: {
-    background: '#10151d',
-    textColor: '#8b95a7',
-    gridLine: 'rgba(140,170,255,0.05)',
-    border: 'rgba(140,170,255,0.09)',
-    crosshair: '#8b95a7',
-    crosshairLabelBg: '#1e2735',
-    up: '#35c98a',
-    down: '#f2635a',
-    upVol: 'rgba(53,201,138,0.25)',
-    downVol: 'rgba(242,99,90,0.25)',
-    volMa: '#8b95a7',
-    accent: '#5b9bff',
-    accentArea0: 'rgba(91,155,255,0.30)',
-    accentArea1: 'rgba(91,155,255,0.02)',
-  },
-  light: {
-    background: '#ffffff',
-    textColor: '#5c6470',
-    gridLine: 'rgba(30,60,120,0.06)',
-    border: '#e3e7ee',
-    crosshair: '#5c6470',
-    crosshairLabelBg: '#e6e9f0',
-    up: '#16a36a',
-    down: '#e5484d',
-    upVol: 'rgba(22,163,106,0.20)',
-    downVol: 'rgba(229,72,77,0.20)',
-    volMa: '#9b9182',
-    accent: '#1f63d6',
-    accentArea0: 'rgba(31,99,214,0.28)',
-    accentArea1: 'rgba(31,99,214,0.02)',
-  },
-};
 
 // Throttle chart updates to avoid overwhelming the browser under high load
 const UPDATE_THROTTLE_MS = 100;
@@ -311,7 +257,7 @@ export function Chart({ candles: utcCandles, currentCandle: utcCurrentCandle, sy
       layout: {
         background: { type: ColorType.Solid, color: p.background },
         textColor: p.textColor,
-        fontFamily: "'JetBrains Mono', 'SF Mono', Monaco, monospace",
+        fontFamily: CHART_FONT_FAMILY,
         fontSize: 11,
       },
       grid: {

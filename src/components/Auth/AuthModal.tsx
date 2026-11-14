@@ -104,7 +104,7 @@ export function AuthModal({ onClose }: AuthModalProps) {
             />
           </label>
           {error && (
-            <div className="animate-fade-in rounded-md bg-sell-soft px-2.5 py-1.5 text-[11px] font-medium text-sell">
+            <div className="animate-fade-in rounded-md bg-sell-faint px-2.5 py-1.5 text-[11px] font-medium text-sell">
               {error}
             </div>
           )}

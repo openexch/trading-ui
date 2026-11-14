@@ -297,7 +297,7 @@ function OrderSideForm({
       {notification && (
         <div
           className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium animate-fade-in ${
-            notification.type === 'success' ? 'bg-buy-soft text-buy' : 'bg-sell-soft text-sell'
+            notification.type === 'success' ? 'bg-buy-faint text-buy' : 'bg-sell-faint text-sell'
           }`}
         >
           {notification.message}
@@ -367,7 +367,7 @@ export function OrderForm({ market, onSubmitOrder, loading, externalPrice, compa
           code rides along as a title attribute so it stays inspectable. */}
       {rejectNotice && (
         <div
-          className="rounded-md bg-sell-soft px-2.5 py-1.5 text-[11px] font-medium text-sell animate-fade-in"
+          className="rounded-md bg-sell-faint px-2.5 py-1.5 text-[11px] font-medium text-sell animate-fade-in"
           title={rejectNotice.code ?? undefined}
         >
           {rejectNotice.text}

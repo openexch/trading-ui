@@ -113,7 +113,7 @@ export function AccountDrawer({ onClose }: AccountDrawerProps) {
         </div>
 
         {/* ── Balances ── */}
-        <div className="min-h-0 flex-1 overflow-y-auto py-2">
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-stable py-2">
           {assets.length > 0 ? (
             <table className="w-full border-collapse text-xs">
               <thead>
