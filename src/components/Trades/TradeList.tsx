@@ -6,6 +6,16 @@ interface TradeListProps {
   trades: TapeTrade[];
 }
 
+/** Whether a tape row is a buy: the taker side when the gateway sends it
+ *  (market WS v5+), otherwise a tick test against the previous trade in time.
+ *  The tape is newest-first, so previous-in-time is the NEXT element; the
+ *  oldest row and equal prices read as up-ticks. */
+export function isBuyAt(trades: TapeTrade[], index: number): boolean {
+  const trade = trades[index];
+  const prev = trades[index + 1];
+  return trade.side != null ? trade.side === 'BUY' : prev == null || trade.price >= prev.price;
+}
+
 export function TradeList({ trades }: TradeListProps) {
   return (
     <div className="flex h-full flex-col font-sans">
@@ -39,14 +49,7 @@ export function TradeList({ trades }: TradeListProps) {
           </div>
         ) : (
           trades.map((trade, index) => {
-            // Taker side when the gateway provides it (market WS v5+);
-            // otherwise a tick test against the previous trade IN TIME.
-            // The tape is newest-first, so previous-in-time is the NEXT
-            // element; oldest row and equal prices read as up-ticks.
-            const prev = trades[index + 1];
-            const isBuy = trade.side != null
-              ? trade.side === 'BUY'
-              : prev == null || trade.price >= prev.price;
+            const isBuy = isBuyAt(trades, index);
             // Stable per-row key from the ingest-assigned seq: batches prepend
             // every second, and an index-shifted key remounted every row (and,
             // with any per-row mount animation, left the tape half-faded).

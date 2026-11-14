@@ -4,12 +4,11 @@
  * column grid, 340 | 1fr | 340 at 1440 (280px side columns below 1200,
  * growing to 480px on wide screens; see layoutColumns), with 1px hairline
  * gaps. The centre is order entry: the defaults bar, the staging
- * strip and the depth ladder. The side columns temporarily hold the existing
- * panels, passed in by the page; every direct child of a side column is
- * stretched to the column's full width, whatever its own sizing.
+ * strip and the depth ladder. The side columns are the four layout slots
+ * (two per column, a height handle between them); each slot's title picks
+ * its panel (layout/, DESIGN.md rules 15 and 16).
  */
-import { useState } from 'react';
-import type { ReactNode } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import type {
   ClusterState,
   ExtendedConnectionStatus,
@@ -17,6 +16,7 @@ import type {
   MarketStats,
   OrderBook,
   OrderRequest,
+  TapeTrade,
   UserOrder,
 } from '../types/market';
 import type { LevelChange } from '../hooks/useOrderBook';
@@ -25,6 +25,19 @@ import { MarketSelector } from '../components/MarketSelector/MarketSelector';
 import { Header } from './Header';
 import { SIDE_COLUMNS } from './layoutColumns';
 import { TradingLadder } from './ladder/TradingLadder';
+import type { LadderOrderActions } from './ladder/TradingLadder';
+import { SideColumn } from './layout/SideColumn';
+import type { SlotChrome } from './layout/SideColumn';
+import { useLayout } from './layout/useLayout';
+import type { PanelId } from './layout/registry';
+import { MarketsPanel } from './panels/MarketsPanel';
+import { TradesPanel } from './panels/TradesPanel';
+import { ChartPanel } from './panels/ChartPanel';
+import type { ChartData } from './panels/ChartPanel';
+import { OrdersPanel } from './panels/OrdersPanel';
+import type { OrdersPanelProps } from './panels/OrdersPanel';
+import { FillsPanel } from './panels/FillsPanel';
+import { BalancesPanel } from './panels/BalancesPanel';
 
 export interface TerminalDesktopProps {
   market: Market;
@@ -34,6 +47,11 @@ export interface TerminalDesktopProps {
   orderBook: OrderBook;
   levelChanges: Map<string, LevelChange>;
   openOrders: UserOrder[];
+  /** Every order in the user's feed (useOrders `orders`), including stops
+   *  awaiting their trigger; the Orders and Fills panels read it. */
+  orders: UserOrder[];
+  trades: TapeTrade[];
+  chart: ChartData;
   status: ExtendedConnectionStatus;
   clusterState?: ClusterState;
   onReconnect: () => void;
@@ -51,20 +69,79 @@ export interface TerminalDesktopProps {
   onCancelOrder: (order: UserOrder) => Promise<{ success: boolean; message: string }>;
   /** The page's replace handler; the ladder's Move sends the price only. */
   onReplaceOrder: (order: UserOrder, price?: number, quantity?: number) => Promise<{ success: boolean; message: string }>;
-  /** Left column content (interim: existing panels). */
-  left: ReactNode;
-  /** Right column content (interim: existing panels). */
-  right: ReactNode;
 }
 
-/** A side column: its panels fill the slot width (`w-full` on every direct
- *  child, `min-w-0` so long content truncates rather than widening it). */
-const SIDE_PANEL =
-  'flex min-h-0 w-full min-w-0 flex-col items-stretch overflow-hidden bg-surface [&>*]:w-full [&>*]:min-w-0';
+interface ActionsStore {
+  get: () => LadderOrderActions | null;
+  set: (actions: LadderOrderActions | null) => void;
+  subscribe: (listener: () => void) => () => void;
+}
+
+function createActionsStore(): ActionsStore {
+  let value: LadderOrderActions | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => value,
+    set: next => {
+      if (next === value) return;
+      value = next;
+      for (const l of listeners) l();
+    },
+    subscribe: listener => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+function ConnectedOrdersPanel({ store, ...rest }: Omit<OrdersPanelProps, 'actions'> & { store: ActionsStore }) {
+  const actions = useSyncExternalStore(store.subscribe, store.get, store.get);
+  return <OrdersPanel {...rest} actions={actions} />;
+}
 
 export function TerminalDesktop(props: TerminalDesktopProps) {
   const [marketsOpen, setMarketsOpen] = useState(false);
   const { market, stats, orderBook } = props;
+  const layout = useLayout();
+  // The ladder's own-order actions, for the Orders panel (cancel, Cancel
+  // all). Held in a small store, not in this component's state: a change
+  // (a cancel going pending) re-renders the Orders panel only, never the
+  // shell and the ladder around it.
+  const [actionsStore] = useState(createActionsStore);
+
+  const renderPanel = (panel: PanelId, chrome: SlotChrome) => {
+    switch (panel) {
+      case 'markets':
+        return (
+          <MarketsPanel
+            chrome={chrome}
+            markets={props.markets}
+            market={market}
+            stats={stats}
+            onSelectMarket={props.onSelectMarket}
+          />
+        );
+      case 'trades':
+        return <TradesPanel chrome={chrome} market={market} trades={props.trades} />;
+      case 'chart':
+        return <ChartPanel chrome={chrome} symbol={market.symbol} theme={props.theme} chart={props.chart} />;
+      case 'orders':
+        return (
+          <ConnectedOrdersPanel
+            store={actionsStore}
+            chrome={chrome}
+            market={market}
+            orders={props.orders}
+            signedIn={props.signedIn}
+            onSignIn={props.onSignIn}
+          />
+        );
+      case 'fills':
+        return <FillsPanel chrome={chrome} signedIn={props.signedIn} onSignIn={props.onSignIn} orders={props.orders} />;
+      case 'balances':
+        return <BalancesPanel chrome={chrome} signedIn={props.signedIn} onSignIn={props.onSignIn} />;
+    }
+  };
 
   return (
     <div data-terminal="desktop" className="flex h-screen flex-col bg-bg text-[13px] text-text tabular-nums">
@@ -85,9 +162,7 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
       />
 
       <main className={`grid min-h-0 flex-1 gap-px bg-hairline ${SIDE_COLUMNS}`}>
-        <aside aria-label="Left panels" className={SIDE_PANEL}>
-          {props.left}
-        </aside>
+        <SideColumn column="left" api={layout} renderPanel={renderPanel} />
         <section aria-label="Depth ladder" className="flex min-h-0 min-w-0 flex-col bg-surface">
           <TradingLadder
             market={market}
@@ -102,11 +177,10 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
             status={props.status}
             onCancelOrder={props.onCancelOrder}
             onReplaceOrder={props.onReplaceOrder}
+            onOrderActions={actionsStore.set}
           />
         </section>
-        <aside aria-label="Right panels" className={SIDE_PANEL}>
-          {props.right}
-        </aside>
+        <SideColumn column="right" api={layout} renderPanel={renderPanel} />
       </main>
 
       {marketsOpen && (
