@@ -25,6 +25,9 @@ import { OrderHistory } from './components/OrderHistory/OrderHistory';
 import { AccountDrawer } from './components/Account/AccountDrawer';
 import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
+import { TerminalDesktop } from './terminal/TerminalDesktop';
+import { LegacyOrdersPanel } from './terminal/panels/LegacyOrdersPanel';
+import { isLadderUiRequested } from './terminal/ladderFlag';
 import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
 import { mergeLiveCandle } from './utils/candles';
@@ -344,6 +347,84 @@ function MarketPage() {
 
   // Bottom strip tab state (the order form lives in the right rail now)
   const [bottomTab, setBottomTab] = useState<'orders' | 'history'>('orders');
+
+  // The ladder shell renders only under ?ui=ladder (read once, never
+  // persisted). The phone keeps the current screen until its own branch.
+  const [ladderUi] = useState(() => isLadderUiRequested());
+  if (ladderUi && !isMobile) {
+    return (
+      <>
+        <TerminalDesktop
+          market={selectedMarket}
+          markets={MARKETS}
+          onSelectMarket={handleMarketChange}
+          stats={stats}
+          orderBook={orderBook}
+          levelChanges={levelChanges}
+          openOrders={openOrders}
+          status={effectiveStatus}
+          clusterState={clusterState}
+          onReconnect={handleReconnect}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          username={session?.username ?? null}
+          onSignIn={() => setShowAuthModal(true)}
+          onOpenAccount={() => {
+            track(EV.account_drawer_open);
+            setShowAccountDrawer(true);
+          }}
+          left={
+            <>
+              <div className="max-h-[60%] flex-shrink-0 overflow-y-auto border-b border-hairline">
+                <OrderForm
+                  compact
+                  market={selectedMarket}
+                  onSubmitOrder={handleSubmitOrder}
+                  loading={apiLoading}
+                  externalPrice={clickedPrice}
+                  lastPrice={stats?.lastPrice ?? null}
+                  signedIn={!!session}
+                  onRequestSignIn={() => setShowAuthModal(true)}
+                  rejectNotice={rejectNotice}
+                />
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <TradeList trades={trades} />
+              </div>
+            </>
+          }
+          right={
+            <>
+              <div className="flex min-h-[200px] flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
+                <Chart
+                  candles={candles}
+                  currentCandle={currentCandle}
+                  symbol={selectedMarket.symbol}
+                  theme={theme}
+                  onIntervalChange={handleIntervalChange}
+                  activeInterval={chartInterval}
+                  loading={chartLoading}
+                />
+              </div>
+              <div className="h-[340px] flex-none border-t border-hairline">
+                <LegacyOrdersPanel
+                  signedIn={!!session}
+                  onSignIn={() => setShowAuthModal(true)}
+                  market={selectedMarket}
+                  openOrders={openOrders}
+                  onCancelOrder={handleCancelOrder}
+                  onReplaceOrder={handleReplaceOrder}
+                  loading={apiLoading}
+                />
+              </div>
+            </>
+          }
+        />
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+        {showAccountDrawer && session && <AccountDrawer onClose={() => setShowAccountDrawer(false)} />}
+      </>
+    );
+  }
 
   const tabClass = (active: boolean) =>
     `relative px-4 py-2.5 text-[13px] font-medium transition-colors ${
