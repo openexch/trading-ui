@@ -14,6 +14,12 @@
  * - 'unknown': beyond the deepest level the client knows (the gateway
  *              publishes a bounded depth), never shown as empty liquidity
  * - 'none':    the other side of the touch (a bid cell above the best bid)
+ *
+ * Depth is cumulative (DESIGN.md, the depth ladder): each known cell carries
+ * the volume from its side's best price out to and including that rung (best
+ * ask upwards, best bid downwards). A window scales its bars to the largest
+ * cumulative value it shows, one scale for both sides, so their volumes
+ * compare.
  */
 import type { BookLevel, Market, UserOrder } from '../../types/market';
 import { priceKey } from '../../hooks/useOrderBook';
@@ -66,7 +72,8 @@ export interface OwnAggregate {
   /** Own quantity drawn inside the depth bar, clamped to the level quantity
    *  (own orders can briefly exceed the book while updates race). */
   slice: number;
-  /** slice / maxQuantity, in the same units as the cell's bar. */
+  /** slice / the bar scale (the largest visible cumulative), in the same
+   *  units as the cell's bar, anchored at the price edge. */
   sliceFraction: number;
   filled: number;
   original: number;
@@ -76,14 +83,17 @@ export interface OwnAggregate {
 
 export interface SideCell {
   state: CellState;
-  /** Known quantity; null when the cell is 'unknown' or 'none'. */
+  /** Known quantity at this rung; null when the cell is 'unknown' or 'none'. */
   quantity: number | null;
+  /** Volume from this side's best rung out to and including this one; null
+   *  when the cell is 'unknown' or 'none'. A lower bound when `partial`. */
+  cumulative: number | null;
   orderCount: number;
-  /** quantity / maxQuantity over all known rungs, 0..1. */
+  /** cumulative / the bar scale, 0..1 (0 for 'unknown' and 'none'). */
   bar: number;
   priceKeys: string[];
   /** True on the deepest known rung when part of its price group lies beyond
-   *  the known depth, so its quantity is a lower bound. */
+   *  the known depth, so its quantity and cumulative are lower bounds. */
   partial: boolean;
   own: OwnAggregate | null;
 }
@@ -91,9 +101,9 @@ export interface SideCell {
 export interface SpreadInfo {
   /** Best ask minus best bid, in ticks (0 locked, negative crossed). */
   ticks: number;
-  /** The same spread in group units (the label the spread line carries). */
+  /** The same spread in group units (the label the spread row carries). */
   groups: number;
-  /** The spread line sits between `lowerRung` and `lowerRung + 1`. Null when
+  /** The spread row sits between `lowerRung` and `lowerRung + 1`. Null when
    *  the book is locked or crossed into one rung, so there is no gap to draw
    *  the line in. */
   lowerRung: number | null;
@@ -119,9 +129,12 @@ export interface LadderModel {
   deepestAskRung: number | null;
   bidPartial: boolean;
   askPartial: boolean;
-  /** Largest rung quantity over ALL known levels on both sides, so bars do
-   *  not rescale when the visible row count changes. */
-  maxQuantity: number;
+  /** Cumulative depth per side, best rung first: bids by falling rung, asks
+   *  by rising rung. `cum` includes the rung's own quantity. */
+  bidCum: CumStep[];
+  askCum: CumStep[];
+  /** The larger side's total known volume: the default bar scale. */
+  maxCumulative: number;
   lastTradeRung: number | null;
   spread: SpreadInfo | null;
   /** Own resting orders for this market, each with its rung. */
@@ -130,6 +143,11 @@ export interface LadderModel {
   asks: Map<number, SideBucket>;
   ownBids: Map<number, UserOrder[]>;
   ownAsks: Map<number, UserOrder[]>;
+}
+
+export interface CumStep {
+  rung: number;
+  cum: number;
 }
 
 export interface LadderInput {
@@ -186,6 +204,30 @@ function bucket(grid: TickGrid, groupTicks: number, levels: BookLevel[], side: L
   return { out, best, bestTicks, deepest, partial };
 }
 
+/** Running totals from the best rung outward. */
+function cumulate(levels: Map<number, SideBucket>, side: LadderSide): CumStep[] {
+  const rungs = [...levels.keys()].sort((x, y) => (side === 'BID' ? y - x : x - y));
+  const out: CumStep[] = [];
+  let cum = 0;
+  for (const r of rungs) {
+    cum += levels.get(r)!.quantity;
+    out.push({ rung: r, cum });
+  }
+  return out;
+}
+
+/** Cumulative volume at a known rung: everything from the best rung out to
+ *  and including `rung` (a gap carries the total of the rungs before it). */
+export function cumulativeAt(model: LadderModel, side: LadderSide, rung: number): number {
+  const steps = side === 'BID' ? model.bidCum : model.askCum;
+  let cum = 0;
+  for (const st of steps) {
+    if (side === 'BID' ? st.rung < rung : st.rung > rung) break;
+    cum = st.cum;
+  }
+  return cum;
+}
+
 /** Own orders that rest in the book: this market, live, priced, with quantity left.
  *  Stops awaiting their trigger are not in `openOrders` and not in the book. */
 function isRestingOwn(o: UserOrder, marketId: number): boolean {
@@ -205,9 +247,10 @@ export function buildLadder(input: LadderInput): LadderModel {
   const b = bucket(grid, groupTicks, input.bids, 'BID');
   const a = bucket(grid, groupTicks, input.asks, 'ASK');
 
-  let maxQuantity = 0;
-  for (const v of b.out.values()) maxQuantity = Math.max(maxQuantity, v.quantity);
-  for (const v of a.out.values()) maxQuantity = Math.max(maxQuantity, v.quantity);
+  const bidCum = cumulate(b.out, 'BID');
+  const askCum = cumulate(a.out, 'ASK');
+  const total = (steps: CumStep[]) => (steps.length > 0 ? steps[steps.length - 1].cum : 0);
+  const maxCumulative = Math.max(total(bidCum), total(askCum));
 
   const own: OwnPlacement[] = [];
   const ownBids = new Map<number, UserOrder[]>();
@@ -263,7 +306,9 @@ export function buildLadder(input: LadderInput): LadderModel {
     deepestAskRung: a.deepest,
     bidPartial: b.partial,
     askPartial: a.partial,
-    maxQuantity,
+    bidCum,
+    askCum,
+    maxCumulative,
     lastTradeRung,
     spread,
     own,
@@ -283,7 +328,7 @@ function cellState(model: LadderModel, side: LadderSide, rung: number, hasLevel:
   return hasLevel ? 'level' : 'gap';
 }
 
-function aggregateOwn(orders: UserOrder[] | undefined, levelQty: number, maxQuantity: number): OwnAggregate | null {
+function aggregateOwn(orders: UserOrder[] | undefined, levelQty: number, scale: number): OwnAggregate | null {
   if (!orders || orders.length === 0) return null;
   let quantity = 0;
   let filled = 0;
@@ -297,30 +342,35 @@ function aggregateOwn(orders: UserOrder[] | undefined, levelQty: number, maxQuan
   return {
     quantity,
     slice,
-    sliceFraction: maxQuantity > 0 ? slice / maxQuantity : 0,
+    sliceFraction: scale > 0 ? slice / scale : 0,
     filled,
     original,
     orders,
   };
 }
 
-/** One side of one rung. */
-export function sideCell(model: LadderModel, side: LadderSide, rung: number): SideCell {
+/** One side of one rung. `scale` is the cumulative that fills a bar; by
+ *  default the larger side's whole known volume (a window passes the
+ *  largest cumulative it shows). */
+export function sideCell(model: LadderModel, side: LadderSide, rung: number, scale: number = model.maxCumulative): SideCell {
   const bucketMap = side === 'BID' ? model.bids : model.asks;
   const lvl = bucketMap.get(rung);
   const state = cellState(model, side, rung, lvl !== undefined);
   const quantity = state === 'level' ? lvl!.quantity : state === 'gap' ? 0 : null;
+  const known = state === 'level' || state === 'gap';
+  const cumulative = known ? cumulativeAt(model, side, rung) : null;
   const deepest = side === 'BID' ? model.deepestBidRung : model.deepestAskRung;
   const partialSide = side === 'BID' ? model.bidPartial : model.askPartial;
   const ownMap = side === 'BID' ? model.ownBids : model.ownAsks;
   return {
     state,
     quantity,
+    cumulative,
     orderCount: state === 'level' ? lvl!.orderCount : 0,
-    bar: state === 'level' && model.maxQuantity > 0 ? lvl!.quantity / model.maxQuantity : 0,
+    bar: cumulative !== null && scale > 0 ? Math.min(1, cumulative / scale) : 0,
     priceKeys: lvl ? lvl.priceKeys : [],
     partial: partialSide && rung === deepest,
-    own: aggregateOwn(ownMap.get(rung), quantity ?? 0, model.maxQuantity),
+    own: aggregateOwn(ownMap.get(rung), quantity ?? 0, scale),
   };
 }
 
@@ -332,7 +382,7 @@ export interface LadderRow {
   bid: SideCell;
   ask: SideCell;
   isLastTrade: boolean;
-  /** The spread line is drawn directly below this row. */
+  /** The spread row sits directly below this row. */
   spreadBelow: boolean;
 }
 
@@ -349,6 +399,8 @@ export interface LadderWindow {
   bottom: number;
   /** Rows from the highest price down. */
   rows: LadderRow[];
+  /** The bar scale: the largest cumulative shown on either side. */
+  scale: number;
   above: OwnOutside;
   below: OwnOutside;
 }
@@ -370,19 +422,38 @@ export function ladderWindow(model: LadderModel, centre: number, count: number):
   }
   const bottom = top - n + 1;
   const spreadLower = model.spread?.lowerRung ?? null;
+  const scale = windowScale(model, top, bottom);
   const rows: LadderRow[] = [];
   for (let rung = top; rung >= bottom; rung--) {
     rows.push({
       rung,
       price: rungPrice(model.grid, model.groupTicks, rung),
       inRange: rung >= model.minRung && rung <= model.maxRung,
-      bid: sideCell(model, 'BID', rung),
-      ask: sideCell(model, 'ASK', rung),
+      bid: sideCell(model, 'BID', rung, scale),
+      ask: sideCell(model, 'ASK', rung, scale),
       isLastTrade: model.lastTradeRung === rung,
       spreadBelow: spreadLower !== null && rung === spreadLower + 1 && spreadLower >= bottom,
     });
   }
-  return { top, bottom, rows, ...ownOutside(model, top, bottom) };
+  return { top, bottom, rows, scale, ...ownOutside(model, top, bottom) };
+}
+
+/** The largest cumulative a window [bottom, top] shows on either side.
+ *  Cumulative grows outward, so on each side it is the value at the
+ *  outermost known rung inside the window. */
+export function windowScale(model: LadderModel, top: number, bottom: number): number {
+  let scale = 0;
+  if (model.bestBidRung !== null && model.deepestBidRung !== null) {
+    const hi = Math.min(top, model.bestBidRung);
+    const outer = Math.max(bottom, model.deepestBidRung);
+    if (outer <= hi) scale = Math.max(scale, cumulativeAt(model, 'BID', outer));
+  }
+  if (model.bestAskRung !== null && model.deepestAskRung !== null) {
+    const lo = Math.max(bottom, model.bestAskRung);
+    const outer = Math.min(top, model.deepestAskRung);
+    if (outer >= lo) scale = Math.max(scale, cumulativeAt(model, 'ASK', outer));
+  }
+  return scale;
 }
 
 /** Own orders above and below a window, and the nearest one each way

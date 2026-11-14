@@ -170,6 +170,42 @@ describe('contrast', () => {
     }
   });
 
+  // Cumulative depth makes the bars wide, so every number in a depth cell
+  // sits on a bar: the level quantity in --text-strong, the cumulative in
+  // --text (--muted is not AA on a bar), and the hover preview ("Buy 0.25")
+  // in --text-strong, on the plain bar, the own-order row tint and the hover
+  // fill (--chip under the bar).
+  it.each(themes)('%s: level and cumulative numbers on cumulative depth bars are AA', (theme) => {
+    const surface = token(theme, '--surface');
+    const chip = token(theme, '--chip');
+    for (const side of sides) {
+      const soft = token(theme, `--${side}-soft`);
+      const backs: [string, Rgba][] = [
+        ['bar', over(soft, surface)],
+        ['bar on own-order row tint', over(soft, over(token(theme, `--${side}-faint`), surface))],
+        ['bar on the hover fill', over(soft, chip)],
+      ];
+      for (const fg of ['--text-strong', '--text']) {
+        for (const [where, bg] of backs) {
+          expect(contrast(token(theme, fg), bg), `${fg} on ${side} ${where}`).toBeGreaterThanOrEqual(AA);
+        }
+      }
+    }
+  });
+
+  // Side-coloured marks on a bar (the hover and staged outlines, the phone
+  // own-order dot) are non-text: 3:1.
+  it.each(themes)('%s: side-coloured marks on a depth bar reach 3:1', (theme) => {
+    const surface = token(theme, '--surface');
+    const chip = token(theme, '--chip');
+    for (const side of sides) {
+      const soft = token(theme, `--${side}-soft`);
+      for (const bg of [over(soft, surface), over(soft, chip)]) {
+        expect(contrast(token(theme, `--${side}`), bg), side).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
   // The own-order slice sits on top of the depth bar, on a row that carries
   // the own-order tint: surface, then -faint, then -soft, then the side colour
   // at --own-slice-alpha. Quantities on it are --text-strong. The design
@@ -186,6 +222,9 @@ describe('contrast', () => {
       const bar = over(token(theme, `--${side}-soft`), row);
       const slice = over(token(theme, `--${side}`), bar, alpha);
       expect(contrast(strong, slice), `${side} slice`).toBeGreaterThanOrEqual(AA);
+      // --text measures 3.4 to 4.3:1 here, so a cell with an own slice
+      // prints its cumulative in --text-strong too (Rung.tsx); this pair is
+      // the one that applies.
     }
   });
 });

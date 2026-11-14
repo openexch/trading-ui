@@ -127,7 +127,7 @@ async function phoneWithBook() {
   await screen.findByRole('grid', { name: /price ladder/i });
   await screen.findByRole('button', { name: /menu, signed in as dev/i });
   pushBook();
-  await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book$/i });
+  await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book, 1.00 cumulative$/i });
   return utils;
 }
 
@@ -152,9 +152,11 @@ describe('Phone shell (?ui=ladder at 768px and below)', () => {
     expect(container.querySelector('[data-terminal="phone"]')).toBeTruthy();
     expect(container.querySelector('[data-terminal="desktop"]')).toBeNull();
     expect(screen.getByRole('button', { name: /market btc-usd\. change market/i })).toBeTruthy();
-    // Eleven 44px rungs from a 484px rung area, Bids | Price | Asks.
+    // Nine 44px rungs from a 484px rung area once the 20px spread row is set
+    // aside (464 / 44 = 10, odd: 9), Bids | Price | Asks.
     const rows = container.querySelectorAll('[data-rung-price]');
-    expect(rows.length).toBe(11);
+    expect(rows.length).toBe(9);
+    expect(container.querySelectorAll('[data-spread-row]')).toHaveLength(1);
     for (const r of Array.from(rows)) expect(r.className).toContain('h-[44px]');
     expect(screen.getByRole('button', { name: /^order settings: 0.25 btc, limit, good till cancelled$/i })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: /price grouping/i })).toBeTruthy();

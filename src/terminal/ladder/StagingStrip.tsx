@@ -16,6 +16,7 @@
  *   as a polite info line: the ladder itself is never announced (rule 12).
  */
 import type { OrderSide } from '../../types/market';
+import { LADDER_FRAME } from '../layoutColumns';
 
 export interface StripResult {
   /** info: keyboard feedback, polite and neutral. */
@@ -100,7 +101,7 @@ export function StagingStrip({
       aria-label="Staged order"
       data-staging-strip
       data-armed={armed ? 'true' : undefined}
-      className="relative flex h-10 flex-none items-center gap-3 overflow-hidden border-b border-hairline bg-surface-2 px-5 text-[12px]"
+      className={`relative flex h-10 flex-none items-center gap-3 overflow-hidden border-b border-hairline bg-surface-2 ${LADDER_FRAME} text-[12px]`}
     >
       {armed && (
         <span

@@ -5,6 +5,7 @@ import type { BookLevel, Market, OrderStatus, UserOrder } from '../../types/mark
 import { priceKey } from '../../hooks/useOrderBook';
 import {
   buildLadder,
+  cumulativeAt,
   defaultCentre,
   ladderWindow,
   rungOf,
@@ -208,7 +209,9 @@ describe('one side empty', () => {
     expect(defaultCentre(m)).toBe(100000);
     const w = ladderWindow(m, defaultCentre(m), 3);
     expect(w.rows.every(r => r.bid.state === 'unknown' && r.ask.state === 'unknown')).toBe(true);
-    expect(m.maxQuantity).toBe(0);
+    expect(m.maxCumulative).toBe(0);
+    expect(w.scale).toBe(0);
+    expect(w.rows.every(r => r.bid.bar === 0 && r.ask.bar === 0 && r.bid.cumulative === null)).toBe(true);
   });
 });
 
@@ -263,21 +266,89 @@ describe('known-depth boundary', () => {
   });
 });
 
-describe('bar scale', () => {
-  it('is the largest rung over all known levels, not just the window', () => {
-    const m = model({ bids: [lvl(97410, 2), lvl(97300, 8)], asks: [lvl(97411, 4)] });
-    expect(m.maxQuantity).toBe(8);
-    const small = ladderWindow(m, 97410, 3);
-    const big = ladderWindow(m, 97410, 41);
-    const bar = (w: typeof small) => w.rows.find(r => r.price === 97410)!.bid.bar;
-    expect(bar(small)).toBe(0.25);
-    expect(bar(big)).toBe(0.25);
-    expect(small.rows.find(r => r.price === 97411)!.ask.bar).toBe(0.5);
+describe('cumulative depth', () => {
+  // Asks 97411: 2, 97413: 3, 97414: 1; bids 97410: 1, 97409: 4, 97407: 2.
+  const book = () =>
+    model({
+      bids: [lvl(97410, 1), lvl(97409, 4), lvl(97407, 2)],
+      asks: [lvl(97411, 2), lvl(97413, 3), lvl(97414, 1)],
+    });
+
+  it('accumulates from the best price outward on each side', () => {
+    const m = book();
+    expect(m.askCum).toEqual([
+      { rung: 97411, cum: 2 },
+      { rung: 97413, cum: 5 },
+      { rung: 97414, cum: 6 },
+    ]);
+    expect(m.bidCum).toEqual([
+      { rung: 97410, cum: 1 },
+      { rung: 97409, cum: 5 },
+      { rung: 97407, cum: 7 },
+    ]);
+    expect(m.maxCumulative).toBe(7);
+    // A gap carries the total of the rungs before it.
+    expect(cumulativeAt(m, 'ASK', 97412)).toBe(2);
+    expect(cumulativeAt(m, 'BID', 97408)).toBe(5);
+  });
+
+  it('cells carry the level quantity and the cumulative; unknown and none carry neither', () => {
+    const m = book();
+    const w = ladderWindow(m, 97411, 11); // 97416..97406
+    const cells = Object.fromEntries(
+      w.rows.map(r => [r.price, [r.bid.quantity, r.bid.cumulative, r.ask.quantity, r.ask.cumulative]]),
+    );
+    expect(cells).toEqual({
+      97416: [null, null, null, null], // ask unknown, bid none
+      97415: [null, null, null, null],
+      97414: [null, null, 1, 6],
+      97413: [null, null, 3, 5],
+      97412: [null, null, 0, 2], // gap
+      97411: [null, null, 2, 2],
+      97410: [1, 1, null, null],
+      97409: [4, 5, null, null],
+      97408: [0, 5, null, null], // gap
+      97407: [2, 7, null, null],
+      97406: [null, null, null, null], // bid unknown
+    });
+    for (const r of w.rows) {
+      for (const c of [r.bid, r.ask]) {
+        if (c.state === 'unknown' || c.state === 'none') expect([c.bar, c.cumulative]).toEqual([0, null]);
+      }
+    }
+  });
+
+  it('scales both sides to the largest cumulative in the window', () => {
+    const m = book();
+    const all = ladderWindow(m, 97411, 11);
+    expect(all.scale).toBe(7);
+    const bar = (w: typeof all, p: number, side: 'bid' | 'ask') => w.rows.find(r => r.price === p)![side].bar;
+    expect(bar(all, 97407, 'bid')).toBe(1);
+    expect(bar(all, 97414, 'ask')).toBeCloseTo(6 / 7);
+    expect(bar(all, 97411, 'ask')).toBeCloseTo(2 / 7);
+    expect(bar(all, 97410, 'bid')).toBeCloseTo(1 / 7);
+    // A tighter window (97412..97408) shows less: its own largest is the
+    // bid cumulative 5 at 97409 (and the gap at 97408).
+    const tight = ladderWindow(m, 97410, 5);
+    expect(tight.scale).toBe(5);
+    expect(bar(tight, 97409, 'bid')).toBe(1);
+    expect(bar(tight, 97411, 'ask')).toBeCloseTo(2 / 5);
   });
 
   it('is measured after grouping', () => {
     const m = model({ groupTicks: 5, bids: [lvl(97414, 3), lvl(97412, 3), lvl(97400, 4)] });
-    expect(m.maxQuantity).toBe(6);
+    expect(m.bidCum).toEqual([
+      { rung: rungOf(m.grid, 5, 97414, 'BID'), cum: 6 },
+      { rung: rungOf(m.grid, 5, 97400, 'BID'), cum: 10 },
+    ]);
+    expect(m.maxCumulative).toBe(10);
+  });
+
+  it('the deepest partial rung is a lower bound on both numbers', () => {
+    const bids = Array.from({ length: 20 }, (_, i) => lvl(97400 - i, 1));
+    const m = model({ groupTicks: 100, bids, asks: [lvl(97401, 1)] });
+    const cell = sideCell(m, 'BID', rungOf(m.grid, 100, 97300, 'BID'));
+    expect([cell.quantity, cell.cumulative, cell.partial]).toEqual([19, 20, true]);
   });
 });
 
@@ -289,6 +360,7 @@ describe('own orders', () => {
     const own = sideCell(m, 'BID', rungOf(m.grid, 5, 97405, 'BID')).own!;
     expect(own.quantity).toBeCloseTo(1.2);
     expect(own.slice).toBe(0.8); // clamp: own 1.2 > level 0.8
+    // Default scale: the larger side's whole volume (asks 1 vs bids 0.8).
     expect(own.sliceFraction).toBe(0.8);
     expect(own.filled).toBeCloseTo(0.3);
     expect(own.original).toBe(1.5);
@@ -299,6 +371,7 @@ describe('own orders', () => {
     const o = order({ side: 'ASK', price: 97420, originalQuantity: 0.2 });
     const m = model({ asks: [lvl(97420, 1)], bids: [lvl(97400, 4)], openOrders: [o] });
     const own = sideCell(m, 'ASK', 97420).own!;
+    // Scale: the larger total, 4 (bids).
     expect([own.quantity, own.slice, own.sliceFraction]).toEqual([0.2, 0.2, 0.05]);
   });
 
