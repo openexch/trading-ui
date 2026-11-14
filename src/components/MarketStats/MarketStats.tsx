@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useRef, useState } from 'react';
 import type { MarketStats as Stats, Market, OrderBook } from '../../types/market';
 import { formatPrice, formatQuantity } from '../../utils/formatters';
+import { useTickDirection } from '../../ui/useTickDirection';
 
 interface MarketStatsProps {
   market: Market;
@@ -40,25 +40,8 @@ export function MarketStats({ market, stats, orderBook, compact = false }: Marke
   // briefly still carries data (the book is reset on switch too).
   const lastPrice = stats ? stats.lastPrice || orderBook.bids[0]?.price || 0 : null;
 
-  // Directional tick flash on price change.
-  const prevPrice = useRef(lastPrice);
-  const [tick, setTick] = useState<'up' | 'down' | null>(null);
-  // Direction of the LAST move — persistent, so the arrow never appears and
-  // disappears (that made the whole price jitter sideways every tick).
-  const [dir, setDir] = useState<'up' | 'down' | null>(null);
-  useEffect(() => {
-    if (lastPrice === null) {
-      prevPrice.current = null;
-      return;
-    }
-    if (prevPrice.current !== null) {
-      if (lastPrice > prevPrice.current) { setTick('up'); setDir('up'); }
-      else if (lastPrice < prevPrice.current) { setTick('down'); setDir('down'); }
-    }
-    prevPrice.current = lastPrice;
-    const id = window.setTimeout(() => setTick(null), 500);
-    return () => window.clearTimeout(id);
-  }, [lastPrice]);
+  // Directional tick flash on price change, with a persistent arrow.
+  const { tick, dir } = useTickDirection(lastPrice);
 
   return (
     <div
