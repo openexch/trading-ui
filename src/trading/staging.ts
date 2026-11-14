@@ -62,6 +62,18 @@ export function extraField(type: OrderType): ExtraField | null {
   return null;
 }
 
+/** The values an order ticket (the rung menu or an order popover) set for
+ *  one staged order. They win over the order defaults bar for that order
+ *  only; the bar itself is unchanged. */
+export interface Ticket {
+  type: OrderType;
+  tif?: TimeInForce;
+  /** Size text, as typed in the popover. */
+  size?: string;
+  /** The type's second value (limit price, trail, shown size), as text. */
+  extra?: string;
+}
+
 /** An order staged from the ladder or from Buy / Sell market. */
 export interface Staged {
   marketId: number;
@@ -69,6 +81,8 @@ export interface Staged {
   /** The clicked rung's price (the trigger for stop types); null for a
    *  market order staged from the Buy / Sell market buttons. */
   price: number | null;
+  /** Set when staged from the rung menu or an order popover. */
+  ticket?: Ticket;
 }
 
 export interface OrderDefaults {
@@ -78,9 +92,22 @@ export interface OrderDefaults {
   tif: TimeInForce;
 }
 
+/** The defaults a staged order is built from: the bar's, with the order's
+ *  own ticket values on top. */
+export function effectiveDefaults(staged: Staged, defaults: OrderDefaults): OrderDefaults {
+  const t = staged.ticket;
+  if (!t) return defaults;
+  return { size: t.size ?? defaults.size, type: t.type, tif: t.tif ?? defaults.tif };
+}
+
 /** The type a staged order is placed as: market when staged as market. */
 export function stagedType(staged: Staged, defaults: OrderDefaults): OrderType {
-  return staged.price === null ? 'MARKET' : defaults.type;
+  return staged.price === null ? 'MARKET' : effectiveDefaults(staged, defaults).type;
+}
+
+/** The second value of a staged order: its ticket's, else the given text. */
+function extraOf(staged: Staged, extra: string): string {
+  return staged.ticket?.extra ?? extra;
 }
 
 /** A positive size, or null. */
@@ -92,7 +119,9 @@ export function parseSize(text: string): number | null {
 }
 
 /** The staged order as an OrderDraft for orderDraft.buildOrderRequest. */
-export function stagedDraft(market: Market, staged: Staged, defaults: OrderDefaults, extra: string): OrderDraft {
+export function stagedDraft(market: Market, staged: Staged, bar: OrderDefaults, extraText: string): OrderDraft {
+  const defaults = effectiveDefaults(staged, bar);
+  const extra = extraOf(staged, extraText);
   const type = stagedType(staged, defaults);
   const rung = staged.price === null ? '' : String(staged.price);
   const draft: OrderDraft = {
@@ -121,10 +150,12 @@ export function stagedDraft(market: Market, staged: Staged, defaults: OrderDefau
 export function buildStaged(
   market: Market,
   staged: Staged,
-  defaults: OrderDefaults,
-  extra: string,
+  bar: OrderDefaults,
+  extraText: string,
   now: number,
 ): BuildOrderResult {
+  const defaults = effectiveDefaults(staged, bar);
+  const extra = extraOf(staged, extraText);
   if (parseSize(defaults.size) === null) return { ok: false, error: 'Enter a size' };
   const type = stagedType(staged, defaults);
   const field = extraField(type);
@@ -135,7 +166,7 @@ export function buildStaged(
       return { ok: false, error: 'Show must not exceed the size' };
     }
   }
-  return buildOrderRequest(stagedDraft(market, staged, defaults, extra), now);
+  return buildOrderRequest(stagedDraft(market, staged, bar, extra), now);
 }
 
 /**
@@ -164,15 +195,23 @@ export function formatPriceText(market: Pick<Market, 'tickSize'>, price: number)
 }
 
 /** "Buy 0.25 BTC @ 97,395", "Sell 0.25 BTC at market",
- *  "Sell 0.25 BTC, stop 97,300". */
-export function describeStaged(market: Market, staged: Staged, defaults: OrderDefaults): string {
+ *  "Sell 0.25 BTC, stop 97,300", and with a ticket's second value
+ *  "Sell 0.25 BTC, stop 97,380, limit 97,375", "Sell 0.25 BTC @ 97,380,
+ *  trail 50", "Buy 1 BTC @ 97,380, show 0.1". */
+export function describeStaged(market: Market, staged: Staged, bar: OrderDefaults): string {
+  const defaults = effectiveDefaults(staged, bar);
   const type = stagedType(staged, defaults);
   const verb = staged.side === 'BID' ? 'Buy' : 'Sell';
   const size = parseSize(defaults.size) !== null ? `${defaults.size.trim()} ` : '';
   const head = `${verb} ${size}${market.baseAsset}`;
   if (type === 'MARKET' || staged.price === null) return `${head} at market`;
   const p = formatPriceText(market, staged.price);
+  const x = staged.ticket?.extra?.trim() ?? '';
+  const xNum = parseSize(x);
+  if (type === 'STOP_LIMIT' && xNum !== null) return `${head}, stop ${p}, limit ${formatPriceText(market, xNum)}`;
   if (needsStopPrice(type)) return `${head}, stop ${p}`;
+  if (needsTrailingDelta(type) && xNum !== null) return `${head} @ ${p}, trail ${x}`;
+  if (needsDisplayQty(type) && xNum !== null) return `${head} @ ${p}, show ${x}`;
   return `${head} @ ${p}`;
 }
 

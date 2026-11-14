@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Desktop terminal shell (behind ?ui=ladder): a 52px header over a three
- * column grid, 340 | 1fr | 340 at 1440 (280px side columns below 1200), with
- * 1px hairline gaps. The centre is order entry: the defaults bar, the staging
+ * column grid, 340 | 1fr | 340 at 1440 (280px side columns below 1200,
+ * growing to 480px on wide screens; see layoutColumns), with 1px hairline
+ * gaps. The centre is order entry: the defaults bar, the staging
  * strip and the depth ladder. The side columns temporarily hold the existing
  * panels, passed in by the page; every direct child of a side column is
  * stretched to the column's full width, whatever its own sizing.
@@ -21,7 +22,8 @@ import type {
 import type { LevelChange } from '../hooks/useOrderBook';
 import type { Theme } from '../hooks/useTheme';
 import { MarketSelector } from '../components/MarketSelector/MarketSelector';
-import { Header, SIDE_COLUMNS } from './Header';
+import { Header } from './Header';
+import { SIDE_COLUMNS } from './layoutColumns';
 import { TradingLadder } from './ladder/TradingLadder';
 
 export interface TerminalDesktopProps {
@@ -45,6 +47,10 @@ export interface TerminalDesktopProps {
   onSubmitOrder: (order: OrderRequest) => Promise<{ success: boolean; message: string }>;
   /** Async reject of an accepted order, from the user's order stream. */
   rejectNotice: { text: string; code: string | null } | null;
+  /** The page's cancel handler (keyed on omsOrderId). */
+  onCancelOrder: (order: UserOrder) => Promise<{ success: boolean; message: string }>;
+  /** The page's replace handler; the ladder's Move sends the price only. */
+  onReplaceOrder: (order: UserOrder, price?: number, quantity?: number) => Promise<{ success: boolean; message: string }>;
   /** Left column content (interim: existing panels). */
   left: ReactNode;
   /** Right column content (interim: existing panels). */
@@ -93,6 +99,9 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
             onSubmitOrder={props.onSubmitOrder}
             onRequestSignIn={props.onSignIn}
             rejectNotice={props.rejectNotice}
+            status={props.status}
+            onCancelOrder={props.onCancelOrder}
+            onReplaceOrder={props.onReplaceOrder}
           />
         </section>
         <aside aria-label="Right panels" className={SIDE_PANEL}>

@@ -2,8 +2,9 @@
 /**
  * The order defaults bar above the staging strip: what a click on the ladder
  * stages. Size presets for the market, the size field, one Type · TIF picker
- * and, at the far right, the one-click switch (off; arming is not offered
- * here, so it is shown disabled).
+ * and, at the far right, the one-click switch. One-click is off by default
+ * and never persisted; it can be armed only while signed in and connected,
+ * and armed it takes both side colours (DESIGN.md rule 10).
  */
 import type { FormEvent, WheelEvent } from 'react';
 import type { Market, OrderType, TimeInForce } from '../../types/market';
@@ -19,12 +20,14 @@ export interface OrderDefaultsProps {
   onSize: (size: string) => void;
   onType: (type: OrderType) => void;
   onTif: (tif: TimeInForce) => void;
+  /** One-click state. Without it the switch shows off and disabled. */
+  oneClick?: { armed: boolean; available: boolean; onChange: (armed: boolean) => void };
 }
 
 // Scrolling over a focused number field must never change an order size.
 const blurOnWheel = (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur();
 
-export function OrderDefaults({ market, value, onSize, onType, onTif }: OrderDefaultsProps) {
+export function OrderDefaults({ market, value, onSize, onType, onTif, oneClick }: OrderDefaultsProps) {
   const ui = marketUi(market);
   const menu = useMenuTrigger();
   const size = parseSize(value.size);
@@ -100,7 +103,24 @@ export function OrderDefaults({ market, value, onSize, onType, onTif }: OrderDef
         </MenuGroup>
       </Menu>
       <div className="min-w-0 flex-1" />
-      <Switch checked={false} onChange={() => {}} label="One-click" disabled className="flex-none" />
+      <span
+        className="flex-none"
+        title={
+          oneClick && !oneClick.available
+            ? 'Sign in and connect to arm one-click'
+            : oneClick?.armed
+              ? 'One-click on: a click places at once. Esc turns it off'
+              : 'One-click: a click places at once instead of staging'
+        }
+      >
+        <Switch
+          checked={oneClick?.armed ?? false}
+          onChange={on => oneClick?.onChange(on)}
+          label="One-click"
+          tone="split"
+          disabled={!oneClick || (!oneClick.available && !oneClick.armed)}
+        />
+      </span>
     </form>
   );
 }

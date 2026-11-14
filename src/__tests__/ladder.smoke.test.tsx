@@ -72,14 +72,29 @@ let calls: Call[] = [];
 /** What POST /api/v1/orders answers; tests swap it for a reject. */
 let postReply: unknown = { accepted: true, omsOrderId: '331911111111111111', status: 'PENDING_NEW' };
 
+/** DELETE answers by omsOrderId (default: accepted), and optional gates a
+ *  test resolves to hold a DELETE in flight. */
+let deleteReplies: Record<string, unknown> = {};
+let deleteGates: Record<string, Promise<void>> = {};
+let putReply: unknown = { accepted: true };
+
 function stubFetch() {
   calls = [];
+  deleteReplies = {};
+  deleteGates = {};
+  putReply = { accepted: true };
   postReply = { accepted: true, omsOrderId: '331911111111111111', status: 'PENDING_NEW' };
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
     let body: unknown = {};
-    if (url.includes('/api/v1/orders') && init?.method === 'POST') body = postReply;
+    if (url.includes('/api/v1/orders/') && init?.method === 'DELETE') {
+      const id = url.split('/').pop()!;
+      const gate = deleteGates[id];
+      if (gate) await gate;
+      body = deleteReplies[id] ?? { accepted: true, message: 'Order cancelled' };
+    } else if (url.includes('/api/v1/orders/') && init?.method === 'PUT') body = putReply;
+    else if (url.includes('/api/v1/orders') && init?.method === 'POST') body = postReply;
     else if (url.includes('/api/v1/auth/me')) body = { userId: 1, username: 'dev' };
     else if (url.includes('/api/v1/orders') || url.includes('/api/v1/executions')) body = [];
     else if (url.includes('/api/v1/accounts')) body = { userId: 1, assets: [] };
@@ -357,6 +372,295 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.keyDown(document.body, { key: 'Enter' });
     await waitFor(() => expect(posts()).toHaveLength(1));
     expect(JSON.parse(String(posts()[0].init!.body)).quantity).toBe('0.50000000');
+  });
+
+  // ---- rung menu, order popovers, own-order actions, one-click ------------
+
+  const strip = () => screen.getByRole('status', { name: /staged order/i });
+  const deletes = () => calls.filter(c => c.url.includes('/api/v1/orders/') && c.init?.method === 'DELETE');
+  const puts = () => calls.filter(c => c.url.includes('/api/v1/orders/') && c.init?.method === 'PUT');
+
+  /** Push an own order through the OMS socket (the user-scoped feed). */
+  function pushOwn(o: { id: string; side?: 'BUY' | 'SELL'; type?: string; price: number; qty?: number; status?: string }) {
+    const oms = MockWebSocket.instances.find(w => w.url.endsWith('/ws/v1'))!;
+    const q = (o.qty ?? 0.5).toFixed(8);
+    act(() => {
+      oms.onopen?.();
+      oms.onmessage?.({
+        data: JSON.stringify({
+          omsOrderId: o.id,
+          clusterOrderId: '7',
+          userId: 1,
+          marketId: 1,
+          side: o.side ?? 'BUY',
+          orderType: o.type ?? 'LIMIT',
+          timeInForce: 'GTC',
+          price: o.price.toFixed(8),
+          quantity: q,
+          filledQty: '0',
+          remainingQty: q,
+          stopPrice: null,
+          status: o.status ?? 'NEW',
+          rejectReason: null,
+          createdAtMs: Number(o.id),
+          updatedAtMs: Number(o.id),
+        }),
+      });
+    });
+  }
+
+  function openRungMenu(name: RegExp) {
+    fireEvent.contextMenu(screen.getByRole('gridcell', { name }), { clientX: 200, clientY: 200 });
+    return screen.getByRole('menu', { name: /^orders at/i });
+  }
+
+  const itemNames = (menu: HTMLElement) =>
+    Array.from(menu.querySelectorAll('[role="menuitem"]')).map(i => i.firstElementChild!.textContent);
+
+  it('rung menu: the sides flip with the rung against the last price', async () => {
+    await ladderWithBook();
+    // Below the touch's middle: buy limit, sell stops, buy iceberg.
+    let menu = openRungMenu(/^buy 0.25 btc at 97,390/i);
+    expect(menu.getAttribute('aria-label')).toBe('Orders at 97,390');
+    expect(menu.textContent).toContain('At 97,390 · 0.25 BTC');
+    expect(itemNames(menu)).toEqual([
+      'Buy limit', 'Sell stop loss', 'Sell stop limit…', 'Sell trailing stop…', 'Buy iceberg…',
+    ]);
+    expect(screen.getByRole('menuitem', { name: /buy limit/i }).textContent).toContain('click');
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    // Above it: everything flips.
+    menu = openRungMenu(/^sell 0.25 btc at 97,415/i);
+    expect(itemNames(menu)).toEqual([
+      'Sell limit', 'Buy stop loss', 'Buy stop limit…', 'Buy trailing stop…', 'Sell iceberg…',
+    ]);
+    // A plain item stages at once; nothing is sent.
+    fireEvent.click(screen.getByRole('menuitem', { name: /buy stop loss/i }));
+    expect(strip().textContent).toContain('Buy 0.25 BTC, stop 97,415');
+    expect(strip().textContent).toContain('Stop loss · GTC');
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('stop-limit popover: stop prefilled from the rung, both prices snapped, Stage then Enter', async () => {
+    await ladderWithBook();
+    openRungMenu(/^buy 0.25 btc at 97,390/i);
+    fireEvent.click(screen.getByRole('menuitem', { name: /sell stop limit/i }));
+    const pop = screen.getByRole('dialog', { name: /sell stop limit/i });
+    const stop = screen.getByLabelText(/stop price \(triggers at or below\)/i) as HTMLInputElement;
+    expect(stop.value).toBe('97390');
+    expect(document.activeElement).toBe(stop);
+    // No GTD: the API has no expiry field.
+    expect(pop.querySelector('select')!.textContent).not.toContain('GTD');
+
+    fireEvent.change(stop, { target: { value: '97389.6' } });
+    fireEvent.change(screen.getByLabelText(/^limit price/i), { target: { value: '97384.4' } });
+    fireEvent.click(screen.getByRole('button', { name: /stage sell stop/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(strip().textContent).toContain('Sell 0.25 BTC, stop 97,390, limit 97,384');
+    expect(strip().textContent).toContain('Stop limit · GTC');
+    // The strip has no second-value field of its own any more.
+    expect(strip().querySelector('input')).toBeNull();
+    expect(posts()).toHaveLength(0);
+
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    const body = JSON.parse(String(posts()[0].init!.body));
+    expect(body.orderType).toBe('STOP_LIMIT');
+    expect(body.side).toBe('SELL');
+    expect(body.stopPrice).toBe('97390.00000000');
+    expect(body.price).toBe('97384.00000000');
+    expect(body.quantity).toBe('0.25000000');
+    expect(body.userId).toBeUndefined();
+  });
+
+  it('stop-limit popover: an out-of-range stop is an inline error and nothing is staged', async () => {
+    await ladderWithBook();
+    openRungMenu(/^buy 0.25 btc at 97,390/i);
+    fireEvent.click(screen.getByRole('menuitem', { name: /sell stop limit/i }));
+    fireEvent.change(screen.getByLabelText(/stop price/i), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /stage sell stop/i }));
+    expect(screen.getByRole('dialog').textContent).toMatch(/price must be within/i);
+    expect(strip().textContent).not.toContain('Staged');
+  });
+
+  it('defaults on Iceberg: a rung click opens the iceberg popover, Stage then Enter', async () => {
+    await ladderWithBook();
+    fireEvent.click(screen.getByRole('button', { name: /order type and time in force/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /iceberg/i }));
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,395/i }));
+    screen.getByRole('dialog', { name: /buy iceberg/i });
+    fireEvent.change(screen.getByLabelText(/^show btc/i), { target: { value: '0.05' } });
+    fireEvent.click(screen.getByRole('button', { name: /stage buy iceberg/i }));
+    expect(strip().textContent).toContain('Buy 0.25 BTC @ 97,395, show 0.05');
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    const body = JSON.parse(String(posts()[0].init!.body));
+    expect(body.orderType).toBe('ICEBERG');
+    expect(body.price).toBe('97395.00000000');
+    expect(body.displayQuantity).toBe('0.05000000');
+  });
+
+  it('Move sends a PUT with the new price only, snapped', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9001', price: 97_390 });
+    fireEvent.click(await screen.findByRole('button', { name: /your buy order at 97,390.*cancel or move/i }));
+    screen.getByRole('menu', { name: /your orders at 97,390/i });
+    fireEvent.click(screen.getByRole('menuitem', { name: /move \(re-queues\)/i }));
+    const input = screen.getByLabelText(/new price/i) as HTMLInputElement;
+    expect(input.value).toBe('97390');
+    fireEvent.change(input, { target: { value: '97395.4' } });
+    fireEvent.click(screen.getByRole('button', { name: /^move$/i }));
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0].url).toMatch(/\/api\/v1\/orders\/9001$/);
+    const body = JSON.parse(String(puts()[0].init!.body));
+    expect(body).toEqual({ price: '97395.00000000' });
+    await waitFor(() => expect(strip().textContent).toContain('Moved to 97,395 (re-queued)'));
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('Move is absent for stop-limit and iceberg orders: Cancel only', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9101', type: 'STOP_LIMIT', price: 97_385 });
+    pushOwn({ id: '9102', type: 'ICEBERG', price: 97_380 });
+    for (const price of ['97,385', '97,380']) {
+      const chip = await screen.findByRole('button', { name: new RegExp(`your buy order at ${price}.*\\. cancel$`, 'i') });
+      fireEvent.click(chip);
+      const menu = screen.getByRole('menu', { name: new RegExp(`your orders at ${price}`, 'i') });
+      expect(itemNames(menu)).toEqual(['Cancel']);
+      fireEvent.keyDown(menu, { key: 'Escape' });
+    }
+  });
+
+  it('cancel from the chip: pending is per order, never a shared flag', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9201', price: 97_390 });
+    pushOwn({ id: '9202', price: 97_390, qty: 0.3 });
+    let release!: () => void;
+    deleteGates['9201'] = new Promise<void>(r => {
+      release = r;
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /your buy orders \(2\) at 97,390/i }));
+    const menu = screen.getByRole('menu', { name: /your orders at 97,390/i });
+    const cancels = () => Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(i => i.textContent!.startsWith('Cancel'));
+    // Oldest first: 9201 then 9202.
+    fireEvent.click(cancels()[0]);
+    await waitFor(() => expect(deletes()).toHaveLength(1));
+    expect(cancels()[0].getAttribute('aria-disabled')).toBe('true');
+    expect(cancels()[0].textContent).toContain('Cancelling…');
+    expect(cancels()[1].getAttribute('aria-disabled')).toBeNull();
+    await act(async () => release());
+    await waitFor(() => expect(strip().textContent).toContain('Cancelled: Buy 0.5 BTC @ 97,390'));
+  });
+
+  it('Cancel all asks first, then reports one failed DELETE and leaves that order', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9301', price: 97_390 });
+    pushOwn({ id: '9302', price: 97_380 });
+    deleteReplies['9302'] = { accepted: false, message: 'ORDER_NOT_FOUND' };
+    fireEvent.click(await screen.findByRole('button', { name: /^cancel all · 2$/i }));
+    expect(strip().textContent).toContain('Cancel all 2 open BTC-USD orders?');
+    expect(deletes()).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel 2$/i }));
+    const alert = await screen.findByRole('alert');
+    expect(deletes()).toHaveLength(2);
+    expect(alert.textContent).toContain('1 cancelled, 1 failed');
+    expect(alert.textContent).toContain('ORDER_NOT_FOUND');
+    expect(alert.getAttribute('title')).toContain('97,380');
+    expect(screen.queryByRole('button', { name: /your buy order at 97,390/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /your buy order at 97,380/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^cancel all · 1$/i })).toBeTruthy();
+  });
+
+  it('Cancel all: Keep (or Esc) backs out without sending', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9401', price: 97_390 });
+    fireEvent.click(await screen.findByRole('button', { name: /^cancel all · 1$/i }));
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(strip().textContent).not.toContain('Cancel all 1 open');
+    fireEvent.click(screen.getByRole('button', { name: /^cancel all · 1$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^keep$/i }));
+    await act(async () => {});
+    expect(deletes()).toHaveLength(0);
+  });
+
+  const oneClick = () => screen.getByRole('switch', { name: /one-click/i });
+
+  it('one-click: off by default; armed, a click places at once and a crossing click still stages', async () => {
+    await ladderWithBook();
+    expect(oneClick().getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(oneClick());
+    expect(oneClick().getAttribute('aria-checked')).toBe('true');
+    expect(strip().getAttribute('data-armed')).toBe('true');
+    expect(strip().textContent).toContain('One-click on');
+
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,395/i }));
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    const body = JSON.parse(String(posts()[0].init!.body));
+    expect(body.price).toBe('97395.00000000');
+    expect(body.side).toBe('BUY');
+    await waitFor(() => expect(strip().textContent).toContain('Accepted: Buy 0.25 BTC @ 97,395'));
+
+    // Crossing the spread: staged with the warning, not sent.
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,410/i }));
+    await act(async () => {});
+    expect(posts()).toHaveLength(1);
+    expect(strip().textContent).toContain('Crosses the spread: executes now');
+  });
+
+  it('one-click: a market order still needs a second Enter', async () => {
+    await ladderWithBook();
+    fireEvent.click(oneClick());
+    fireEvent.click(screen.getByRole('button', { name: /^sell market$/i }));
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    await act(async () => {});
+    expect(posts()).toHaveLength(0);
+    expect(strip().textContent).toContain('press Enter again');
+  });
+
+  it('one-click: Esc disarms', async () => {
+    await ladderWithBook();
+    fireEvent.click(oneClick());
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(oneClick().getAttribute('aria-checked')).toBe('false');
+    expect(strip().getAttribute('data-armed')).toBeNull();
+    // Disarmed: a click only stages again.
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,395/i }));
+    await act(async () => {});
+    expect(posts()).toHaveLength(0);
+    expect(strip().textContent).toContain('Staged');
+  });
+
+  it('one-click: a market switch disarms, and switching back does not re-arm', async () => {
+    await ladderWithBook();
+    fireEvent.click(oneClick());
+    fireEvent.click(screen.getByRole('button', { name: /market btc-usd/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /ethereum/i }));
+    await screen.findByRole('button', { name: /market eth-usd\. change market/i });
+    expect(oneClick().getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: /market eth-usd/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /bitcoin/i }));
+    await screen.findByRole('button', { name: /market btc-usd\. change market/i });
+    expect(oneClick().getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('one-click: a dropped connection disarms', async () => {
+    await ladderWithBook();
+    fireEvent.click(oneClick());
+    expect(oneClick().getAttribute('aria-checked')).toBe('true');
+    const ws = MockWebSocket.instances.find(w => w.url.endsWith('/ws'))!;
+    act(() => (ws.onclose as ((e: { code: number; reason: string }) => void) | null)?.({ code: 1006, reason: '' }));
+    await waitFor(() => expect(oneClick().getAttribute('aria-checked')).toBe('false'));
+  });
+
+  it('one-click cannot be armed signed out', async () => {
+    localStorage.removeItem('oe.session');
+    window.history.replaceState({}, '', '/?ui=ladder');
+    renderApp();
+    await screen.findByRole('grid', { name: /price ladder/i });
+    pushBook();
+    expect((oneClick() as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('keeps the default screen without the flag', async () => {

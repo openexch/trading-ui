@@ -319,7 +319,7 @@ function MarketPage() {
 
   // OMS REST keys on omsOrderId, NOT the engine orderId the WS feed uses (#25)
   const handleCancelOrder = useCallback(async (order: UserOrder) => {
-    if (!order.omsOrderId) return; // not OMS-managed; nothing we can cancel
+    if (!order.omsOrderId) return { success: false, message: 'Order is not OMS-managed' }; // nothing we can cancel
     track(EV.order_cancel_submit, { market: order.market, side: order.side, order_type: order.type });
     const startedAt = Date.now();
     const result = await cancelOrder(order.omsOrderId);
@@ -331,6 +331,7 @@ function MarketPage() {
     if (result.success) {
       removeOrder(order.omsOrderId);
     }
+    return result;
   }, [cancelOrder, removeOrder]);
 
   const handleReplaceOrder = useCallback(async (order: UserOrder, price?: number, quantity?: number) => {
@@ -376,6 +377,8 @@ function MarketPage() {
           signedIn={!!session}
           onSubmitOrder={handleSubmitOrder}
           rejectNotice={rejectNotice}
+          onCancelOrder={handleCancelOrder}
+          onReplaceOrder={handleReplaceOrder}
           left={
             <div className="min-h-0 flex-1 overflow-hidden">
               <TradeList trades={trades} />
