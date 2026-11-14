@@ -42,7 +42,7 @@ import type { OwnOrderActions } from './OwnOrderChip';
 import type { Anchor } from '../../ui';
 import { formatFixed, formatSmall } from './format';
 import { useLadderKeys } from './useLadderKeys';
-import type { LadderHandle, PassedCommand } from './useLadderKeys';
+import type { LadderHandle, LadderReveal, PassedCommand } from './useLadderKeys';
 
 export interface LadderProps {
   market: Market;
@@ -77,6 +77,8 @@ export interface LadderProps {
   /** Grouping held by the caller (the phone settings row); without it the
    *  ladder keeps its own and shows the select in its column header. */
   grouping?: { value: number; onChange: (multiplier: number) => void };
+  /** An own order to bring into view and focus (Show on ladder). */
+  reveal?: LadderReveal | null;
 }
 
 /** The rung the window follows, or null when the model has nothing yet. */
@@ -114,6 +116,7 @@ export function Ladder({
   handleRef,
   density = 'desktop',
   grouping,
+  reveal = null,
 }: LadderProps) {
   const ui = marketUi(market);
   const phone = density === 'phone';
@@ -171,6 +174,7 @@ export function Ladder({
     onCommand,
     onAnnounce,
     handleRef,
+    reveal,
   });
   const { measureRef } = win;
   const { gridRef: keysGridRef } = keys;

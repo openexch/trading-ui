@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useLayoutEffect, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { BookLevel, Market, OrderBook, UserOrder } from '../../types/market';
 import { Ladder } from './Ladder';
@@ -642,5 +643,48 @@ describe('Ladder keyboard', () => {
     fireEvent.keyDown(document.activeElement!, { key: ']' });
     fireEvent.keyDown(document.activeElement!, { key: 'Delete' });
     expect(onAnnounce).toHaveBeenLastCalledWith('Sign in to manage your orders');
+  });
+});
+
+describe('Ladder keyboard focus across an extra render', () => {
+  // A key that moves focus must land even when another render of the
+  // ladder commits between the key and the render that carries the new
+  // focus (a parent re-render whose effects have not run yet when the key
+  // arrives). Here the key is dispatched from a layout effect of such a
+  // render, so the ladder's passive effect for it is still pending.
+  it('an arrow key pressed while another render is committing still moves focus', () => {
+    const book = bookAround(1000);
+    const open: UserOrder[] = [];
+    const levelChanges = new Map();
+    let bump = () => {};
+    let onCommit: (() => void) | null = null;
+    function Probe({ tick }: { tick: number }) {
+      useLayoutEffect(() => {
+        const f = onCommit;
+        onCommit = null;
+        f?.();
+      }, [tick]);
+      return null;
+    }
+    function Harness() {
+      const [tick, setTick] = useState(0);
+      bump = () => setTick(t => t + 1);
+      return (
+        <>
+          <Ladder market={TEST} orderBook={book} levelChanges={levelChanges} openOrders={open} lastPrice={1000} />
+          <Probe tick={tick} />
+        </>
+      );
+    }
+    render(<Harness />);
+    resize(220);
+    focusLadder();
+    expect(focusedPrice()).toBe(1000);
+    act(() => {
+      onCommit = () =>
+        document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+      bump();
+    });
+    expect(focusedPrice()).toBe(1001);
   });
 });

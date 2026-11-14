@@ -26,6 +26,10 @@
  *   price only). Cancel all asks first, then cancels this market's open
  *   orders one by one through the page's cancel handler. Pending state is
  *   kept per omsOrderId here, never in the shared API loading flag.
+ *   Cancel selected (the all-orders dialog) cancels a given list the same
+ *   way, across markets, after the dialog has asked.
+ * - Reveal: an order shown from the all-orders dialog is brought into view
+ *   (pinned, as a jump marker does) and its rung takes focus.
  * - Keyboard (DESIGN.md rule 11, keymap.ts): L focuses the ladder and ?
  *   opens the shortcut sheet from anywhere outside text fields, menus and
  *   dialogs. The rest work only while the ladder grid has focus: the grid
@@ -51,6 +55,7 @@ import type {
   TimeInForce,
   UserOrder,
 } from '../../types/market';
+import { MARKETS } from '../../types/market';
 import type { LevelChange } from '../../hooks/useOrderBook';
 import { useBalances } from '../../hooks/useBalances';
 import { EV, track } from '../../analytics';
@@ -84,7 +89,7 @@ import { RungMenu } from './RungMenu';
 import type { TicketKind } from './RungMenu';
 import { OrderPopover } from './OrderPopover';
 import type { OwnOrderActions, PendingKind } from './OwnOrderChip';
-import type { LadderHandle, PassedCommand } from './useLadderKeys';
+import type { LadderHandle, LadderReveal, PassedCommand } from './useLadderKeys';
 import { globalCommand, inOverlay, isTypingTarget } from './keymap';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { formatCompactSize } from './format';
@@ -123,14 +128,21 @@ export interface TradingLadderProps {
   /** Phone: the ladder tab is on screen. The staged order's sheet shows only
    *  then; results and the Cancel all question show on every tab. */
   active?: boolean;
+  /** An own order to bring into view and focus (Show on ladder). Acted on
+   *  once per `seq`, when it is on this market and the book has arrived. */
+  reveal?: LadderReveal | null;
 }
 
 /** The ladder's own-order actions, as the side panels use them. */
 export interface LadderOrderActions {
   /** Orders with a request in flight, by omsOrderId. */
   pending: ReadonlyMap<string, PendingKind>;
-  /** Cancel one order; the result lands in the strip. */
-  cancel: (order: UserOrder) => void;
+  /** Cancel one order; the result lands in the strip and is returned. */
+  cancel: (order: UserOrder) => Promise<CancelResult | null>;
+  /** Cancel these orders one by one (any market), with the same pending
+   *  state; the summary lands in the strip and the results are returned.
+   *  The caller asks first. */
+  cancelMany: (orders: readonly UserOrder[]) => Promise<CancelResult[]>;
   /** Ask the strip's Cancel all question for this market and move focus
    *  to its confirm button. Nothing is sent until it is confirmed. */
   askCancelAll: () => void;
@@ -405,18 +417,21 @@ export function TradingLadder(props: TradingLadderProps) {
   );
 
   const orderText = useCallback(
-    (o: UserOrder) =>
+    (o: UserOrder) => {
+      // Orders from the all-orders dialog may be on another market.
+      const m = o.marketId === market.id ? market : (MARKETS.find(x => x.id === o.marketId) ?? market);
       // A stop awaiting its trigger has no price the UI can show (the order
       // model carries no trigger price): name it instead of printing one.
-      o.status === 'PENDING_TRIGGER'
-        ? `${o.side === 'BID' ? 'Buy' : 'Sell'} ${o.remainingQuantity} ${market.baseAsset} stop, awaiting trigger`
-        : `${o.side === 'BID' ? 'Buy' : 'Sell'} ${o.remainingQuantity} ${market.baseAsset} @ ${formatPriceText(market, o.price)}`,
+      return o.status === 'PENDING_TRIGGER'
+        ? `${o.side === 'BID' ? 'Buy' : 'Sell'} ${o.remainingQuantity} ${m.baseAsset} stop, awaiting trigger`
+        : `${o.side === 'BID' ? 'Buy' : 'Sell'} ${o.remainingQuantity} ${m.baseAsset} @ ${formatPriceText(m, o.price)}`;
+    },
     [market],
   );
 
   const cancelOne = useCallback(
-    async (o: UserOrder) => {
-      if (!onCancelOrder || !o.omsOrderId) return;
+    async (o: UserOrder): Promise<CancelResult | null> => {
+      if (!onCancelOrder || !o.omsOrderId) return null;
       setPendingFor([o.omsOrderId], 'cancel');
       let res: { success: boolean; message: string };
       try {
@@ -431,6 +446,7 @@ export function TradingLadder(props: TradingLadderProps) {
           ? { kind: 'accepted', text: `Cancelled: ${orderText(o)}` }
           : { kind: 'rejected', text: `Cancel failed: ${orderText(o)}: ${res.message}` },
       );
+      return { order: o, success: res.success, message: res.message };
     },
     [onCancelOrder, setPendingFor, showResult, orderText],
   );
@@ -458,38 +474,65 @@ export function TradingLadder(props: TradingLadderProps) {
     [onReplaceOrder, setPendingFor, showResult, orderText, market],
   );
 
+  /** Cancel `targets` one at a time and report the run in the strip. */
+  const runCancels = useCallback(
+    async (targets: readonly UserOrder[], label: string): Promise<CancelResult[]> => {
+      if (!onCancelOrder || targets.length === 0) return [];
+      setPendingFor(targets.map(o => o.omsOrderId), 'cancel');
+      const results: CancelResult[] = [];
+      // One at a time: there is no bulk endpoint, and a sequential loop keeps
+      // the OMS from seeing a burst.
+      for (const o of targets) {
+        let res: { success: boolean; message: string };
+        try {
+          res = await onCancelOrder(o);
+        } catch (err) {
+          res = { success: false, message: err instanceof Error ? err.message : 'Network error' };
+        }
+        setPendingFor([o.omsOrderId], null);
+        results.push({ order: o, success: res.success, message: res.message });
+      }
+      const sum = cancelAllSummary(results, label);
+      const failedDetail = results
+        .filter(r => !r.success)
+        .map(r => `${orderText(r.order)}: ${r.message}`)
+        .join('\n');
+      showResult(
+        sum.ok
+          ? { kind: 'accepted', text: sum.text }
+          : { kind: 'rejected', text: sum.text, code: failedDetail || null },
+      );
+      return results;
+    },
+    [onCancelOrder, setPendingFor, orderText, showResult],
+  );
+
   const cancelAll = useCallback(async () => {
     if (!onCancelOrder) return;
     const targets = marketOrders.filter(o => !pending.has(o.omsOrderId));
     setCancelAsk(null);
     if (targets.length === 0) return;
     setCancelRun({ marketId: market.id, count: targets.length });
-    setPendingFor(targets.map(o => o.omsOrderId), 'cancel');
-    const results: CancelResult[] = [];
-    // One at a time: there is no bulk endpoint, and a sequential loop keeps
-    // the OMS from seeing a burst.
-    for (const o of targets) {
-      let res: { success: boolean; message: string };
-      try {
-        res = await onCancelOrder(o);
-      } catch (err) {
-        res = { success: false, message: err instanceof Error ? err.message : 'Network error' };
-      }
-      setPendingFor([o.omsOrderId], null);
-      results.push({ order: o, success: res.success, message: res.message });
+    try {
+      await runCancels(targets, 'Cancel all');
+    } finally {
+      setCancelRun(null);
     }
-    setCancelRun(null);
-    const sum = cancelAllSummary(results);
-    const failedDetail = results
-      .filter(r => !r.success)
-      .map(r => `${orderText(r.order)}: ${r.message}`)
-      .join('\n');
-    showResult(
-      sum.ok
-        ? { kind: 'accepted', text: sum.text }
-        : { kind: 'rejected', text: sum.text, code: failedDetail || null },
-    );
-  }, [onCancelOrder, marketOrders, pending, market.id, setPendingFor, orderText, showResult]);
+  }, [onCancelOrder, marketOrders, pending, market.id, runCancels]);
+
+  // Orders already in flight are skipped, as Cancel all does.
+  const pendingRef = useRef(pending);
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
+  const cancelMany = useCallback(
+    (orders: readonly UserOrder[]) =>
+      runCancels(
+        orders.filter(o => o.omsOrderId !== '' && !pendingRef.current.has(o.omsOrderId)),
+        'Cancel selected',
+      ),
+    [runCancels],
+  );
 
   const ownActions: OwnOrderActions | undefined = useMemo(
     () =>
@@ -528,13 +571,14 @@ export function TradingLadder(props: TradingLadderProps) {
       signedIn && onCancelOrder
         ? {
             pending,
-            cancel: o => void cancelOne(o),
+            cancel: cancelOne,
+            cancelMany,
             askCancelAll: askFromPanel,
             cancelAllCount: running ? cancelRun!.count : marketOrders.length,
             cancelAllRunning: running,
           }
         : null,
-    [signedIn, onCancelOrder, pending, cancelOne, askFromPanel, running, cancelRun, marketOrders.length],
+    [signedIn, onCancelOrder, pending, cancelOne, cancelMany, askFromPanel, running, cancelRun, marketOrders.length],
   );
   useEffect(() => {
     onOrderActions?.(panelActions);
@@ -882,6 +926,7 @@ export function TradingLadder(props: TradingLadderProps) {
           onCommand={onCommand}
           onAnnounce={announce}
           handleRef={ladderHandle}
+          reveal={props.reveal ?? null}
         />
       </div>
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />

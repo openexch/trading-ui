@@ -21,6 +21,8 @@
  *   Cancel all) are handed to the caller through `onCommand`.
  * - Keys are read only when the event comes from the grid itself, never
  *   from an input or an open menu or popover that React bubbles through it.
+ * - `reveal` (Show on ladder) brings an own order's rung into view the way
+ *   [ and ] do, and focuses it, once the window has rows on that market.
  */
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, FocusEvent as ReactFocusEvent, Ref } from 'react';
@@ -41,6 +43,12 @@ export type PassedCommand = Extract<
   { kind: 'stageMarket' | 'preset' | 'sizeStep' | 'nextType' | 'nextTif' | 'toggleOneClick' | 'cancelAll' }
 >;
 
+/** An own order to bring into view and focus, acted on once per `seq`. */
+export interface LadderReveal {
+  seq: number;
+  order: UserOrder;
+}
+
 export interface LadderHandle {
   /** Move keyboard focus to the ladder (the L key). */
   focus: () => void;
@@ -58,6 +66,7 @@ export interface LadderKeysOptions {
   onCommand?: (cmd: PassedCommand) => void;
   onAnnounce?: (text: string) => void;
   handleRef?: Ref<LadderHandle>;
+  reveal?: LadderReveal | null;
 }
 
 interface FocusState {
@@ -84,8 +93,11 @@ export function useLadderKeys(opts: LadderKeysOptions) {
   const [focusRaw, setFocus] = useState<FocusState | null>(null);
   const focus = focusRaw && focusRaw.marketId === market.id ? focusRaw : null;
   const [gridEl, setGridEl] = useState<HTMLElement | null>(null);
-  /** Set when a key moved focus: the next commit focuses the tab stop. */
-  const wantFocus = useRef(false);
+  /** Set when a key moved focus to the focus state it set. Only the commit
+   *  that renders that state may act on it: an earlier commit (an unrelated
+   *  render whose effects run after the key) still has the old tab stop and
+   *  must leave the request for the commit that carries the new one. */
+  const wantFocus = useRef<FocusState | null>(null);
   /** The element inside the grid that last had focus (see the effect). */
   const lastFocused = useRef<HTMLElement | null>(null);
 
@@ -118,8 +130,9 @@ export function useLadderKeys(opts: LadderKeysOptions) {
       lastFocused.current !== null &&
       !lastFocused.current.isConnected &&
       (active === null || active === document.body);
-    if (wantFocus.current || lost || (active === gridEl && cell)) {
-      wantFocus.current = false;
+    const wanted = wantFocus.current !== null && wantFocus.current === focusRaw;
+    if (wanted || lost || (active === gridEl && cell)) {
+      if (wanted) wantFocus.current = null;
       if (cell) {
         if (active !== cell) cell.focus();
       } else if (active !== gridEl) {
@@ -143,9 +156,25 @@ export function useLadderKeys(opts: LadderKeysOptions) {
   const announce = (text: string) => onAnnounce?.(text);
 
   const focusRungAt = (rung: number, orderKey: string | null) => {
-    setFocus({ marketId: market.id, price: priceOf(rung), orderKey });
-    wantFocus.current = true;
+    const next: FocusState = { marketId: market.id, price: priceOf(rung), orderKey };
+    setFocus(next);
+    wantFocus.current = next;
   };
+
+  // Show on ladder: once per request, when the window has rows on the
+  // order's market. The rung is the one the order's chip is drawn on.
+  const revealed = useRef<number | null>(null);
+  const reveal = opts.reveal ?? null;
+  useEffect(() => {
+    if (!reveal || revealed.current === reveal.seq) return;
+    if (reveal.order.marketId !== market.id || !view || view.rows.length === 0) return;
+    revealed.current = reveal.seq;
+    const key = ownKey(reveal.order);
+    const side: LadderSide = reveal.order.side === 'BID' ? 'BID' : 'ASK';
+    const rung = model.own.find(p => ownKey(p.order) === key)?.rung ?? rungOf(grid, groupTicks, reveal.order.price, side);
+    if (!visible(rung)) pinTo(rung);
+    focusRungAt(rung, key);
+  });
 
   /** The own order Del and Alt+arrows act on, or null (and why, announced). */
   const selectedOrder = (rung: number): UserOrder | null => {

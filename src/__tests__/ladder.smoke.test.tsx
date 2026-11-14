@@ -7,7 +7,7 @@
  * the ladder as rungs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 
 vi.mock('../components/Chart/Chart', () => ({
@@ -386,7 +386,15 @@ describe('Ladder shell (?ui=ladder)', () => {
   const puts = () => calls.filter(c => c.url.includes('/api/v1/orders/') && c.init?.method === 'PUT');
 
   /** Push an own order through the OMS socket (the user-scoped feed). */
-  function pushOwn(o: { id: string; side?: 'BUY' | 'SELL'; type?: string; price: number; qty?: number; status?: string }) {
+  function pushOwn(o: {
+    id: string;
+    side?: 'BUY' | 'SELL';
+    type?: string;
+    price: number;
+    qty?: number;
+    status?: string;
+    marketId?: number;
+  }) {
     const oms = MockWebSocket.instances.find(w => w.url.endsWith('/ws/v1'))!;
     const q = (o.qty ?? 0.5).toFixed(8);
     act(() => {
@@ -396,7 +404,7 @@ describe('Ladder shell (?ui=ladder)', () => {
           omsOrderId: o.id,
           clusterOrderId: '7',
           userId: 1,
-          marketId: 1,
+          marketId: o.marketId ?? 1,
           side: o.side ?? 'BUY',
           orderType: o.type ?? 'LIMIT',
           timeInForce: 'GTC',
@@ -912,6 +920,123 @@ describe('Ladder shell (?ui=ladder)', () => {
     // The visible button opens it too.
     fireEvent.click(screen.getByRole('button', { name: /keyboard shortcuts/i }));
     expect(screen.getByRole('dialog', { name: /trade from the keyboard/i })).toBeTruthy();
+  });
+
+  // ---- View all: the all-orders dialog --------------------------------------
+
+  const viewAll = () => fireEvent.click(screen.getByRole('button', { name: 'View all orders' }));
+  const allDialog = () => screen.getByRole('dialog', { name: 'Your orders' });
+
+  it('View all: Cancel selected asks inside the dialog, then sends exactly one DELETE per selected order', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9801', price: 97_390 });
+    pushOwn({ id: '9802', price: 97_380 });
+    pushOwn({ id: '9803', price: 97_370 });
+    await waitFor(() => expect(ordersPanel().querySelectorAll('[data-order-row]')).toHaveLength(3));
+    const opener = screen.getByRole('button', { name: 'View all orders' });
+    viewAll();
+    const dlg = allDialog();
+    expect(dlg.querySelectorAll('[data-all-orders-row]')).toHaveLength(3);
+    // Focus starts on the selected tab.
+    expect(document.activeElement).toBe(within(dlg).getByRole('tab', { name: /^open · 3$/i }));
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Buy 0.50 BTC-USD at 97,390' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Buy 0.50 BTC-USD at 97,370' }));
+    expect(dlg.textContent).toContain('2 selected');
+
+    // Asked, not sent; the confirm has focus; Esc backs out and keeps the dialog.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel selected…' }));
+    expect(dlg.textContent).toContain('Cancel 2 selected orders?');
+    const confirm = screen.getByRole('button', { name: /^cancel 2$/i });
+    expect(document.activeElement).toBe(confirm);
+    fireEvent.keyDown(confirm, { key: 'Escape' });
+    await act(async () => {});
+    expect(deletes()).toHaveLength(0);
+    expect(allDialog()).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel selected…' }));
+
+    // Ask again and confirm: one DELETE per selected order, nothing else.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel selected…' }));
+    fireEvent.click(screen.getByRole('button', { name: /^cancel 2$/i }));
+    await waitFor(() => expect(deletes()).toHaveLength(2));
+    expect(deletes().map(d => d.url.split('/').pop()).sort()).toEqual(['9801', '9803']);
+    await waitFor(() => expect(dlg.querySelector('[data-cancel-notice]')?.textContent).toBe('Cancelled 2 orders'));
+    expect(document.activeElement).toBe(dlg.querySelector('[data-cancel-notice]'));
+    // The same result reached the strip behind the dialog.
+    expect(strip().textContent).toContain('Cancelled 2 orders');
+    await waitFor(() => expect(dlg.querySelectorAll('[data-all-orders-row]')).toHaveLength(1));
+    await act(async () => {});
+    expect(deletes()).toHaveLength(2);
+
+    // Esc closes the dialog and focus returns to ⤢.
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('View all: × cancels one row through the ladder; a stop awaiting its trigger shows a dash and no ladder button', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9811', price: 97_390 });
+    pushOwn({ id: '9812', side: 'SELL', type: 'STOP_LOSS', price: 0, status: 'PENDING_TRIGGER' });
+    await waitFor(() => expect(ordersPanel().querySelectorAll('[data-order-row]')).toHaveLength(2));
+    viewAll();
+    const dlg = allDialog();
+    const stopRow = dlg.querySelector<HTMLElement>('[data-all-orders-row="9812"]')!;
+    expect(stopRow.textContent).toContain('Stop loss, awaiting trigger');
+    expect(stopRow.textContent).toContain('–');
+    expect(stopRow.textContent).not.toContain('Show on ladder');
+
+    let release!: () => void;
+    deleteGates['9811'] = new Promise<void>(r => (release = r));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Buy 0.50 BTC-USD at 97,390' }));
+    await waitFor(() => expect(deletes()).toHaveLength(1));
+    expect((screen.getByRole('button', { name: 'Cancelling Buy 0.50 BTC-USD at 97,390' }) as HTMLButtonElement).disabled).toBe(true);
+    // The Orders panel behind shows the same pending state.
+    expect(ordersPanel().querySelector('[data-order-row="9811"]')!.getAttribute('data-pending')).toBe('cancel');
+    release();
+    await waitFor(() => expect(dlg.querySelector('[data-cancel-notice]')?.textContent).toBe('Cancelled: Buy 0.50 BTC-USD at 97,390'));
+    expect(deletes()[0].url).toMatch(/\/api\/v1\/orders\/9811$/);
+  });
+
+  it('View all: Show on ladder switches market, closes the dialog and focuses the order rung', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9821', marketId: 2, price: 3_590 });
+    await waitFor(() => expect(ordersPanel().textContent).toContain('+1 on other markets'));
+    viewAll();
+    fireEvent.click(screen.getByRole('button', { name: 'Show Buy 0.50 ETH-USD at 3,590.0 on the ladder' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await screen.findByRole('button', { name: /market eth-usd\. change market/i });
+    // The ETH book arrives: the window pins to the order and focuses its rung.
+    const market = MockWebSocket.instances.filter(w => w.url.endsWith('/ws'));
+    const ws = market[market.length - 1];
+    const bids = Array.from({ length: 20 }, (_, i) => ({ price: 3_600 - i * 0.5, quantity: 1, orderCount: 1 }));
+    const asks = Array.from({ length: 20 }, (_, i) => ({ price: 3_600.5 + i * 0.5, quantity: 1, orderCount: 1 }));
+    act(() => {
+      ws.onopen?.();
+      ws.onmessage?.({
+        data: JSON.stringify({ type: 'BOOK_SNAPSHOT', marketId: 2, market: 'ETH-USD', bids, asks, timestamp: 2 }),
+      });
+    });
+    await waitFor(() => expect(focusedRung()).toBe('3590'));
+    expect(screen.getByRole('button', { name: /your buy order at 3,590/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /re-centre/i })).toBeTruthy();
+  });
+
+  it('View all: History and Fills tabs render; arrow keys move between tabs', async () => {
+    await ladderWithBook();
+    viewAll();
+    const open = within(allDialog()).getByRole('tab', { name: /^open · 0$/i });
+    expect(allDialog().textContent).toContain('No open orders');
+    fireEvent.keyDown(open, { key: 'ArrowRight' });
+    const history = within(allDialog()).getByRole('tab', { name: 'History' });
+    expect(history.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(history);
+    await waitFor(() => expect(allDialog().textContent).toContain('Your completed orders will appear here'));
+    // Orders only: the fills have their own tab.
+    expect(screen.queryByRole('button', { name: /^trades$/i })).toBeNull();
+    await waitFor(() => expect(calls.some(c => c.url.includes('/api/v1/orders/history'))).toBe(true));
+    fireEvent.click(within(allDialog()).getByRole('tab', { name: 'Fills' }));
+    await waitFor(() => expect(allDialog().textContent).toContain('No fills yet'));
   });
 
   it('keeps the default screen without the flag', async () => {
