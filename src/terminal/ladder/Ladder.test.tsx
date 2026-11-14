@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { BookLevel, Market, OrderBook, UserOrder } from '../../types/market';
 import { Ladder } from './Ladder';
@@ -93,12 +93,30 @@ interface Props {
   book?: OrderBook;
   last?: number | null;
   open?: UserOrder[];
+  hold?: boolean;
+  onStage?: (side: 'BID' | 'ASK', price: number) => void;
 }
 
 function setup(initial: Props = {}) {
-  const state = { book: bookAround(1000), last: 1000 as number | null, open: [] as UserOrder[], ...initial };
+  const state = {
+    book: bookAround(1000),
+    last: 1000 as number | null,
+    open: [] as UserOrder[],
+    hold: false,
+    onStage: undefined as Props['onStage'],
+    ...initial,
+  };
   const el = (p: typeof state) => (
-    <Ladder market={TEST} orderBook={p.book} levelChanges={new Map()} openOrders={p.open} lastPrice={p.last} />
+    <Ladder
+      market={TEST}
+      orderBook={p.book}
+      levelChanges={new Map()}
+      openOrders={p.open}
+      lastPrice={p.last}
+      hold={p.hold}
+      onStage={p.onStage}
+      sizeText="0.5"
+    />
   );
   const utils = render(el(state));
   const update = (patch: Props) => {
@@ -286,9 +304,9 @@ describe('Ladder depth', () => {
     resize(220); // 1004..996; known asks 1001..1002, bids 999..998
     const unknownAsk = container.querySelector('[data-rung-price="1004"]')!;
     expect(unknownAsk.querySelector('[data-unknown]')).toBeTruthy();
-    expect(screen.getByRole('gridcell', { name: /asks at 1,004: depth unknown/i })).toBeTruthy();
-    expect(screen.getByRole('gridcell', { name: /bids at 996: depth unknown/i })).toBeTruthy();
-    expect(screen.getByRole('gridcell', { name: /asks at 1,002: 1.20000000 TST/i })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,004, depth unknown$/i })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 996, depth unknown$/i })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,002, 1.20000000 on book$/i })).toBeTruthy();
   });
 
   it('draws the spread line between the touch rungs without taking a row', () => {
@@ -312,5 +330,93 @@ describe('Ladder depth', () => {
     expect(prices).toHaveLength(9);
     expect(prices.every(p => p % 5 === 0)).toBe(true);
     expect(prices).toContain(1000);
+  });
+});
+
+// ---- first centre ---------------------------------------------------------------
+
+describe('Ladder first centre', () => {
+  it('settles on the first two-sided book even with the pointer resting on the ladder', () => {
+    // Load: a stale last price and a one-sided first update arrive first,
+    // and the pointer already rests over the ladder.
+    const asksOnly: OrderBook = { bids: [], asks: bookAround(1040).asks, lastUpdate: 1 };
+    const { container, update, region } = setup({ book: asksOnly, last: 1050 });
+    resize(220);
+    fireEvent.pointerEnter(region);
+    // Provisional: follows the only value it has.
+    expect(middle(container)).toBe(1050);
+    update({ last: 1049 });
+    expect(middle(container)).toBe(1049);
+
+    // The real book arrives: the window takes the middle of the touch,
+    // not the value computed before data, although the pointer pins.
+    update({ book: bookAround(1000), last: 1049 });
+    expect(middle(container)).toBe(1000);
+    const prices = rungPrices(container);
+    // Asks above, bids below, balanced around the spread line.
+    expect(prices.filter(p => p > 1000)).toHaveLength(4);
+    expect(prices.filter(p => p < 1000)).toHaveLength(4);
+
+    // From here on the normal rules apply: pinned while hovered.
+    update({ book: bookAround(1030), last: 1030 });
+    expect(middle(container)).toBe(1000);
+  });
+
+  it('the first paint of a two-sided book is centred, whatever the row count arrives as', () => {
+    const { container } = setup({ book: bookAround(2000), last: null });
+    resize(500);
+    expect(middle(container)).toBe(2000);
+  });
+
+  it('a reconnect (empty book) settles again on the next two-sided book', () => {
+    const { container, update, region } = setup();
+    resize(220);
+    fireEvent.pointerEnter(region);
+    update({ book: { bids: [], asks: [], lastUpdate: 2 }, last: null });
+    update({ book: bookAround(1100), last: null });
+    expect(middle(container)).toBe(1100);
+  });
+});
+
+// ---- staging -----------------------------------------------------------------
+
+describe('Ladder staging clicks', () => {
+  it('a bid cell stages a buy and an ask cell a sell at the rung price, on either side of the spread', () => {
+    const onStage = vi.fn();
+    setup({ onStage });
+    resize(220);
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 998, 1.20000000 on book$/i }));
+    expect(onStage).toHaveBeenLastCalledWith('BID', 998);
+    fireEvent.click(screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,003/i }));
+    expect(onStage).toHaveBeenLastCalledWith('ASK', 1003);
+    // A buy above the best ask is offered too (the strip warns it crosses).
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 1,003$/i }));
+    expect(onStage).toHaveBeenLastCalledWith('BID', 1003);
+  });
+
+  it('a grouped rung stages at the rung price', () => {
+    const onStage = vi.fn();
+    setup({ onStage });
+    resize(220);
+    fireEvent.change(screen.getByRole('combobox', { name: /price grouping/i }), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 995/i }));
+    expect(onStage).toHaveBeenLastCalledWith('BID', 995);
+  });
+
+  it('cells are out of the tab order: the grid stays one tab stop', () => {
+    const { container } = setup();
+    resize(220);
+    const cells = container.querySelectorAll<HTMLElement>('button[role="gridcell"]');
+    expect(cells.length).toBe(18);
+    for (const c of cells) expect(c.tabIndex).toBe(-1);
+  });
+
+  it('holds the window while an order is staged', () => {
+    const { container, update } = setup({ hold: true });
+    resize(220);
+    update({ book: bookAround(1050), last: 1050 });
+    expect(middle(container)).toBe(1000);
+    update({ hold: false });
+    expect(middle(container)).toBe(1050);
   });
 });

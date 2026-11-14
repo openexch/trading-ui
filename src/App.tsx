@@ -373,25 +373,13 @@ function MarketPage() {
             track(EV.account_drawer_open);
             setShowAccountDrawer(true);
           }}
+          signedIn={!!session}
+          onSubmitOrder={handleSubmitOrder}
+          rejectNotice={rejectNotice}
           left={
-            <>
-              <div className="max-h-[60%] flex-shrink-0 overflow-y-auto border-b border-hairline">
-                <OrderForm
-                  compact
-                  market={selectedMarket}
-                  onSubmitOrder={handleSubmitOrder}
-                  loading={apiLoading}
-                  externalPrice={clickedPrice}
-                  lastPrice={stats?.lastPrice ?? null}
-                  signedIn={!!session}
-                  onRequestSignIn={() => setShowAuthModal(true)}
-                  rejectNotice={rejectNotice}
-                />
-              </div>
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <TradeList trades={trades} />
-              </div>
-            </>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <TradeList trades={trades} />
+            </div>
           }
           right={
             <>

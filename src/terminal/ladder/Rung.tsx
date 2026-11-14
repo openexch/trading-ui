@@ -12,6 +12,11 @@
  * - Cells beyond the known depth are dimmed and hatched, never shown as empty
  *   liquidity (DESIGN.md rule 9). The deepest known rung, when part of its
  *   group lies beyond the known depth, prints its quantity as a lower bound.
+ * - Every in-range rung offers both actions: the bid cell stages a buy at the
+ *   rung's price and the ask cell a sell, on either side of the spread (a
+ *   buy above the best ask crosses, and the strip warns). The cells are
+ *   buttons out of the tab order: the grid is one tab stop (DESIGN.md rule
+ *   11), so a click stages and Enter places from the staging strip.
  */
 import type { CSSProperties } from 'react';
 import type { LadderRow, LadderSide, OwnAggregate, SideCell } from './ladderModel';
@@ -32,6 +37,12 @@ export interface RungProps {
   flashAsk: boolean;
   sizeDecimals: number;
   baseAsset: string;
+  /** The order size text for the cell labels ("0.25"), or null when the
+   *  size field holds no valid size. */
+  sizeText: string | null;
+  /** Which cell of this rung holds the staged order, if any. */
+  stagedSide: LadderSide | null;
+  onStage?: (side: LadderSide, price: number) => void;
 }
 
 const HATCH: CSSProperties = {
@@ -79,38 +90,53 @@ function MineChip({ side, own, priceText, sizeDecimals, baseAsset }: {
   );
 }
 
-function DepthCell({ side, cell, flash, priceText, sizeDecimals, baseAsset }: {
+function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsset, sizeText, staged, onStage }: {
   side: LadderSide;
   cell: SideCell;
   flash: boolean;
+  price: number;
   priceText: string;
   sizeDecimals: number;
   baseAsset: string;
+  sizeText: string | null;
+  staged: boolean;
+  onStage?: (side: LadderSide, price: number) => void;
 }) {
   const isBid = side === 'BID';
   const edge: CSSProperties = isBid ? { right: 0 } : { left: 0 };
   const sideCls = isBid ? 'pr-3 text-right' : 'pl-3 text-left';
   const flashCls = flash ? (isBid ? 'animate-flash-buy' : 'animate-flash-sell') : '';
-  const word = isBid ? 'Bids' : 'Asks';
+  const verb = isBid ? 'Buy' : 'Sell';
 
   let text = '';
-  let label: string | undefined;
+  let depth = '';
   if (cell.state === 'level' && cell.quantity !== null) {
     const q = formatFixed(cell.quantity, sizeDecimals);
     text = cell.partial ? `≥${q}` : q;
-    label = `${word} at ${priceText}: ${cell.partial ? 'at least ' : ''}${q} ${baseAsset}`;
+    depth = `, ${cell.partial ? 'at least ' : ''}${q} on book`;
   } else if (cell.state === 'unknown') {
-    label = `${word} at ${priceText}: depth unknown`;
+    depth = ', depth unknown';
   }
+  const what = sizeText !== null ? `${verb} ${sizeText} ${baseAsset}` : `${verb} ${baseAsset}`;
+  const label = `${what} at ${priceText}${depth}`;
   const own = cell.own;
   const sliceW = own && own.slice > 0 ? pct(own.sliceFraction) : null;
+  // Literal class names: Tailwind only generates what it can read.
+  const ring = isBid ? 'outline-buy' : 'outline-sell';
+  const hoverRing = isBid ? 'hover:outline-buy' : 'hover:outline-sell';
 
   return (
-    <span
+    <button
+      type="button"
       role="gridcell"
+      tabIndex={-1}
       aria-label={label}
+      data-staged={staged ? 'true' : undefined}
       title={cell.partial ? 'Part of this group lies beyond the known depth' : undefined}
-      className={`relative h-full overflow-hidden text-[13px] leading-[22px] text-text-strong ${sideCls} ${flashCls}`}
+      onClick={() => onStage?.(side, price)}
+      className={`group relative h-full cursor-pointer overflow-hidden rounded border-0 bg-transparent p-0 font-[inherit] text-[13px] leading-[22px] text-text-strong outline-offset-[-1px] hover:bg-chip hover:outline hover:outline-1 ${
+        staged ? `outline outline-1 ${ring}` : ''
+      } ${hoverRing} ${sideCls} ${flashCls}`}
     >
       {cell.state === 'level' && (
         <span
@@ -137,12 +163,28 @@ function DepthCell({ side, cell, flash, priceText, sizeDecimals, baseAsset }: {
       {cell.state === 'unknown' && (
         <span aria-hidden data-unknown className="absolute inset-y-[3px] inset-x-0 rounded-[3px] opacity-60" style={HATCH} />
       )}
-      <span className="relative">{text}</span>
-    </span>
+      {/* On hover the cell previews what a click stages ("Buy 0.25"). */}
+      <span aria-hidden className="relative group-hover:hidden">{text}</span>
+      <span aria-hidden className={`relative hidden font-semibold group-hover:inline ${isBid ? 'text-buy' : 'text-sell'}`}>
+        {sizeText !== null ? `${verb} ${sizeText}` : verb}
+      </span>
+    </button>
   );
 }
 
-export function Rung({ row, priceText, tone, lastDir, flashBid, flashAsk, sizeDecimals, baseAsset }: RungProps) {
+export function Rung({
+  row,
+  priceText,
+  tone,
+  lastDir,
+  flashBid,
+  flashAsk,
+  sizeDecimals,
+  baseAsset,
+  sizeText,
+  stagedSide,
+  onStage,
+}: RungProps) {
   const ownBid = row.bid.own;
   const ownAsk = row.ask.own;
   const tint =
@@ -172,7 +214,18 @@ export function Rung({ row, priceText, tone, lastDir, flashBid, flashAsk, sizeDe
           <MineChip side="BID" own={ownBid} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} />
         )}
       </span>
-      <DepthCell side="BID" cell={row.bid} flash={flashBid} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} />
+      <DepthCell
+        side="BID"
+        cell={row.bid}
+        flash={flashBid}
+        price={row.price}
+        priceText={priceText}
+        sizeDecimals={sizeDecimals}
+        baseAsset={baseAsset}
+        sizeText={sizeText}
+        staged={stagedSide === 'BID'}
+        onStage={onStage}
+      />
       <span role="gridcell" className="flex justify-center text-[13px]">
         {row.isLastTrade ? (
           <span
@@ -196,7 +249,18 @@ export function Rung({ row, priceText, tone, lastDir, flashBid, flashAsk, sizeDe
           <span className={`font-medium ${toneCls}`}>{priceText}</span>
         )}
       </span>
-      <DepthCell side="ASK" cell={row.ask} flash={flashAsk} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} />
+      <DepthCell
+        side="ASK"
+        cell={row.ask}
+        flash={flashAsk}
+        price={row.price}
+        priceText={priceText}
+        sizeDecimals={sizeDecimals}
+        baseAsset={baseAsset}
+        sizeText={sizeText}
+        staged={stagedSide === 'ASK'}
+        onStage={onStage}
+      />
       <span role="gridcell" className="flex items-center justify-end">
         {ownAsk && (
           <MineChip side="ASK" own={ownAsk} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} />

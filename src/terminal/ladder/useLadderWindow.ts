@@ -6,9 +6,15 @@
  *   always odd so the centre rung is the middle row. The element is held in
  *   state (not a ref) so the effect cleanup disconnects the observer it
  *   created (DESIGN.md rule 1).
- * - Dead band: the window follows the anchor (last trade, else the middle of
- *   the spread) only when the anchor leaves +-max(2, floor(N/4)) rungs of the
- *   centre, never per tick.
+ * - First centre: the window is provisional (it follows the anchor exactly,
+ *   ignoring pins and the dead band) until the book has both sides. Then it
+ *   settles once on `settleAt` (the middle of the touch), so a value computed
+ *   before data (a stale last price, a one-sided first update) never stays
+ *   on screen because the pointer happened to rest on the ladder at load.
+ *   An empty book (reconnect) makes it provisional again.
+ * - Dead band: once settled, the window follows the anchor (last trade, else
+ *   the middle of the spread) only when the anchor leaves
+ *   +-max(2, floor(N/4)) rungs of the centre, never per tick.
  * - Pinning (DESIGN.md rule 8): the window never moves while the pointer is
  *   over the ladder, while it has focus, while the caller holds it (an order
  *   staged, a menu or popover open), or after a wheel or jump. A wheel or jump
@@ -38,6 +44,12 @@ export interface LadderWindowOptions {
   /** The rung the window follows; null while there is nothing to follow
    *  (market switch in flight). */
   anchor: number | null;
+  /** The rung to settle the first centre on: the middle of the touch once
+   *  the book has both sides, else null (the window stays provisional). */
+  settleAt?: number | null;
+  /** True while the book is empty (market switch, reconnect): the next
+   *  centre is provisional again. */
+  empty?: boolean;
   /** Changing this starts over: new centre at the anchor, pins dropped. The
    *  market id. */
   resetKey: string | number;
@@ -75,6 +87,8 @@ interface CentreState {
   group: number;
   centre: number | null;
   held: boolean;
+  /** False until the first centre is taken from a two-sided book. */
+  settled: boolean;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -82,14 +96,21 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
-  const { anchor, resetKey, groupTicks, minRung, maxRung, hold = false, rungPx = RUNG_PX } = opts;
+  const { anchor, settleAt = null, empty = false, resetKey, groupTicks, minRung, maxRung, hold = false, rungPx = RUNG_PX } =
+    opts;
 
   const [measureEl, setMeasureEl] = useState<HTMLElement | null>(null);
   const [region, setRegion] = useState<HTMLElement | null>(null);
   const [rowCount, setRowCount] = useState(0);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const [s, setS] = useState<CentreState>(() => ({ key: resetKey, group: groupTicks, centre: anchor, held: false }));
+  const [s, setS] = useState<CentreState>(() => ({
+    key: resetKey,
+    group: groupTicks,
+    centre: settleAt ?? anchor,
+    held: false,
+    settled: settleAt !== null,
+  }));
 
   // Row count from the rendered element.
   useLayoutEffect(() => {
@@ -156,7 +177,7 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
   // an effect) means a re-centre never paints one stale frame first.
   let next = s;
   if (s.key !== resetKey) {
-    next = { key: resetKey, group: groupTicks, centre: anchor, held: false };
+    next = { key: resetKey, group: groupTicks, centre: null, held: false, settled: false };
   } else if (s.group !== groupTicks) {
     next = {
       ...s,
@@ -164,9 +185,20 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
       centre: s.centre === null ? anchor : Math.round((s.centre * s.group) / groupTicks),
     };
   }
-  if (next.centre === null && anchor !== null) next = { ...next, centre: anchor };
+  // A reconnect empties the book: start provisional again, unless the user
+  // holds the window (an order staged, a wheel or jump pin).
+  if (empty && next.settled && !hold && !next.held) next = { ...next, settled: false };
+  if (!next.settled) {
+    // Provisional: no pin or dead band applies before the first real centre.
+    if (settleAt !== null) {
+      next = { ...next, centre: settleAt, settled: true, held: false };
+    } else if (anchor !== null && next.centre !== anchor && !next.held) {
+      next = { ...next, centre: anchor };
+    }
+  }
   const pinned = hovered || focused || hold || next.held;
   if (
+    next.settled &&
     !pinned &&
     anchor !== null &&
     next.centre !== null &&
