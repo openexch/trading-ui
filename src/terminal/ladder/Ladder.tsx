@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The depth ladder (read-only view). Order entry arrives later; this renders
- * the book as fixed 22px rungs around the last trade, with own orders, the
- * spread line and the last-trade rung.
+ * The depth ladder: the book as fixed 22px rungs around the last trade, with
+ * own orders, the spread line and the last-trade rung. A click on a bid cell
+ * stages a buy at that rung's price, on an ask cell a sell (`onStage`); the
+ * staging strip above places it.
  *
  * Layout, top to bottom, inside a 640px column:
  *   jump-above slot (fixed height, Re-centre on the left)
@@ -19,7 +20,7 @@ import type { LevelChange } from '../../hooks/useOrderBook';
 import { marketUi, groupingOptions } from '../../trading/marketUi';
 import { useTickDirection } from '../../ui/useTickDirection';
 import { buildLadder, defaultCentre, ladderWindow } from './ladderModel';
-import type { LadderModel, LadderRow } from './ladderModel';
+import type { LadderModel, LadderRow, LadderSide } from './ladderModel';
 import { RUNG_PX, useLadderWindow } from './useLadderWindow';
 import { LADDER_COLUMNS, Rung, SkeletonRung } from './Rung';
 import type { PriceTone } from './Rung';
@@ -34,6 +35,14 @@ export interface LadderProps {
   openOrders: UserOrder[];
   /** Last trade price; null while a market switch is in flight. */
   lastPrice: number | null;
+  /** The order size as label text ("0.25"), or null when none is set. */
+  sizeText?: string | null;
+  /** Stage an order at a rung: side of the clicked cell, the rung's price. */
+  onStage?: (side: LadderSide, price: number) => void;
+  /** The staged order's cell, drawn outlined. */
+  staged?: { side: LadderSide; price: number } | null;
+  /** Pin the window (an order is staged). */
+  hold?: boolean;
 }
 
 /** The rung the window follows, or null when the model has nothing yet. */
@@ -53,7 +62,23 @@ function isTypingTarget(t: EventTarget | null): boolean {
   return t.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName);
 }
 
-export function Ladder({ market, orderBook, levelChanges, openOrders, lastPrice }: LadderProps) {
+/** The middle of the touch, once the book has both sides. */
+function settleRung(model: LadderModel): number | null {
+  if (model.bestBidRung === null || model.bestAskRung === null) return null;
+  return Math.floor((model.bestBidRung + model.bestAskRung) / 2);
+}
+
+export function Ladder({
+  market,
+  orderBook,
+  levelChanges,
+  openOrders,
+  lastPrice,
+  sizeText = null,
+  onStage,
+  staged = null,
+  hold = false,
+}: LadderProps) {
   const ui = marketUi(market);
   // Grouping belongs to the market it was chosen on; a switch starts from the
   // next market's default.
@@ -69,8 +94,12 @@ export function Ladder({ market, orderBook, levelChanges, openOrders, lastPrice 
   );
   const anchor = anchorOf(model);
 
+  const awaitingBook = orderBook.bids.length === 0 && orderBook.asks.length === 0;
   const win = useLadderWindow({
     anchor,
+    settleAt: settleRung(model),
+    empty: awaitingBook,
+    hold,
     resetKey: market.id,
     groupTicks,
     minRung: model.minRung,
@@ -78,7 +107,6 @@ export function Ladder({ market, orderBook, levelChanges, openOrders, lastPrice 
   });
   const { dir } = useTickDirection(live);
 
-  const awaitingBook = orderBook.bids.length === 0 && orderBook.asks.length === 0;
   const view =
     !awaitingBook && win.centre !== null && win.rowCount > 0 ? ladderWindow(model, win.centre, win.rowCount) : null;
 
@@ -134,7 +162,7 @@ export function Ladder({ market, orderBook, levelChanges, openOrders, lastPrice 
         )}
       </div>
 
-      <div role="grid" aria-label={gridLabel} aria-readonly="true" tabIndex={0} className="flex min-h-0 flex-1 flex-col rounded outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+      <div role="grid" aria-label={gridLabel} tabIndex={0} className="flex min-h-0 flex-1 flex-col rounded outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
         <div role="row" className={`grid h-7 flex-none ${LADDER_COLUMNS} items-center text-[11px] text-muted`}>
           <span role="columnheader">Mine</span>
           <span role="columnheader" className="pr-3 text-right">Bids</span>
@@ -171,6 +199,9 @@ export function Ladder({ market, orderBook, levelChanges, openOrders, lastPrice 
                     flashAsk={flashed(row.ask.priceKeys)}
                     sizeDecimals={ui.sizeDecimals}
                     baseAsset={market.baseAsset}
+                    sizeText={sizeText}
+                    stagedSide={staged && Math.abs(staged.price - row.price) < market.tickSize / 2 ? staged.side : null}
+                    onStage={onStage}
                   />
                 ))}
           </div>
