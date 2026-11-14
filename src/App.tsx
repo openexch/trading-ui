@@ -26,7 +26,6 @@ import { AccountDrawer } from './components/Account/AccountDrawer';
 import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
 import { LogoMark } from './components/LogoMark';
 import { TerminalDesktop } from './terminal/TerminalDesktop';
-import { LegacyOrdersPanel } from './terminal/panels/LegacyOrdersPanel';
 import { isLadderUiRequested } from './terminal/ladderFlag';
 import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
@@ -108,7 +107,7 @@ function MarketPage() {
     if (rejectTimerRef.current) window.clearTimeout(rejectTimerRef.current);
     rejectTimerRef.current = window.setTimeout(() => setRejectNotice(null), 8000);
   }, []);
-  const { openOrders, handleOrderEvent, seedOpenOrders, resetOrders, removeOrder } = useOrders(handleOrderRejected);
+  const { orders, openOrders, handleOrderEvent, seedOpenOrders, resetOrders, removeOrder } = useOrders(handleOrderRejected);
 
   // Market-plane reset (reconnect / market switch). User orders live on the
   // OMS plane now and are reset on session change instead. Candles are NOT
@@ -363,6 +362,15 @@ function MarketPage() {
           orderBook={orderBook}
           levelChanges={levelChanges}
           openOrders={openOrders}
+          orders={orders}
+          trades={trades}
+          chart={{
+            candles,
+            currentCandle,
+            activeInterval: chartInterval,
+            onIntervalChange: handleIntervalChange,
+            loading: chartLoading,
+          }}
           status={effectiveStatus}
           clusterState={clusterState}
           onReconnect={handleReconnect}
@@ -379,37 +387,6 @@ function MarketPage() {
           rejectNotice={rejectNotice}
           onCancelOrder={handleCancelOrder}
           onReplaceOrder={handleReplaceOrder}
-          left={
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <TradeList trades={trades} />
-            </div>
-          }
-          right={
-            <>
-              <div className="flex min-h-[200px] flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
-                <Chart
-                  candles={candles}
-                  currentCandle={currentCandle}
-                  symbol={selectedMarket.symbol}
-                  theme={theme}
-                  onIntervalChange={handleIntervalChange}
-                  activeInterval={chartInterval}
-                  loading={chartLoading}
-                />
-              </div>
-              <div className="h-[340px] flex-none border-t border-hairline">
-                <LegacyOrdersPanel
-                  signedIn={!!session}
-                  onSignIn={() => setShowAuthModal(true)}
-                  market={selectedMarket}
-                  openOrders={openOrders}
-                  onCancelOrder={handleCancelOrder}
-                  onReplaceOrder={handleReplaceOrder}
-                  loading={apiLoading}
-                />
-              </div>
-            </>
-          }
         />
         {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
         {showAccountDrawer && session && <AccountDrawer onClose={() => setShowAccountDrawer(false)} />}

@@ -100,6 +100,25 @@ export interface TradingLadderProps {
   onCancelOrder?: (order: UserOrder) => Promise<{ success: boolean; message: string }>;
   /** The page's replace handler; Move sends the price only. */
   onReplaceOrder?: (order: UserOrder, price?: number, quantity?: number) => Promise<{ success: boolean; message: string }>;
+  /** Hands the own-order actions to the side panels (the Orders panel), so
+   *  a cancel there goes through the same pending state, Cancel all
+   *  question and strip results as one made on the ladder. Null while there
+   *  are none (signed out, no cancel handler). */
+  onOrderActions?: (actions: LadderOrderActions | null) => void;
+}
+
+/** The ladder's own-order actions, as the side panels use them. */
+export interface LadderOrderActions {
+  /** Orders with a request in flight, by omsOrderId. */
+  pending: ReadonlyMap<string, PendingKind>;
+  /** Cancel one order; the result lands in the strip. */
+  cancel: (order: UserOrder) => void;
+  /** Ask the strip's Cancel all question for this market and move focus
+   *  to its confirm button. Nothing is sent until it is confirmed. */
+  askCancelAll: () => void;
+  /** How many orders Cancel all would cancel on this market. */
+  cancelAllCount: number;
+  cancelAllRunning: boolean;
 }
 
 /** How long a result stays in the strip. */
@@ -183,6 +202,7 @@ export function TradingLadder(props: TradingLadderProps) {
   }, []);
   const [cancelAsk, setCancelAsk] = useState<{ marketId: number } | null>(null);
   const [cancelRun, setCancelRun] = useState<{ marketId: number; count: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const showResult = useCallback((r: StripResult | null) => {
     if (resultTimer.current) window.clearTimeout(resultTimer.current);
@@ -360,7 +380,11 @@ export function TradingLadder(props: TradingLadderProps) {
 
   const orderText = useCallback(
     (o: UserOrder) =>
-      `${o.side === 'BID' ? 'Buy' : 'Sell'} ${o.remainingQuantity} ${market.baseAsset} @ ${formatPriceText(market, o.price)}`,
+      // A stop awaiting its trigger has no price the UI can show (the order
+      // model carries no trigger price): name it instead of printing one.
+      o.status === 'PENDING_TRIGGER'
+        ? `${o.side === 'BID' ? 'Buy' : 'Sell'} ${o.remainingQuantity} ${market.baseAsset} stop, awaiting trigger`
+        : `${o.side === 'BID' ? 'Buy' : 'Sell'} ${o.remainingQuantity} ${market.baseAsset} @ ${formatPriceText(market, o.price)}`,
     [market],
   );
 
@@ -457,6 +481,38 @@ export function TradingLadder(props: TradingLadderProps) {
 
   const running = cancelRun !== null && cancelRun.marketId === market.id;
   const asking = cancelAsk !== null && cancelAsk.marketId === market.id;
+
+  // Cancel all asked from a side panel: focus goes to the strip's confirm
+  // button once it is on screen, so Enter answers and Esc keeps.
+  const focusConfirm = useRef(false);
+  const askFromPanel = useCallback(() => {
+    focusConfirm.current = true;
+    setCancelAsk({ marketId: market.id });
+  }, [market.id]);
+  useEffect(() => {
+    if (!asking || !focusConfirm.current) return;
+    focusConfirm.current = false;
+    rootRef.current?.querySelector<HTMLElement>('[data-cancel-all-confirm]')?.focus();
+  }, [asking]);
+
+  const { onOrderActions } = props;
+  const panelActions: LadderOrderActions | null = useMemo(
+    () =>
+      signedIn && onCancelOrder
+        ? {
+            pending,
+            cancel: o => void cancelOne(o),
+            askCancelAll: askFromPanel,
+            cancelAllCount: running ? cancelRun!.count : marketOrders.length,
+            cancelAllRunning: running,
+          }
+        : null,
+    [signedIn, onCancelOrder, pending, cancelOne, askFromPanel, running, cancelRun, marketOrders.length],
+  );
+  useEffect(() => {
+    onOrderActions?.(panelActions);
+  }, [onOrderActions, panelActions]);
+  useEffect(() => () => onOrderActions?.(null), [onOrderActions]);
   const cancelAllView: CancelAllView | null =
     signedIn && onCancelOrder && (marketOrders.length > 0 || running)
       ? {
@@ -552,7 +608,6 @@ export function TradingLadder(props: TradingLadderProps) {
   }, []);
 
   // Enter and Esc. Latest handlers through a ref so the listener is stable.
-  const rootRef = useRef<HTMLDivElement>(null);
   const confirmAll = cancelAllView?.asking ?? false;
   const keys = useRef({ place, clear, staged: staged !== null, armed, asking, confirmAll, cancelAll });
   useEffect(() => {

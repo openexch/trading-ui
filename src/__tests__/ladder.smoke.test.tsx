@@ -130,7 +130,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('renders the ladder shell: header, ladder, the existing panels at the sides', async () => {
+  it('renders the ladder shell: header, ladder, the slot panels at the sides', async () => {
     window.history.replaceState({}, '', '/?ui=ladder');
     const { container } = renderApp();
 
@@ -145,14 +145,19 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(screen.getByRole('form', { name: /order defaults/i })).toBeTruthy();
     expect(screen.getByRole('status', { name: /staged order/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /buy btc/i })).toBeNull();
-    // Existing panels sit in the side columns for now.
+    // The side columns hold the Default layout: Markets / Trades | Chart / Orders.
+    expect(screen.getByRole('button', { name: 'Panel: Markets. Change' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Panel: Trades. Change' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Panel: Chart. Change' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Panel: Open orders. Change' })).toBeTruthy();
+    expect(screen.getAllByRole('separator', { name: /resize (left|right) panels/i })).toHaveLength(2);
     expect(screen.getByTestId('chart-mock')).toBeTruthy();
     // No footer and no old ticker rail in the new shell.
     expect(screen.queryByText('Open Exchange Trading Engine')).toBeNull();
 
     // The market selector opens from the header symbol and switches markets.
     fireEvent.click(screen.getByRole('button', { name: /market btc-usd/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /ethereum/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^ethereum/i }));
     expect(await screen.findByRole('button', { name: /market eth-usd\. change market/i })).toBeTruthy();
   });
 
@@ -585,6 +590,79 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(deletes()).toHaveLength(0);
   });
 
+  // ---- side panels: Orders panel actions, layout -------------------------
+
+  const ordersPanel = () => screen.getByRole('region', { name: 'Orders and fills' });
+
+  it('Orders panel: ⋯ Cancel all still asks in the strip, Enter on the focused confirm cancels', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9501', price: 97_390 });
+    pushOwn({ id: '9502', price: 97_380 });
+    await waitFor(() => expect(ordersPanel().querySelectorAll('[data-order-row]')).toHaveLength(2));
+    fireEvent.click(screen.getByRole('button', { name: 'More order actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /cancel all on btc-usd/i }));
+    // Asked, not sent; focus is on the strip's confirm button.
+    expect(strip().textContent).toContain('Cancel all 2 open BTC-USD orders?');
+    expect(deletes()).toHaveLength(0);
+    const confirm = screen.getByRole('button', { name: /^cancel 2$/i });
+    expect(document.activeElement).toBe(confirm);
+    // Esc keeps.
+    fireEvent.keyDown(confirm, { key: 'Escape' });
+    expect(strip().textContent).not.toContain('Cancel all 2 open');
+    await act(async () => {});
+    expect(deletes()).toHaveLength(0);
+    // Ask again and confirm.
+    fireEvent.click(screen.getByRole('button', { name: 'More order actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /cancel all on btc-usd/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^cancel 2$/i }));
+    await waitFor(() => expect(deletes()).toHaveLength(2));
+    await waitFor(() => expect(strip().textContent).toContain('Cancelled 2 orders'));
+    await waitFor(() => expect(ordersPanel().querySelectorAll('[data-order-row]')).toHaveLength(0));
+  });
+
+  it('Orders panel: × cancels one through the ladder (pending, strip result); stops are listed without a price', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9601', price: 97_390 });
+    pushOwn({ id: '9602', side: 'SELL', type: 'STOP_LOSS', price: 0, status: 'PENDING_TRIGGER' });
+    const stopRow = await waitFor(() => {
+      const r = ordersPanel().querySelector('[data-order-row="9602"]');
+      expect(r).toBeTruthy();
+      return r!;
+    });
+    expect(stopRow.textContent).toContain('Stop, awaiting trigger');
+    // Not a resting order: never on the ladder.
+    expect(screen.queryByRole('button', { name: /your sell order/i })).toBeNull();
+
+    let release!: () => void;
+    deleteGates['9601'] = new Promise<void>(r => (release = r));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Buy 0.50 at 97,390' }));
+    await waitFor(() => expect(deletes()).toHaveLength(1));
+    expect((screen.getByRole('button', { name: 'Cancelling Buy 0.50 at 97,390' }) as HTMLButtonElement).disabled).toBe(true);
+    release();
+    await waitFor(() => expect(strip().textContent).toContain('Cancelled: Buy 0.5 BTC @ 97,390'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Sell 0.50 stop loss, awaiting trigger' }));
+    await waitFor(() => expect(deletes()).toHaveLength(2));
+    expect(deletes()[1].url).toMatch(/\/api\/v1\/orders\/9602$/);
+    await waitFor(() => expect(strip().textContent).toContain('Cancelled: Sell 0.5 BTC stop, awaiting trigger'));
+  });
+
+  it('a picked layout is remembered across a reload; Reset returns to Default', async () => {
+    window.history.replaceState({}, '', '/?ui=ladder');
+    const first = renderApp();
+    fireEvent.click(await screen.findByRole('button', { name: 'Panel: Trades. Change' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^balances/i }));
+    expect(screen.getByRole('button', { name: 'Panel: Balances. Change' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Panel: Trades. Change' })).toBeNull();
+    first.unmount();
+
+    renderApp();
+    expect(await screen.findByRole('button', { name: 'Panel: Balances. Change' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Panel: Balances. Change' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset layout' }));
+    expect(screen.getByRole('button', { name: 'Panel: Trades. Change' })).toBeTruthy();
+  });
+
   const oneClick = () => screen.getByRole('switch', { name: /one-click/i });
 
   it('one-click: off by default; armed, a click places at once and a crossing click still stages', async () => {
@@ -636,11 +714,11 @@ describe('Ladder shell (?ui=ladder)', () => {
     await ladderWithBook();
     fireEvent.click(oneClick());
     fireEvent.click(screen.getByRole('button', { name: /market btc-usd/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /ethereum/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^ethereum/i }));
     await screen.findByRole('button', { name: /market eth-usd\. change market/i });
     expect(oneClick().getAttribute('aria-checked')).toBe('false');
     fireEvent.click(screen.getByRole('button', { name: /market eth-usd/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /bitcoin/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^bitcoin/i }));
     await screen.findByRole('button', { name: /market btc-usd\. change market/i });
     expect(oneClick().getAttribute('aria-checked')).toBe('false');
   });

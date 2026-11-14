@@ -116,6 +116,7 @@ export function StagingStrip({
             onClick={cancelAll.onConfirm}
             disabled={cancelAll.running}
             aria-keyshortcuts="Enter"
+            data-cancel-all-confirm
             className={`${BTN} border-0 bg-sell px-3 font-semibold text-bg`}
           >
             Cancel {cancelAll.count}
