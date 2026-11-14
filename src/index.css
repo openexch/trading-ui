@@ -4,88 +4,112 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ================================================================
-   Open Exchange — Design Tokens
-   "Daylight + Dark" — editorial fintech, logo-blue signature (theme-aware for AA).
-   Semantic vars flip between themes; mapped into Tailwind below.
+   Open Exchange design tokens (depth ladder direction, see DESIGN.md)
+   Light is an instrument grey-blue, dark is brand ink; both carry the
+   logo's blue undertone. Semantic vars flip between themes and are mapped
+   into Tailwind below. Values mirror the approved design canvas; the chart
+   palette mirrors them by hand (src/components/Chart/palette.ts) and
+   src/__tests__/tokens.test.ts guards that mirror and the contrast pairs.
    ================================================================ */
 :root {
-  /* Surfaces — Light (instrument paper): cool gray-blue rather than warm
-     cream, so both themes share the same blue undertone. */
-  --bg: #f6f7fa;
+  /* Surfaces */
+  --bg: #f3f5f8;
   --surface: #ffffff;
-  --surface-2: #f0f2f6;
-  --surface-3: #e6e9f0;
-  --text: #16191f;
-  --text-strong: #05070a;
-  --muted: #5c6470;
-  --faint: #6e7683;
-  --hairline: #e3e7ee;
+  --surface-2: #f0f3f7;
+  --surface-3: #e6eaf0;
+  --chip: #e9edf2;
+  --text: #364152;
+  --text-strong: #0d1420;
+  --muted: #5b6576;
+  --faint: #646c79;
+  --hairline: #e1e6ed;
   --hairline-strong: #d1d7e2;
+  /* Interactive control borders (inputs, buttons): 3:1 on the surface. */
+  --ctl: #8a94a6;
 
-  /* Signature accent — logo blue, theme-aware for WCAG AA (deep in light,
-     bright in dark). --on-accent is the readable text color on a solid fill. */
-  --accent: #1f63d6;
-  --accent-hover: #184fb0;
-  --accent-soft: rgba(31, 99, 214, 0.12);
-  --accent-ring: rgba(31, 99, 214, 0.40);
+  /* Signature accent: logo blue, deep in light, bright in dark.
+     --on-accent is the readable text colour on a solid accent fill. */
+  --accent: #1f5bd6;
+  --accent-hover: #1a4cb3;
+  --accent-soft: rgba(31, 91, 214, 0.12);
+  --accent-ring: rgba(31, 91, 214, 0.40);
   --on-accent: #ffffff;
+  /* Selected / last-trade highlight fill. */
+  --mid: rgba(31, 91, 214, 0.10);
 
   /* Decorative background FX (subtle, derived from accent) */
   --glow: color-mix(in srgb, var(--accent) 16%, transparent);
   --grid-dot: rgba(30, 60, 120, 0.05);
 
-  /* Trade semantics */
-  --buy: #16a36a;
-  --buy-soft: rgba(22, 163, 106, 0.10);
-  --sell: #e5484d;
-  --sell-soft: rgba(229, 72, 77, 0.10);
+  /* Trade semantics.
+     -soft is the depth-bar fill: text on it uses --text-strong.
+     -faint is the row tint, badge and notice fill: side-coloured text on it
+     stays AA. */
+  --buy: #17774f;
+  --buy-soft: rgba(23, 119, 79, 0.28);
+  --buy-faint: rgba(23, 119, 79, 0.08);
+  --sell: #c23a27;
+  --sell-soft: rgba(194, 58, 39, 0.26);
+  --sell-faint: rgba(194, 58, 39, 0.08);
   --warn: #d98a1f;
   --warn-soft: rgba(217, 138, 31, 0.12);
 
-  --elev-sm: 0 1px 2px rgba(20, 17, 14, 0.06);
-  --elev-md: 0 6px 20px rgba(20, 17, 14, 0.10);
-  --elev-lg: 0 18px 50px rgba(20, 17, 14, 0.16);
+  /* Own-order slice inside a depth bar: the side colour at this alpha plus
+     a 1px side-coloured outline, quantities in --text-strong. */
+  --own-slice-alpha: 0.35;
+
+  --elev-sm: 0 1px 2px rgba(13, 20, 32, 0.06);
+  --elev-md: 0 6px 20px rgba(13, 20, 32, 0.10);
+  --elev-lg: 0 18px 50px rgba(13, 20, 32, 0.16);
+  /* Menus and popovers. */
+  --shadow-pop: 0 18px 40px -18px rgba(13, 20, 32, 0.35);
+
+  /* Scrollbar thumb */
+  --thumb: color-mix(in srgb, var(--muted) 38%, transparent);
+  --thumb-hover: color-mix(in srgb, var(--muted) 70%, transparent);
 
   color-scheme: light;
 }
 
 .dark {
-  /* Surfaces — Dark (brand ink): a blue undertone from the logo runs through
-     every surface and hairline, so the terminal reads as Open Exchange even
-     with zero decoration. */
-  --bg: #0c1017;
-  --surface: #10151d;
-  --surface-2: #161c26;
-  --surface-3: #1e2735;
-  --text: #e8ecf4;
-  --text-strong: #ffffff;
-  --muted: #8b95a7;
+  --bg: #0a0f17;
+  --surface: #10161f;
+  --surface-2: #161e2a;
+  --surface-3: #1e2836;
+  --chip: #1b2533;
+  --text: #c4cedd;
+  --text-strong: #f3f6fb;
+  --muted: #8a96aa;
   --faint: #7d8698;
   --hairline: rgba(140, 170, 255, 0.09);
   --hairline-strong: rgba(140, 170, 255, 0.18);
+  /* 0.52 rather than the canvas's 0.42: 0.42 measures 2.4:1 on the
+     surface, below the 3:1 floor for interactive borders. */
+  --ctl: rgba(140, 170, 255, 0.52);
 
-  --accent: #5b9bff;
-  --accent-hover: #87b4ff;
-  --accent-soft: rgba(91, 155, 255, 0.16);
-  --accent-ring: rgba(91, 155, 255, 0.45);
-  --on-accent: #0b1220;
+  --accent: #5b8cff;
+  --accent-hover: #85a9ff;
+  --accent-soft: rgba(91, 140, 255, 0.16);
+  --accent-ring: rgba(91, 140, 255, 0.45);
+  --on-accent: #06101f;
+  --mid: rgba(91, 140, 255, 0.16);
 
-  /* Decorative background FX (subtle, derived from accent) */
   --glow: color-mix(in srgb, var(--accent) 24%, transparent);
   --grid-dot: rgba(140, 170, 255, 0.05);
 
-  /* Trade colors carry the energy of the tape — brighter than the muted
-     v1 pair, still AA on the ink surfaces. */
-  --buy: #35c98a;
-  --buy-soft: rgba(53, 201, 138, 0.13);
-  --sell: #f2635a;
-  --sell-soft: rgba(242, 99, 90, 0.13);
+  --buy: #2fc489;
+  --buy-soft: rgba(47, 196, 137, 0.24);
+  --buy-faint: rgba(47, 196, 137, 0.10);
+  --sell: #f4675d;
+  --sell-soft: rgba(244, 103, 93, 0.24);
+  --sell-faint: rgba(244, 103, 93, 0.10);
   --warn: #e8a13c;
   --warn-soft: rgba(232, 161, 60, 0.14);
 
   --elev-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
   --elev-md: 0 6px 20px rgba(0, 0, 0, 0.40);
   --elev-lg: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --shadow-pop: 0 18px 40px -16px rgba(0, 0, 0, 0.70);
 
   color-scheme: dark;
 }
@@ -99,12 +123,15 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
+  --color-chip: var(--chip);
   --color-text: var(--text);
   --color-text-strong: var(--text-strong);
   --color-muted: var(--muted);
   --color-faint: var(--faint);
   --color-hairline: var(--hairline);
   --color-hairline-strong: var(--hairline-strong);
+  --color-ctl: var(--ctl);
+  --color-mid: var(--mid);
 
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
@@ -115,12 +142,17 @@
   --color-buy-soft: var(--buy-soft);
   --color-sell: var(--sell);
   --color-sell-soft: var(--sell-soft);
+  --color-buy-faint: var(--buy-faint);
+  --color-sell-faint: var(--sell-faint);
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
 
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif; /* numeric surfaces: sans + tabular-nums (exchange-style) beats terminal mono for scanability */
+  /* Display: the wordmark and the header ticker hero. */
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  /* Interface and numbers: a proportional face with tabular figures. The
+     owner rejected monospace numbers, so the mono slot maps to the same face. */
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -129,6 +161,7 @@
   --shadow-sm: var(--elev-sm);
   --shadow-md: var(--elev-md);
   --shadow-lg: var(--elev-lg);
+  --shadow-popover: var(--shadow-pop);
 
   --animate-flash-buy: flashBuy 0.6s ease-out;
   --animate-flash-sell: flashSell 0.6s ease-out;
@@ -160,7 +193,6 @@
     font-family: var(--font-sans);
     font-size: 13px;
     line-height: 1.55;
-    letter-spacing: -0.006em;
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -206,16 +238,29 @@
     color: var(--text-strong);
   }
 
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  /* Thin token-coloured scrollbars. Scrolling panels add
+     `scrollbar-gutter-stable` so content never shifts when a bar appears. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--thumb) transparent;
   }
-  ::-webkit-scrollbar-track {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--hairline-strong);
-    border-radius: 9999px;
+    background: var(--thumb);
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--thumb-hover);
+    background-clip: content-box;
   }
 }
 

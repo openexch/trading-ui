@@ -18,13 +18,13 @@ export function TradeList({ trades }: TradeListProps) {
         </span>
       </div>
 
-      <div className="grid flex-shrink-0 grid-cols-[1fr_1fr_70px] gap-1.5 border-b border-hairline px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-muted">
+      <div className="grid flex-shrink-0 grid-cols-[1fr_1fr_70px] gap-1.5 overflow-hidden scrollbar-gutter-stable border-b border-hairline px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-muted">
         <span>Price (USD)</span>
         <span className="text-right">Amount</span>
         <span className="text-right">Time</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollbar-gutter-stable">
         {trades.length === 0 ? (
           /* Awaiting-tape window (market switch / reconnect): pulsing
              placeholder rows instead of an empty-looking panel */

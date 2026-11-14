@@ -192,7 +192,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
           </button>
           <button
             className={`flex items-center justify-center rounded-sm px-1.5 py-1 transition-colors ${
-              viewMode === 'bids-only' ? 'bg-buy-soft text-buy' : 'text-buy/40 hover:text-buy'
+              viewMode === 'bids-only' ? 'bg-buy-faint text-buy' : 'text-buy/40 hover:text-buy'
             }`}
             onClick={() => setViewMode('bids-only')}
             title="Bids only"
@@ -203,7 +203,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
           </button>
           <button
             className={`flex items-center justify-center rounded-sm px-1.5 py-1 transition-colors ${
-              viewMode === 'asks-only' ? 'bg-sell-soft text-sell' : 'text-sell/40 hover:text-sell'
+              viewMode === 'asks-only' ? 'bg-sell-faint text-sell' : 'text-sell/40 hover:text-sell'
             }`}
             onClick={() => setViewMode('asks-only')}
             title="Asks only"
@@ -244,7 +244,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                   title="Click to set price"
                 >
                   <div
-                    className="pointer-events-none absolute inset-y-0 right-0 bg-sell-soft transition-[width] duration-200"
+                    className="pointer-events-none absolute inset-y-0 right-0 bg-sell-faint transition-[width] duration-200"
                     style={{ width: `${(level.cumulative / maxCumulative) * 100}%` }}
                   />
                   <span className={`${cellNum} text-left font-medium text-sell`}>${formatPrice(level.price)}</span>
@@ -261,7 +261,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
               price ticks with the market. */}
           <div
             className="relative flex flex-shrink-0 items-center justify-between border-y border-hairline px-4 py-1.5"
-            style={{ background: 'linear-gradient(180deg, var(--sell-soft), transparent 42%, transparent 58%, var(--buy-soft))' }}
+            style={{ background: 'linear-gradient(180deg, var(--sell-faint), transparent 42%, transparent 58%, var(--buy-faint))' }}
           >
             <span
               className={`flex items-baseline gap-1 font-mono text-[15px] font-bold tabular-nums tracking-tight transition-colors ${
@@ -294,7 +294,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                   title="Click to set price"
                 >
                   <div
-                    className="pointer-events-none absolute inset-y-0 right-0 bg-buy-soft transition-[width] duration-200"
+                    className="pointer-events-none absolute inset-y-0 right-0 bg-buy-faint transition-[width] duration-200"
                     style={{ width: `${(level.cumulative / maxCumulative) * 100}%` }}
                   />
                   <span className={`${cellNum} text-left font-medium text-buy`}>${formatPrice(level.price)}</span>
@@ -322,12 +322,12 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
 
           <div className="grid min-h-0 flex-1 grid-cols-2 overflow-hidden">
             <div className="flex min-h-0 flex-col overflow-hidden border-r border-hairline">
-              <div className={`grid flex-shrink-0 grid-cols-3 gap-1 border-b border-hairline px-4 py-1.5 ${colHead}`}>
+              <div className={`grid flex-shrink-0 grid-cols-3 gap-1 overflow-hidden scrollbar-gutter-stable border-b border-hairline px-4 py-1.5 ${colHead}`}>
                 <span className="text-left">Total</span>
                 <span className="text-center">Amount</span>
                 <span className="text-right">Bid Price</span>
               </div>
-              <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-gutter-stable">
                 {bidLevels.map((level) => (
                   <div
                     key={level.price}
@@ -336,7 +336,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                     title="Click to set price"
                   >
                     <div
-                      className="pointer-events-none absolute inset-y-0 right-0 border-r-2 border-buy/20 bg-buy-soft transition-[width] duration-200"
+                      className="pointer-events-none absolute inset-y-0 right-0 border-r-2 border-buy/20 bg-buy-faint transition-[width] duration-200"
                       style={{ width: `${(level.cumulative / maxCumulative) * 100}%` }}
                     />
                     <span className={`${cellNum} text-left text-muted`}>{formatQuantity(level.cumulative)}</span>
@@ -349,12 +349,12 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
             </div>
 
             <div className="flex min-h-0 flex-col overflow-hidden">
-              <div className={`grid flex-shrink-0 grid-cols-3 gap-1 border-b border-hairline px-4 py-1.5 ${colHead}`}>
+              <div className={`grid flex-shrink-0 grid-cols-3 gap-1 overflow-hidden scrollbar-gutter-stable border-b border-hairline px-4 py-1.5 ${colHead}`}>
                 <span className="text-left">Ask Price</span>
                 <span className="text-center">Amount</span>
                 <span className="text-right">Total</span>
               </div>
-              <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-gutter-stable">
                 {askLevels.map((level) => (
                   <div
                     key={level.price}
@@ -363,7 +363,7 @@ export function OrderBook({ orderBook, levelChanges, onPriceClick }: OrderBookPr
                     title="Click to set price"
                   >
                     <div
-                      className="pointer-events-none absolute inset-y-0 left-0 border-l-2 border-sell/20 bg-sell-soft transition-[width] duration-200"
+                      className="pointer-events-none absolute inset-y-0 left-0 border-l-2 border-sell/20 bg-sell-faint transition-[width] duration-200"
                       style={{ width: `${(level.cumulative / maxCumulative) * 100}%` }}
                     />
                     <span className={`${cellNum} text-left font-medium text-sell`}>${formatPrice(level.price)}</span>
