@@ -223,3 +223,15 @@ export function stagedTotal(type: OrderType, price: number | null, size: string)
   if (type !== 'LIMIT' && type !== 'LIMIT_MAKER' && type !== 'ICEBERG') return null;
   return price * q;
 }
+
+/** The next order type in the picker's order, wrapping (the T key). */
+export function nextType(type: OrderType): OrderType {
+  const i = TYPE_CHOICES.findIndex(c => c.type === type);
+  return TYPE_CHOICES[(i + 1) % TYPE_CHOICES.length].type;
+}
+
+/** The next time in force in the picker's order, wrapping (the F key). */
+export function nextTif(tif: TimeInForce): TimeInForce {
+  const i = TIF_CHOICES.findIndex(c => c.tif === tif);
+  return TIF_CHOICES[(i + 1) % TIF_CHOICES.length].tif;
+}

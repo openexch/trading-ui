@@ -10,13 +10,16 @@
  *   iceberg's shown size) is set in the order popover, never here.
  * - Armed one-click: the strip carries both side colours along its top edge
  *   and says so; the change is announced because this is the live region.
- * - Cancel all asks here first (a second click), then reports how many were
- *   cancelled and how many failed (DESIGN.md rule 10).
+ * - Cancel all asks here first (a second click or Enter), then reports how
+ *   many were cancelled and how many failed (DESIGN.md rule 10).
+ * - Keyboard feedback (a new size, type or TIF, a refused move) lands here
+ *   as a polite info line: the ladder itself is never announced (rule 12).
  */
 import type { OrderSide } from '../../types/market';
 
 export interface StripResult {
-  kind: 'accepted' | 'rejected';
+  /** info: keyboard feedback, polite and neutral. */
+  kind: 'accepted' | 'rejected' | 'info';
   text: string;
   /** Engine reject code, kept inspectable as the title. */
   code?: string | null;
@@ -112,6 +115,7 @@ export function StagingStrip({
             type="button"
             onClick={cancelAll.onConfirm}
             disabled={cancelAll.running}
+            aria-keyshortcuts="Enter"
             className={`${BTN} border-0 bg-sell px-3 font-semibold text-bg`}
           >
             Cancel {cancelAll.count}
@@ -124,6 +128,7 @@ export function StagingStrip({
           >
             Keep
           </button>
+          <span className="flex-none text-muted">Enter confirms · Esc keeps</span>
         </>
       ) : staged ? (
         <>
@@ -173,6 +178,10 @@ export function StagingStrip({
         {result &&
           (result.kind === 'rejected' ? (
             <span role="alert" data-result="rejected" title={result.code ?? undefined} className="font-medium text-sell">
+              {result.text}
+            </span>
+          ) : result.kind === 'info' ? (
+            <span data-result="info" className="text-text">
               {result.text}
             </span>
           ) : (

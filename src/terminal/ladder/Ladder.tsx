@@ -13,9 +13,13 @@
  *   jump-below slot (fixed height)
  * The marker slots are always reserved, so a marker appearing never resizes
  * the rung area or moves a rung.
+ *
+ * Keyboard (useLadderKeys, DESIGN.md rule 11): the rung area is the grid and
+ * one tab stop; the column header with the grouping select sits outside it,
+ * so the select is its own stop and never sees a ladder key.
  */
-import { useMemo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import type { Ref } from 'react';
 import type { Market, OrderBook, UserOrder } from '../../types/market';
 import type { LevelChange } from '../../hooks/useOrderBook';
 import { marketUi, groupingOptions } from '../../trading/marketUi';
@@ -30,6 +34,8 @@ import { JumpMarker } from './JumpMarker';
 import type { OwnOrderActions } from './OwnOrderChip';
 import type { Anchor } from '../../ui';
 import { formatFixed, formatSmall } from './format';
+import { useLadderKeys } from './useLadderKeys';
+import type { LadderHandle, PassedCommand } from './useLadderKeys';
 
 export interface LadderProps {
   market: Market;
@@ -41,16 +47,24 @@ export interface LadderProps {
   lastPrice: number | null;
   /** The order size as label text ("0.25"), or null when none is set. */
   sizeText?: string | null;
-  /** Stage an order at a rung: side of the clicked cell, the rung's price. */
-  onStage?: (side: LadderSide, price: number) => void;
+  /** Stage an order at a rung: side of the clicked cell, the rung's price.
+   *  From the keyboard (B / S) `anchor` is the focused cell. */
+  onStage?: (side: LadderSide, price: number, anchor?: HTMLElement) => void;
   /** The staged order's cell, drawn outlined. */
   staged?: { side: LadderSide; price: number } | null;
   /** Pin the window (an order is staged, or a menu or popover is open). */
   hold?: boolean;
   /** Open the rung menu at a rung (right-click or the Menu key). */
   onRungMenu?: (price: number, anchor: Anchor) => void;
-  /** Cancel / Move on the Mine chips. */
+  /** Cancel / Move on the Mine chips, and Del / Alt+arrows on the keyboard. */
   ownActions?: OwnOrderActions;
+  /** Ladder keys the caller handles (market stage, sizes, type, TIF,
+   *  one-click, Cancel all). */
+  onCommand?: (cmd: PassedCommand) => void;
+  /** Say something through the staging strip (the one live region). */
+  onAnnounce?: (text: string) => void;
+  /** Lets the page focus the ladder (the L key). */
+  handleRef?: Ref<LadderHandle>;
 }
 
 /** The rung the window follows, or null when the model has nothing yet. */
@@ -63,11 +77,6 @@ function toneOf(model: LadderModel, rung: number): PriceTone {
   if (model.bestAskRung !== null && rung >= model.bestAskRung) return 'sell';
   if (model.bestBidRung !== null && rung <= model.bestBidRung) return 'buy';
   return 'muted';
-}
-
-function isTypingTarget(t: EventTarget | null): boolean {
-  if (!(t instanceof HTMLElement)) return false;
-  return t.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName);
 }
 
 /** The middle of the touch, once the book has both sides. */
@@ -88,6 +97,9 @@ export function Ladder({
   hold = false,
   onRungMenu,
   ownActions,
+  onCommand,
+  onAnnounce,
+  handleRef,
 }: LadderProps) {
   const ui = marketUi(market);
   // Grouping belongs to the market it was chosen on; a switch starts from the
@@ -127,15 +139,31 @@ export function Ladder({
     `Price ladder, grouped by ${groupLabel}` +
     (spreadText !== null ? `, spread ${spreadText}` : spread ? `, book ${spread.state}` : '');
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || isTypingTarget(e.target)) return;
-    if (e.key === 'c' || e.key === 'C') {
-      e.preventDefault();
-      win.recentre();
-    }
-  };
+  const keys = useLadderKeys({
+    market,
+    model,
+    view,
+    centre: win.centre,
+    pinTo: win.pinTo,
+    recentre: win.recentre,
+    ownActions,
+    onStage,
+    onCommand,
+    onAnnounce,
+    handleRef,
+  });
+  const { measureRef } = win;
+  const { gridRef: keysGridRef } = keys;
+  // One element is both measured (row count) and the grid (focus, keys).
+  const gridRef = useCallback(
+    (el: HTMLElement | null) => {
+      measureRef(el);
+      keysGridRef(el);
+    },
+    [measureRef, keysGridRef],
+  );
 
-  const flashed = (keys: string[]) => keys.some(k => levelChanges.has(k));
+  const flashed = (priceKeys: string[]) => priceKeys.some(k => levelChanges.has(k));
   const spreadIndex = view ? view.rows.findIndex((r: LadderRow) => r.spreadBelow) : -1;
 
   return (
@@ -143,7 +171,6 @@ export function Ladder({
       ref={win.regionRef}
       data-ladder-region
       data-pinned={win.pinned ? 'true' : 'false'}
-      onKeyDown={onKeyDown}
       className={`mx-auto flex h-full min-h-0 w-full ${LADDER_MAX_WIDTH} flex-col px-4`}
     >
       {/* Above: Re-centre (while held) and the jump marker. */}
@@ -172,11 +199,14 @@ export function Ladder({
         )}
       </div>
 
-      <div role="grid" aria-label={gridLabel} tabIndex={0} className="flex min-h-0 flex-1 flex-col rounded outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
-        <div role="row" className={`grid h-7 flex-none ${LADDER_COLUMNS} items-center text-[11px] text-muted`}>
-          <span role="columnheader">Mine</span>
-          <span role="columnheader" className="pr-3 text-right">Bids</span>
-          <span role="columnheader" className="flex justify-center">
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* Column header: visual only, outside the grid (the grid's own
+            header row is for assistive technology), so the grouping select
+            is a tab stop of its own. */}
+        <div className={`grid h-7 flex-none ${LADDER_COLUMNS} items-center text-[11px] text-muted`}>
+          <span aria-hidden>Mine</span>
+          <span aria-hidden className="pr-3 text-right">Bids</span>
+          <span className="flex justify-center">
             <select
               aria-label="Price grouping"
               value={groupTicks}
@@ -190,11 +220,29 @@ export function Ladder({
               ))}
             </select>
           </span>
-          <span role="columnheader" className="pl-3">Asks</span>
-          <span role="columnheader" className="text-right">Mine</span>
+          <span aria-hidden className="pl-3">Asks</span>
+          <span aria-hidden className="text-right">Mine</span>
         </div>
 
-        <div ref={win.measureRef} data-ladder-rungs className="relative min-h-0 flex-1 overflow-hidden">
+        <div
+          ref={gridRef}
+          role="grid"
+          aria-label={gridLabel}
+          aria-keyshortcuts="L"
+          tabIndex={keys.gridTabIndex}
+          onKeyDown={keys.onKeyDown}
+          onFocus={keys.onFocus}
+          onBlur={keys.onBlur}
+          data-ladder-rungs
+          className="relative min-h-0 flex-1 overflow-hidden rounded outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
+        >
+          <div role="row" className="sr-only">
+            <span role="columnheader">Mine</span>
+            <span role="columnheader">Bids</span>
+            <span role="columnheader">Price</span>
+            <span role="columnheader">Asks</span>
+            <span role="columnheader">Mine</span>
+          </div>
           <div role="rowgroup">
             {awaitingBook
               ? Array.from({ length: win.rowCount }, (_, i) => <SkeletonRung key={i} index={i} />)
@@ -214,6 +262,7 @@ export function Ladder({
                     onStage={onStage}
                     onMenu={onRungMenu}
                     ownActions={ownActions}
+                    focusable={row.rung === keys.tabStopRung}
                   />
                 ))}
           </div>

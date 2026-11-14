@@ -26,6 +26,12 @@
  *   price only). Cancel all asks first, then cancels this market's open
  *   orders one by one through the page's cancel handler. Pending state is
  *   kept per omsOrderId here, never in the shared API loading flag.
+ * - Keyboard (DESIGN.md rule 11, keymap.ts): L focuses the ladder and ?
+ *   opens the shortcut sheet from anywhere outside text fields, menus and
+ *   dialogs. The rest work only while the ladder grid has focus: the grid
+ *   handles moving focus and own orders (useLadderKeys) and hands the
+ *   order-entry keys here (`onCommand`). Ctrl+Shift+X asks, Enter confirms.
+ *   Keyboard feedback is announced through the strip only (rule 12).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
@@ -50,12 +56,15 @@ import {
   effectiveDefaults,
   extraField,
   formatPriceText,
+  nextTif,
+  nextType,
   parseSize,
   stagedTotal,
   stagedType,
   tifChoice,
   typeLabel,
 } from '../../trading/staging';
+import { stepSize } from '../../trading/marketUi';
 import { cancelAllSummary, menuReference, oneClickPlaces, rungMenuSides } from '../../trading/orderActions';
 import type { CancelResult } from '../../trading/orderActions';
 import type { Anchor } from '../../ui';
@@ -68,6 +77,10 @@ import { RungMenu } from './RungMenu';
 import type { TicketKind } from './RungMenu';
 import { OrderPopover } from './OrderPopover';
 import type { OwnOrderActions, PendingKind } from './OwnOrderChip';
+import type { LadderHandle, PassedCommand } from './useLadderKeys';
+import { globalCommand, inOverlay, isTypingTarget } from './keymap';
+import { ShortcutsDialog } from './ShortcutsDialog';
+import { formatCompactSize } from './format';
 
 export interface TradingLadderProps {
   market: Market;
@@ -101,11 +114,6 @@ function defaultSize(market: Market): string {
 /** The defaults-bar types whose second value is set in the order popover. */
 function isTicketKind(t: OrderType): t is TicketKind {
   return extraField(t) !== null && (t === 'STOP_LIMIT' || t === 'TRAILING_STOP' || t === 'ICEBERG');
-}
-
-function isTypingTarget(t: EventTarget | null): boolean {
-  if (!(t instanceof HTMLElement)) return false;
-  return t.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName);
 }
 
 export function TradingLadder(props: TradingLadderProps) {
@@ -262,9 +270,10 @@ export function TradingLadder(props: TradingLadderProps) {
     [market, snap],
   );
 
-  /** A click on a rung cell. */
+  /** A click on a rung cell, or B / S on the focused rung (`anchorEl` is
+   *  the focused cell, where a popover then opens). */
   const onCellClick = useCallback(
-    (side: OrderSide, price: number) => {
+    (side: OrderSide, price: number, anchorEl?: HTMLElement) => {
       const snapped = snap(price);
       if (snapped === null) return;
       // Types with a second value go through their popover.
@@ -275,7 +284,7 @@ export function TradingLadder(props: TradingLadderProps) {
           kind: type,
           side,
           price: snapped,
-          anchor: at ?? { x: window.innerWidth / 2, y: window.innerHeight / 3 },
+          anchor: anchorEl ? { current: anchorEl } : (at ?? { x: window.innerWidth / 2, y: window.innerHeight / 3 }),
         });
         return;
       }
@@ -461,11 +470,93 @@ export function TradingLadder(props: TradingLadderProps) {
         }
       : null;
 
+  // ---- keyboard ----------------------------------------------------------
+  const announce = useCallback((text: string) => showResult({ kind: 'info', text }), [showResult]);
+  const ui = marketUi(market);
+
+  /** The order-entry keys the ladder grid hands over. */
+  const onCommand = (cmd: PassedCommand) => {
+    switch (cmd.kind) {
+      case 'stageMarket':
+        stage(cmd.side, null);
+        return;
+      case 'preset': {
+        const p = ui.sizePresets[cmd.index];
+        if (p === undefined) {
+          announce(`No size preset ${cmd.index + 1} on ${market.symbol}`);
+          return;
+        }
+        setSizeSel({ marketId: market.id, size: String(p) });
+        announce(`Size ${formatCompactSize(p, ui.sizeDecimals)} ${market.baseAsset}`);
+        return;
+      }
+      case 'sizeStep': {
+        const next = stepSize(market, size, cmd.dir);
+        if (next === null) {
+          announce(`No size step on ${market.symbol}: type a size`);
+          return;
+        }
+        setSizeSel({ marketId: market.id, size: next });
+        announce(`Size ${next} ${market.baseAsset}`);
+        return;
+      }
+      case 'nextType': {
+        const t = nextType(type);
+        setType(t);
+        announce(`Order type: ${typeLabel(t)}`);
+        return;
+      }
+      case 'nextTif': {
+        const c = tifChoice(nextTif(tif));
+        setTif(c.tif);
+        announce(`Time in force: ${c.label}, ${c.long}`);
+        return;
+      }
+      case 'toggleOneClick':
+        if (armed) {
+          setArmedOn(null);
+          return;
+        }
+        if (!oneClickAvailable) {
+          announce(signedIn ? 'One-click needs a live connection' : 'Sign in to arm one-click');
+          return;
+        }
+        setArmedOn(market.id);
+        return;
+      case 'cancelAll':
+        if (!signedIn || !onCancelOrder) announce('Sign in to cancel orders');
+        else if (running) announce('Cancel all is already running');
+        else if (marketOrders.length === 0) announce(`No open orders on ${market.symbol}`);
+        else setCancelAsk({ marketId: market.id });
+        return;
+    }
+  };
+
+  const ladderHandle = useRef<LadderHandle>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  // L and ?, from anywhere outside text fields, menus and dialogs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const cmd = globalCommand(e);
+      if (!cmd) return;
+      if (isTypingTarget(e.target) || inOverlay(e.target)) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      if (cmd === 'help') setShortcutsOpen(true);
+      else ladderHandle.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Enter and Esc. Latest handlers through a ref so the listener is stable.
   const rootRef = useRef<HTMLDivElement>(null);
-  const keys = useRef({ place, clear, staged: staged !== null, armed, asking });
+  const confirmAll = cancelAllView?.asking ?? false;
+  const keys = useRef({ place, clear, staged: staged !== null, armed, asking, confirmAll, cancelAll });
   useEffect(() => {
-    keys.current = { place, clear, staged: staged !== null, armed, asking };
+    keys.current = { place, clear, staged: staged !== null, armed, asking, confirmAll, cancelAll };
   });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -497,12 +588,15 @@ export function TradingLadder(props: TradingLadderProps) {
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (!k.staged) return;
+      if (!k.staged && !k.confirmAll) return;
       if (isTypingTarget(t)) return;
       const onGrid = inRoot && t instanceof HTMLElement && t.closest('[role="grid"]') !== null;
       if (!onPage && !onGrid) return;
       e.preventDefault();
-      void k.place();
+      // The Cancel all question is on screen (it replaces the stage there):
+      // Enter answers it.
+      if (k.confirmAll) void k.cancelAll();
+      else void k.place();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -537,6 +631,7 @@ export function TradingLadder(props: TradingLadderProps) {
           available: oneClickAvailable,
           onChange: on => setArmedOn(on && oneClickAvailable ? market.id : null),
         }}
+        onShowShortcuts={() => setShortcutsOpen(true)}
       />
       <StagingStrip
         staged={view}
@@ -565,8 +660,12 @@ export function TradingLadder(props: TradingLadderProps) {
             setRungMenu({ marketId: market.id, price, anchor });
           }}
           ownActions={ownActions}
+          onCommand={onCommand}
+          onAnnounce={announce}
+          handleRef={ladderHandle}
         />
       </div>
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       {menuNow && (
         <RungMenu

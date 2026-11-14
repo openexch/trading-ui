@@ -1,0 +1,318 @@
+// SPDX-License-Identifier: Apache-2.0
+/**
+ * Keyboard focus and keys for the ladder grid (DESIGN.md rule 11).
+ *
+ * - Roving tabindex: the grid is one tab stop. The focused rung's price cell
+ *   holds tabindex 0; every other cell is -1. Before any rung was focused,
+ *   or once the focused rung has left the window, the tab stop is the
+ *   centre row. With no rows yet (skeletons) the grid itself is the stop.
+ * - The focused rung is kept as its price, so focus follows the price across
+ *   live updates (rows are keyed by price). A focused ladder is pinned
+ *   (useLadderWindow); only C re-centres it, and focus goes with it.
+ * - Arrow keys move focus one rung (Shift: ten). Past the window's edge the
+ *   window shifts with it and holds there until Re-centre or C.
+ * - [ and ] step through own orders in ladder order (highest price first),
+ *   wrapping; the window pins to the order's rung when it is outside.
+ * - Del cancels and Alt+Up / Alt+Down move the selected own order (the one
+ *   [ or ] picked, else the only own order on the focused rung). Move is for
+ *   limit orders only; anything refused is announced through the staging
+ *   strip, the one live region (rule 12).
+ * - The other ladder keys (market stage, sizes, type, TIF, one-click,
+ *   Cancel all) are handed to the caller through `onCommand`.
+ * - Keys are read only when the event comes from the grid itself, never
+ *   from an input or an open menu or popover that React bubbles through it.
+ */
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, FocusEvent as ReactFocusEvent, Ref } from 'react';
+import type { Market, UserOrder } from '../../types/market';
+import { canMove, stepPrice } from '../../trading/orderActions';
+import { formatPriceText, typeLabel } from '../../trading/staging';
+import { marketUi } from '../../trading/marketUi';
+import { formatCompactSize } from './format';
+import { defaultCentre, rungOf, rungPrice, toTicks } from './ladderModel';
+import type { LadderModel, LadderSide, LadderWindow, OwnPlacement } from './ladderModel';
+import type { OwnOrderActions } from './OwnOrderChip';
+import { inOverlay, isTypingTarget, ladderCommand } from './keymap';
+import type { LadderCommand } from './keymap';
+
+/** Commands the ladder leaves to its caller. */
+export type PassedCommand = Extract<
+  LadderCommand,
+  { kind: 'stageMarket' | 'preset' | 'sizeStep' | 'nextType' | 'nextTif' | 'toggleOneClick' | 'cancelAll' }
+>;
+
+export interface LadderHandle {
+  /** Move keyboard focus to the ladder (the L key). */
+  focus: () => void;
+}
+
+export interface LadderKeysOptions {
+  market: Market;
+  model: LadderModel;
+  view: LadderWindow | null;
+  centre: number | null;
+  pinTo: (rung: number) => void;
+  recentre: () => void;
+  ownActions?: OwnOrderActions;
+  onStage?: (side: LadderSide, price: number, anchor?: HTMLElement) => void;
+  onCommand?: (cmd: PassedCommand) => void;
+  onAnnounce?: (text: string) => void;
+  handleRef?: Ref<LadderHandle>;
+}
+
+interface FocusState {
+  marketId: number;
+  /** The focused rung, as its price. */
+  price: number;
+  /** The own order [ or ] picked (or Alt+arrows moved), by key. */
+  orderKey: string | null;
+}
+
+export function ownKey(o: UserOrder): string {
+  return o.omsOrderId !== '' ? o.omsOrderId : `id:${o.orderId}`;
+}
+
+/** Own orders in ladder order: highest price first, then oldest first. */
+export function ownInLadderOrder(model: LadderModel): OwnPlacement[] {
+  return [...model.own].sort((a, b) => b.order.price - a.order.price || a.order.timestamp - b.order.timestamp);
+}
+
+const FOCUS_CELL = '[data-focus-cell]';
+
+export function useLadderKeys(opts: LadderKeysOptions) {
+  const { market, model, view, centre, pinTo, recentre, ownActions, onStage, onCommand, onAnnounce } = opts;
+  const [focusRaw, setFocus] = useState<FocusState | null>(null);
+  const focus = focusRaw && focusRaw.marketId === market.id ? focusRaw : null;
+  const [gridEl, setGridEl] = useState<HTMLElement | null>(null);
+  /** Set when a key moved focus: the next commit focuses the tab stop. */
+  const wantFocus = useRef(false);
+  /** The element inside the grid that last had focus (see the effect). */
+  const lastFocused = useRef<HTMLElement | null>(null);
+
+  const { grid, groupTicks } = model;
+  const rungOfPrice = useCallback(
+    (price: number) => Math.floor(toTicks(grid, price) / groupTicks),
+    [grid, groupTicks],
+  );
+  const priceOf = useCallback((rung: number) => rungPrice(grid, groupTicks, rung), [grid, groupTicks]);
+
+  const visible = (rung: number) =>
+    view !== null && rung <= view.top && rung >= view.bottom && rung >= model.minRung && rung <= model.maxRung;
+  const focusRung = focus ? rungOfPrice(focus.price) : null;
+  let tabStopRung: number | null = null;
+  if (focusRung !== null && visible(focusRung)) tabStopRung = focusRung;
+  else if (view && view.rows.length > 0) {
+    const mid = view.rows[(view.rows.length - 1) >> 1];
+    tabStopRung = mid.inRange ? mid.rung : (view.rows.find(r => r.inRange)?.rung ?? null);
+  }
+
+  // Focus follows keys: after a key moved the focused rung, focus its cell.
+  // Also keep focus in the grid when the focused element was removed (a
+  // resize dropped its row), and hand it from the grid to a cell once rows
+  // arrive (L pressed before the first snapshot).
+  useEffect(() => {
+    if (!gridEl) return;
+    const cell = gridEl.querySelector<HTMLElement>(`${FOCUS_CELL}[tabindex="0"]`);
+    const active = document.activeElement;
+    const lost =
+      lastFocused.current !== null &&
+      !lastFocused.current.isConnected &&
+      (active === null || active === document.body);
+    if (wantFocus.current || lost || (active === gridEl && cell)) {
+      wantFocus.current = false;
+      if (cell) {
+        if (active !== cell) cell.focus();
+      } else if (active !== gridEl) {
+        gridEl.focus();
+      }
+    }
+  });
+
+  useImperativeHandle(
+    opts.handleRef,
+    () => ({
+      focus: () => {
+        if (!gridEl) return;
+        const cell = gridEl.querySelector<HTMLElement>(`${FOCUS_CELL}[tabindex="0"]`);
+        (cell ?? gridEl).focus();
+      },
+    }),
+    [gridEl],
+  );
+
+  const announce = (text: string) => onAnnounce?.(text);
+
+  const focusRungAt = (rung: number, orderKey: string | null) => {
+    setFocus({ marketId: market.id, price: priceOf(rung), orderKey });
+    wantFocus.current = true;
+  };
+
+  /** The own order Del and Alt+arrows act on, or null (and why, announced). */
+  const selectedOrder = (rung: number): UserOrder | null => {
+    if (focus?.orderKey) {
+      const picked = model.own.find(p => ownKey(p.order) === focus.orderKey);
+      if (picked) return picked.order;
+    }
+    const here = model.own.filter(p => p.rung === rung);
+    const at = formatPriceText(market, priceOf(rung));
+    if (here.length === 1) return here[0].order;
+    if (here.length === 0) announce(`No order of yours at ${at}`);
+    else announce(`${here.length} orders of yours at ${at}: press [ or ] to pick one`);
+    return null;
+  };
+
+  const orderText = (o: UserOrder) =>
+    `${o.side === 'BID' ? 'Buy' : 'Sell'} ${formatCompactSize(o.remainingQuantity, marketUi(market).sizeDecimals)} ${
+      market.baseAsset
+    } @ ${formatPriceText(market, o.price)}`;
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
+    if (e.defaultPrevented) return;
+    const target = e.target as Node;
+    // React bubbles events from portals (chip menus, popovers) through the
+    // grid; their keys are theirs.
+    if (!(target instanceof Node) || !e.currentTarget.contains(target)) return;
+    if (isTypingTarget(e.target) || inOverlay(e.target)) return;
+    const cmd = ladderCommand(e);
+    if (!cmd) return;
+
+    const cur = focusRung !== null && visible(focusRung) ? focusRung : tabStopRung;
+
+    switch (cmd.kind) {
+      case 'move': {
+        if (cur === null || !view || centre === null) return;
+        e.preventDefault();
+        const next = Math.min(model.maxRung, Math.max(model.minRung, cur + cmd.rungs));
+        if (next > view.top) pinTo(centre + (next - view.top));
+        else if (next < view.bottom) pinTo(centre - (view.bottom - next));
+        focusRungAt(next, null);
+        return;
+      }
+      case 'recentre': {
+        e.preventDefault();
+        recentre();
+        const anchor =
+          model.lastTradeRung === null && model.bestBidRung === null && model.bestAskRung === null
+            ? cur
+            : defaultCentre(model);
+        if (anchor !== null) focusRungAt(anchor, null);
+        return;
+      }
+      case 'stage': {
+        if (cur === null || !onStage) return;
+        e.preventDefault();
+        const cell = gridEl?.querySelector<HTMLElement>(`${FOCUS_CELL}[tabindex="0"]`) ?? undefined;
+        onStage(cmd.side, priceOf(cur), cell);
+        return;
+      }
+      case 'ownOrder': {
+        e.preventDefault();
+        const list = ownInLadderOrder(model);
+        if (list.length === 0) {
+          announce(`No open orders of yours on ${market.symbol}`);
+          return;
+        }
+        let i = focus?.orderKey ? list.findIndex(p => ownKey(p.order) === focus.orderKey) : -1;
+        if (i >= 0) {
+          i = (i + cmd.dir + list.length) % list.length;
+        } else if (cur !== null && cmd.dir > 0) {
+          // From the focused rung downwards (an order on it counts).
+          i = list.findIndex(p => p.rung <= cur);
+          if (i < 0) i = 0;
+        } else if (cur !== null) {
+          // From the focused rung upwards.
+          i = -1;
+          for (let k = list.length - 1; k >= 0; k--) {
+            if (list[k].rung >= cur) {
+              i = k;
+              break;
+            }
+          }
+          if (i < 0) i = list.length - 1;
+        } else {
+          i = cmd.dir > 0 ? 0 : list.length - 1;
+        }
+        const p = list[i];
+        if (!visible(p.rung)) pinTo(p.rung);
+        focusRungAt(p.rung, ownKey(p.order));
+        announce(`Order ${i + 1} of ${list.length}: ${orderText(p.order)}`);
+        return;
+      }
+      case 'cancelOwn':
+      case 'moveOwn': {
+        if (cur === null) return;
+        e.preventDefault();
+        if (!ownActions) {
+          announce('Sign in to manage your orders');
+          return;
+        }
+        const o = selectedOrder(cur);
+        if (!o) return;
+        if (o.omsOrderId === '') {
+          announce(`${orderText(o)} cannot be changed yet`);
+          return;
+        }
+        if (ownActions.pending.has(o.omsOrderId)) {
+          announce(`${orderText(o)} already has a request in flight`);
+          return;
+        }
+        if (cmd.kind === 'cancelOwn') {
+          ownActions.onCancel(o);
+          return;
+        }
+        if (!canMove(o)) {
+          announce(`${typeLabel(o.type)} orders cannot be moved: cancel instead`);
+          return;
+        }
+        const to = stepPrice(market, o.price, groupTicks, cmd.dir);
+        if (to === null) {
+          announce(`No rung ${cmd.dir > 0 ? 'above' : 'below'} ${formatPriceText(market, o.price)}`);
+          return;
+        }
+        ownActions.onMove(o, to);
+        // Focus goes with the order, so the next Alt+arrow continues.
+        const side: LadderSide = o.side === 'BID' ? 'BID' : 'ASK';
+        const rung = rungOf(grid, groupTicks, to, side);
+        if (!visible(rung)) pinTo(rung);
+        focusRungAt(rung, ownKey(o));
+        return;
+      }
+      default:
+        e.preventDefault();
+        onCommand?.(cmd);
+    }
+  };
+
+  // Focus that lands on a rung by pointer (a click on a cell or chip) moves
+  // the focused rung there, so keys continue from where the user clicked.
+  const onFocus = (e: ReactFocusEvent<HTMLElement>) => {
+    const t = e.target;
+    if (!(t instanceof HTMLElement) || !e.currentTarget.contains(t)) return;
+    lastFocused.current = t;
+    const row = t.closest<HTMLElement>('[data-rung-price]');
+    const raw = row?.dataset.rungPrice;
+    if (!raw) return;
+    const price = Number(raw);
+    if (focus && Math.abs(rungOfPrice(focus.price) - rungOfPrice(price)) === 0) return;
+    setFocus({ marketId: market.id, price, orderKey: null });
+  };
+
+  const onBlur = (e: ReactFocusEvent<HTMLElement>) => {
+    const next = e.relatedTarget;
+    if (next instanceof Node && e.currentTarget.contains(next)) return;
+    // Focus left on purpose (elsewhere, or a click on the page): forget it,
+    // so the effect above never pulls focus back. A row removed while
+    // focused fires no blur while still connected, so that case is kept.
+    if (e.target.isConnected && lastFocused.current === e.target) lastFocused.current = null;
+  };
+
+  return {
+    gridRef: setGridEl,
+    tabStopRung,
+    /** The grid is the tab stop only while it has no rows. */
+    gridTabIndex: tabStopRung === null ? 0 : -1,
+    onKeyDown,
+    onFocus,
+    onBlur,
+  };
+}
