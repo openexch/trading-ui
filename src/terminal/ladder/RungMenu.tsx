@@ -6,6 +6,8 @@
  * trailing stop…, Buy iceberg…; above it the sides flip. Items ending in
  * "…" open their order popover; the others stage at once. Nothing here
  * places an order: Enter in the staging strip does (DESIGN.md rule 10).
+ * On the phone (`touch`) every item is a 44px target; the phone opens it by
+ * long-press or the "More order types" button.
  */
 import type { OrderSide } from '../../types/market';
 import { Menu, MenuGroup, MenuItem } from '../../ui';
@@ -28,17 +30,25 @@ export interface RungMenuProps {
   onLimit: (side: OrderSide) => void;
   onStopLoss: (side: OrderSide) => void;
   onTicket: (kind: TicketKind, side: OrderSide) => void;
+  /** 44px items for touch. */
+  touch?: boolean;
 }
 
 const verb = (s: OrderSide) => (s === 'BID' ? 'Buy' : 'Sell');
 const tone = (s: OrderSide) => (s === 'BID' ? 'buy' : 'sell');
 
-export function RungMenu({ anchor, priceText, sizeText, sides, limitIsClick, onClose, onLimit, onStopLoss, onTicket }: RungMenuProps) {
+export function RungMenu({ anchor, priceText, sizeText, sides, limitIsClick, onClose, onLimit, onStopLoss, onTicket, touch = false }: RungMenuProps) {
   const { limit, stop } = sides;
   return (
-    <Menu open onClose={onClose} anchor={anchor} label={`Orders at ${priceText}`} className="w-[236px]">
+    <Menu
+      open
+      onClose={onClose}
+      anchor={anchor}
+      label={`Orders at ${priceText}`}
+      className={touch ? 'w-[260px] [&_[role=menuitem]]:min-h-11 [&_[role=menuitem]]:text-[14px]' : 'w-[236px]'}
+    >
       <MenuGroup label={`At ${priceText}${sizeText ? ` · ${sizeText}` : ''}`}>
-        <MenuItem tone={tone(limit)} onSelect={() => onLimit(limit)} hint={limitIsClick ? 'click' : undefined}>
+        <MenuItem tone={tone(limit)} onSelect={() => onLimit(limit)} hint={limitIsClick ? (touch ? 'tap' : 'click') : undefined}>
           {verb(limit)} limit
         </MenuItem>
         <MenuItem tone={tone(stop)} onSelect={() => onStopLoss(stop)}>

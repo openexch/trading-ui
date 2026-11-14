@@ -31,6 +31,10 @@ export interface StagedView {
   text: string;
   /** "Limit · GTC · 24,348.75 USD". */
   details: string;
+  /** The phone sheet's split of `details`: "Limit · GTC" and "24,348.75
+   *  USD" (null for a market order, which has no price to total). */
+  summary?: string;
+  totalText?: string | null;
   /** Why it cannot be placed yet ("Enter a size"), or null. */
   problem: string | null;
   /** Crossing note, or null. */

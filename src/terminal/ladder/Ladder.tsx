@@ -14,6 +14,13 @@
  * The marker slots are always reserved, so a marker appearing never resizes
  * the rung area or moves a rung.
  *
+ * Phone (`density="phone"`): 44px rungs in Bids | Price | Asks, a vertical
+ * finger drag moves the window (useLadderWindow `touchDrag`), and the
+ * marker slots give way to floating buttons over the rungs (Re-centre at the
+ * top right, the jump markers at the left), so the rung area keeps its
+ * height whatever appears. The grouping select lives in the caller's
+ * settings row (`grouping`).
+ *
  * Keyboard (useLadderKeys, DESIGN.md rule 11): the rung area is the grid and
  * one tab stop; the column header with the grouping select sits outside it,
  * so the select is its own stop and never sees a ladder key.
@@ -26,10 +33,10 @@ import { marketUi, groupingOptions } from '../../trading/marketUi';
 import { useTickDirection } from '../../ui/useTickDirection';
 import { buildLadder, defaultCentre, ladderWindow } from './ladderModel';
 import type { LadderModel, LadderRow, LadderSide } from './ladderModel';
-import { RUNG_PX, useLadderWindow } from './useLadderWindow';
+import { PHONE_RUNG_PX, RUNG_PX, useLadderWindow } from './useLadderWindow';
 import { LADDER_MAX_WIDTH } from '../layoutColumns';
-import { LADDER_COLUMNS, Rung, SkeletonRung } from './Rung';
-import type { PriceTone } from './Rung';
+import { LADDER_COLUMNS, PHONE_LADDER_COLUMNS, Rung, SkeletonRung } from './Rung';
+import type { PriceTone, RungDensity } from './Rung';
 import { JumpMarker } from './JumpMarker';
 import type { OwnOrderActions } from './OwnOrderChip';
 import type { Anchor } from '../../ui';
@@ -65,6 +72,11 @@ export interface LadderProps {
   onAnnounce?: (text: string) => void;
   /** Lets the page focus the ladder (the L key). */
   handleRef?: Ref<LadderHandle>;
+  /** 22px desktop rungs, or 44px phone rungs with touch gestures. */
+  density?: RungDensity;
+  /** Grouping held by the caller (the phone settings row); without it the
+   *  ladder keeps its own and shows the select in its column header. */
+  grouping?: { value: number; onChange: (multiplier: number) => void };
 }
 
 /** The rung the window follows, or null when the model has nothing yet. */
@@ -100,12 +112,18 @@ export function Ladder({
   onCommand,
   onAnnounce,
   handleRef,
+  density = 'desktop',
+  grouping,
 }: LadderProps) {
   const ui = marketUi(market);
+  const phone = density === 'phone';
+  const rungPx = phone ? PHONE_RUNG_PX : RUNG_PX;
+  const columns = phone ? PHONE_LADDER_COLUMNS : LADDER_COLUMNS;
   // Grouping belongs to the market it was chosen on; a switch starts from the
   // next market's default.
   const [groupSel, setGroupSel] = useState<{ marketId: number; mult: number } | null>(null);
-  const groupTicks = groupSel && groupSel.marketId === market.id ? groupSel.mult : ui.defaultGrouping;
+  const ownGroup = groupSel && groupSel.marketId === market.id ? groupSel.mult : ui.defaultGrouping;
+  const groupTicks = grouping ? grouping.value : ownGroup;
   const options = useMemo(() => groupingOptions(market), [market]);
   const groupLabel = options.find(o => o.multiplier === groupTicks)?.label ?? String(groupTicks);
 
@@ -126,6 +144,8 @@ export function Ladder({
     groupTicks,
     minRung: model.minRung,
     maxRung: model.maxRung,
+    rungPx,
+    touchDrag: phone,
   });
   const { dir } = useTickDirection(live);
 
@@ -165,6 +185,126 @@ export function Ladder({
 
   const flashed = (priceKeys: string[]) => priceKeys.some(k => levelChanges.has(k));
   const spreadIndex = view ? view.rows.findIndex((r: LadderRow) => r.spreadBelow) : -1;
+
+  const rungGrid = (
+    <div
+      ref={gridRef}
+      role="grid"
+      aria-label={gridLabel}
+      aria-keyshortcuts="L"
+      tabIndex={keys.gridTabIndex}
+      onKeyDown={keys.onKeyDown}
+      onFocus={keys.onFocus}
+      onBlur={keys.onBlur}
+      data-ladder-rungs
+      className={`relative min-h-0 flex-1 overflow-hidden rounded outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 ${
+        phone ? 'touch-none' : ''
+      }`}
+    >
+      <div role="row" className="sr-only">
+        {!phone && <span role="columnheader">Mine</span>}
+        <span role="columnheader">Bids</span>
+        <span role="columnheader">Price</span>
+        <span role="columnheader">Asks</span>
+        {!phone && <span role="columnheader">Mine</span>}
+      </div>
+      <div role="rowgroup">
+        {awaitingBook
+          ? Array.from({ length: win.rowCount }, (_, i) => <SkeletonRung key={i} index={i} density={density} />)
+          : view?.rows.map(row => (
+              <Rung
+                key={row.price}
+                row={row}
+                priceText={formatFixed(row.price, decimals)}
+                tone={toneOf(model, row.rung)}
+                lastDir={dir}
+                flashBid={flashed(row.bid.priceKeys)}
+                flashAsk={flashed(row.ask.priceKeys)}
+                sizeDecimals={ui.sizeDecimals}
+                baseAsset={market.baseAsset}
+                sizeText={sizeText}
+                stagedSide={staged && Math.abs(staged.price - row.price) < market.tickSize / 2 ? staged.side : null}
+                onStage={onStage}
+                onMenu={onRungMenu}
+                ownActions={ownActions}
+                focusable={row.rung === keys.tabStopRung}
+                density={density}
+              />
+            ))}
+      </div>
+      {/* Spread line: drawn ON the boundary between the two rungs that
+          straddle the spread, taking no height, so rungs never shift when
+          the touch moves (DESIGN.md rule 8). The label sits in the
+          price column's gap between the two prices. */}
+      {spreadIndex >= 0 && (
+        <div
+          aria-hidden
+          data-spread-line
+          className={`pointer-events-none absolute inset-x-0 grid h-[10px] ${columns} items-center`}
+          style={{ top: (spreadIndex + 1) * rungPx - 5 }}
+        >
+          {!phone && <span />}
+          <span className="h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--buy))' }} />
+          <span className="justify-self-center rounded-sm bg-surface px-1 text-[9px] font-medium uppercase leading-[10px] tracking-[0.06em] text-muted">
+            Spread {spreadText}
+          </span>
+          <span className="h-px" style={{ background: 'linear-gradient(90deg, var(--sell), transparent)' }} />
+          {!phone && <span />}
+        </div>
+      )}
+    </div>
+  );
+
+  if (phone) {
+    // Floating controls: 36px to the eye, 44px to the finger (the ::before
+    // reaches 4px past each edge).
+    const floatBtn =
+      "absolute z-10 flex h-9 items-center rounded-full border border-ctl bg-surface px-3 text-[12px] text-text-strong shadow-[var(--shadow-pop)] before:absolute before:-inset-y-1 before:inset-x-0 before:content-['']";
+    return (
+      <div
+        ref={win.regionRef}
+        data-ladder-region
+        data-pinned={win.pinned ? 'true' : 'false'}
+        className="relative flex h-full min-h-0 w-full flex-col px-3"
+      >
+        <div aria-hidden className={`grid h-7 flex-none ${columns} items-center text-[11px] text-muted`}>
+          <span className="truncate pr-2.5 text-right">Bids · tap to buy</span>
+          <span className="text-center">Price</span>
+          <span className="truncate pl-2.5">Asks · tap to sell</span>
+        </div>
+        {rungGrid}
+        {win.held && (
+          <button type="button" onClick={win.recentre} className={`${floatBtn} right-4 top-9`}>
+            Re-centre
+          </button>
+        )}
+        {view && (
+          <div className="absolute left-4 top-9 z-10 max-w-[calc(100%-140px)]">
+            <JumpMarker
+              direction="above"
+              outside={view.above}
+              priceDecimals={decimals}
+              sizeDecimals={ui.sizeDecimals}
+              onJump={win.pinTo}
+              compact
+            />
+          </div>
+        )}
+        {view && (
+          <div className="absolute bottom-2 left-4 z-10 max-w-[calc(100%-32px)]">
+            <JumpMarker
+              direction="below"
+              outside={view.below}
+              priceDecimals={decimals}
+              sizeDecimals={ui.sizeDecimals}
+              onJump={win.pinTo}
+              compact
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -224,69 +364,7 @@ export function Ladder({
           <span aria-hidden className="text-right">Mine</span>
         </div>
 
-        <div
-          ref={gridRef}
-          role="grid"
-          aria-label={gridLabel}
-          aria-keyshortcuts="L"
-          tabIndex={keys.gridTabIndex}
-          onKeyDown={keys.onKeyDown}
-          onFocus={keys.onFocus}
-          onBlur={keys.onBlur}
-          data-ladder-rungs
-          className="relative min-h-0 flex-1 overflow-hidden rounded outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
-        >
-          <div role="row" className="sr-only">
-            <span role="columnheader">Mine</span>
-            <span role="columnheader">Bids</span>
-            <span role="columnheader">Price</span>
-            <span role="columnheader">Asks</span>
-            <span role="columnheader">Mine</span>
-          </div>
-          <div role="rowgroup">
-            {awaitingBook
-              ? Array.from({ length: win.rowCount }, (_, i) => <SkeletonRung key={i} index={i} />)
-              : view?.rows.map(row => (
-                  <Rung
-                    key={row.price}
-                    row={row}
-                    priceText={formatFixed(row.price, decimals)}
-                    tone={toneOf(model, row.rung)}
-                    lastDir={dir}
-                    flashBid={flashed(row.bid.priceKeys)}
-                    flashAsk={flashed(row.ask.priceKeys)}
-                    sizeDecimals={ui.sizeDecimals}
-                    baseAsset={market.baseAsset}
-                    sizeText={sizeText}
-                    stagedSide={staged && Math.abs(staged.price - row.price) < market.tickSize / 2 ? staged.side : null}
-                    onStage={onStage}
-                    onMenu={onRungMenu}
-                    ownActions={ownActions}
-                    focusable={row.rung === keys.tabStopRung}
-                  />
-                ))}
-          </div>
-          {/* Spread line: drawn ON the boundary between the two rungs that
-              straddle the spread, taking no height, so rungs never shift when
-              the touch moves (DESIGN.md rule 8). The label sits in the
-              price column's gap between the two prices. */}
-          {spreadIndex >= 0 && (
-            <div
-              aria-hidden
-              data-spread-line
-              className={`pointer-events-none absolute inset-x-0 grid h-[10px] ${LADDER_COLUMNS} items-center`}
-              style={{ top: (spreadIndex + 1) * RUNG_PX - 5 }}
-            >
-              <span />
-              <span className="h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--buy))' }} />
-              <span className="justify-self-center rounded-sm bg-surface px-1 text-[9px] font-medium uppercase leading-[10px] tracking-[0.06em] text-muted">
-                Spread {spreadText}
-              </span>
-              <span className="h-px" style={{ background: 'linear-gradient(90deg, var(--sell), transparent)' }} />
-              <span />
-            </div>
-          )}
-        </div>
+        {rungGrid}
       </div>
 
       {/* Below: the jump marker. */}

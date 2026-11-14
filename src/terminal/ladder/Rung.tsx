@@ -20,11 +20,18 @@
  *   11), so a click stages and Enter places from the staging strip.
  *   Right-click or the Menu key opens the rung menu with the other order
  *   types at that price.
+ * - Phone density (`density="phone"`): 44px rungs, Bids | Price | Asks
+ *   (1fr / 96 / 1fr) with 40px tap cells. There is no room for Mine chips,
+ *   so an own order is a side-coloured dot in its cell next to the tint and
+ *   the depth slice; own orders are managed from the Orders tab. A tap
+ *   stages, a long-press opens the rung menu, and nothing previews on hover
+ *   (a touch leaves hover stuck).
  * - The price cell is the rung's keyboard focus target. Exactly one rung's
  *   price cell holds tabindex 0 (`focusable`); its label reads the rung as
  *   a whole: price, depth each side and your orders on it.
  */
-import type { CSSProperties, KeyboardEvent, MouseEvent } from 'react';
+import { useEffect, useRef } from 'react';
+import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from 'react';
 import type { LadderRow, LadderSide, SideCell } from './ladderModel';
 import type { TickDirection } from '../../ui/useTickDirection';
 import type { Anchor } from '../../ui';
@@ -33,6 +40,16 @@ import { OwnOrderChip } from './OwnOrderChip';
 import type { OwnOrderActions } from './OwnOrderChip';
 
 export const LADDER_COLUMNS = 'grid-cols-[52px_minmax(0,1fr)_112px_minmax(0,1fr)_52px]';
+
+/** Phone columns: Bids | Price | Asks. */
+export const PHONE_LADDER_COLUMNS = 'grid-cols-[minmax(0,1fr)_96px_minmax(0,1fr)]';
+
+export type RungDensity = 'desktop' | 'phone';
+
+/** How long a finger rests on a cell before the rung menu opens. */
+export const LONG_PRESS_MS = 500;
+/** Movement that turns a press into a drag (no menu). */
+const PRESS_SLOP_PX = 8;
 
 export type PriceTone = 'buy' | 'sell' | 'muted';
 
@@ -58,6 +75,7 @@ export interface RungProps {
   ownActions?: OwnOrderActions;
   /** This rung's price cell is the grid's tab stop (roving tabindex). */
   focusable?: boolean;
+  density?: RungDensity;
 }
 
 const HATCH: CSSProperties = {
@@ -88,6 +106,68 @@ function menuHandlers(price: number, onMenu?: (price: number, anchor: Anchor) =>
   };
 }
 
+/**
+ * Long-press on a touch cell opens the rung menu at the finger. The click
+ * that follows the press is swallowed so the press does not also stage. A
+ * press that moves (a drag of the ladder) or ends early is a plain tap.
+ * Android also fires contextmenu on a long-press: it is swallowed so the
+ * menu opens once.
+ */
+function useLongPress(price: number, onMenu?: (price: number, anchor: Anchor) => void) {
+  const press = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const fired = useRef(false);
+  const stop = () => {
+    if (press.current) window.clearTimeout(press.current.timer);
+    press.current = null;
+  };
+  // A press in progress never outlives the cell.
+  useEffect(
+    () => () => {
+      if (press.current) window.clearTimeout(press.current.timer);
+    },
+    [],
+  );
+  if (!onMenu) return { handlers: {}, consumeClick: () => false };
+  const handlers = {
+    onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
+      fired.current = false;
+      if (e.pointerType === 'mouse') return;
+      stop();
+      const x = e.clientX;
+      const y = e.clientY;
+      press.current = {
+        x,
+        y,
+        timer: window.setTimeout(() => {
+          press.current = null;
+          fired.current = true;
+          onMenu(price, { x, y });
+        }, LONG_PRESS_MS),
+      };
+    },
+    onPointerMove: (e: PointerEvent<HTMLButtonElement>) => {
+      const p = press.current;
+      if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > PRESS_SLOP_PX) stop();
+    },
+    onPointerUp: stop,
+    onPointerCancel: stop,
+    onPointerLeave: stop,
+    onContextMenu: (e: MouseEvent<HTMLButtonElement>) => {
+      // The long-press already opened the menu (or is about to): no second one.
+      e.preventDefault();
+      if (fired.current || press.current) return;
+      onMenu(price, e.clientX !== 0 || e.clientY !== 0 ? { x: e.clientX, y: e.clientY } : { current: e.currentTarget });
+    },
+  };
+  /** True once, for the click that ends a long-press. */
+  const consumeClick = () => {
+    if (!fired.current) return false;
+    fired.current = false;
+    return true;
+  };
+  return { handlers, consumeClick };
+}
+
 function depthWords(cell: SideCell, sizeDecimals: number): string {
   if (cell.state === 'level' && cell.quantity !== null) {
     const q = formatFixed(cell.quantity, sizeDecimals);
@@ -112,7 +192,7 @@ function rungLabel(row: LadderRow, priceText: string, sizeDecimals: number): str
   return parts.join(', ');
 }
 
-function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsset, sizeText, staged, onStage, onMenu }: {
+function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsset, sizeText, staged, onStage, onMenu, density }: {
   side: LadderSide;
   cell: SideCell;
   flash: boolean;
@@ -124,7 +204,10 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
   staged: boolean;
   onStage?: (side: LadderSide, price: number) => void;
   onMenu?: (price: number, anchor: Anchor) => void;
+  density: RungDensity;
 }) {
+  const phone = density === 'phone';
+  const longPress = useLongPress(price, phone ? onMenu : undefined);
   const isBid = side === 'BID';
   const edge: CSSProperties = isBid ? { right: 0 } : { left: 0 };
   const sideCls = isBid ? 'pr-3 text-right' : 'pl-3 text-left';
@@ -141,11 +224,13 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
     depth = ', depth unknown';
   }
   const what = sizeText !== null ? `${verb} ${sizeText} ${baseAsset}` : `${verb} ${baseAsset}`;
-  const label = `${what} at ${priceText}${depth}`;
   const own = cell.own;
+  const ownWords = own ? `, you have a ${isBid ? 'buy' : 'sell'} order here` : '';
+  const label = `${what} at ${priceText}${depth}${phone ? ownWords : ''}`;
   const sliceW = own && own.slice > 0 ? pct(own.sliceFraction) : null;
   // Literal class names: Tailwind only generates what it can read.
   const ring = isBid ? 'outline-buy' : 'outline-sell';
+  const barInset = phone ? 'top-1.5 bottom-1.5 rounded' : 'bottom-[3px] top-[3px] rounded-[3px]';
   const hoverRing = isBid ? 'hover:outline-buy' : 'hover:outline-sell';
 
   return (
@@ -156,16 +241,25 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
       aria-label={label}
       data-staged={staged ? 'true' : undefined}
       title={cell.partial ? 'Part of this group lies beyond the known depth' : undefined}
-      onClick={() => onStage?.(side, price)}
-      {...menuHandlers(price, onMenu)}
-      className={`group relative h-full cursor-pointer overflow-hidden rounded border-0 bg-transparent p-0 font-[inherit] text-[13px] leading-[22px] text-text-strong outline-offset-[-1px] hover:bg-chip hover:outline hover:outline-1 ${
-        staged ? `outline outline-1 ${ring}` : ''
-      } ${hoverRing} ${sideCls} ${flashCls}`}
+      onClick={() => {
+        if (longPress.consumeClick()) return;
+        onStage?.(side, price);
+      }}
+      {...(phone ? longPress.handlers : menuHandlers(price, onMenu))}
+      className={
+        phone
+          ? `relative h-10 cursor-pointer select-none overflow-hidden rounded-md border-0 p-0 font-[inherit] text-[14px] leading-10 text-text-strong outline-offset-[-2px] [-webkit-touch-callout:none] ${
+              staged ? `bg-chip outline outline-2 ${ring}` : 'bg-transparent'
+            } ${isBid ? 'pr-2.5 text-right' : 'pl-2.5 text-left'} ${flashCls}`
+          : `group relative h-full cursor-pointer overflow-hidden rounded border-0 bg-transparent p-0 font-[inherit] text-[13px] leading-[22px] text-text-strong outline-offset-[-1px] hover:bg-chip hover:outline hover:outline-1 ${
+              staged ? `outline outline-1 ${ring}` : ''
+            } ${hoverRing} ${sideCls} ${flashCls}`
+      }
     >
       {cell.state === 'level' && (
         <span
           aria-hidden
-          className={`absolute bottom-[3px] top-[3px] rounded-[3px] ${isBid ? 'bg-buy-soft' : 'bg-sell-soft'}`}
+          className={`absolute ${barInset} ${isBid ? 'bg-buy-soft' : 'bg-sell-soft'}`}
           style={{ ...edge, width: pct(cell.bar) }}
         />
       )}
@@ -174,24 +268,44 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
           <span
             aria-hidden
             data-own-slice
-            className={`absolute bottom-[3px] top-[3px] rounded-[3px] ${isBid ? 'bg-buy' : 'bg-sell'}`}
+            className={`absolute ${barInset} ${isBid ? 'bg-buy' : 'bg-sell'}`}
             style={{ ...edge, width: sliceW, opacity: 'var(--own-slice-alpha)' }}
           />
           <span
             aria-hidden
-            className="absolute bottom-[3px] top-[3px] rounded-[3px]"
+            className={`absolute ${barInset}`}
             style={{ ...edge, width: sliceW, boxShadow: `inset 0 0 0 1px var(${isBid ? '--buy' : '--sell'})` }}
           />
         </>
       )}
       {cell.state === 'unknown' && (
-        <span aria-hidden data-unknown className="absolute inset-y-[3px] inset-x-0 rounded-[3px] opacity-60" style={HATCH} />
+        <span
+          aria-hidden
+          data-unknown
+          className={`absolute inset-x-0 opacity-60 ${phone ? 'inset-y-1.5 rounded' : 'inset-y-[3px] rounded-[3px]'}`}
+          style={HATCH}
+        />
       )}
-      {/* On hover the cell previews what a click stages ("Buy 0.25"). */}
-      <span aria-hidden className="relative group-hover:hidden">{text}</span>
-      <span aria-hidden className={`relative hidden font-semibold group-hover:inline ${isBid ? 'text-buy' : 'text-sell'}`}>
-        {sizeText !== null ? `${verb} ${sizeText}` : verb}
-      </span>
+      {phone ? (
+        <>
+          {own && (
+            <span
+              aria-hidden
+              data-own-dot
+              className={`absolute top-1/2 -mt-1 h-2 w-2 rounded-full ${isBid ? 'left-1.5 bg-buy' : 'right-1.5 bg-sell'}`}
+            />
+          )}
+          <span aria-hidden className="relative">{text}</span>
+        </>
+      ) : (
+        <>
+          {/* On hover the cell previews what a click stages ("Buy 0.25"). */}
+          <span aria-hidden className="relative group-hover:hidden">{text}</span>
+          <span aria-hidden className={`relative hidden font-semibold group-hover:inline ${isBid ? 'text-buy' : 'text-sell'}`}>
+            {sizeText !== null ? `${verb} ${sizeText}` : verb}
+          </span>
+        </>
+      )}
     </button>
   );
 }
@@ -211,7 +325,11 @@ export function Rung({
   onMenu,
   ownActions,
   focusable = false,
+  density = 'desktop',
 }: RungProps) {
+  const phone = density === 'phone';
+  const cols = phone ? PHONE_LADDER_COLUMNS : LADDER_COLUMNS;
+  const rowH = phone ? 'h-[44px]' : 'h-[22px]';
   const ownBid = row.bid.own;
   const ownAsk = row.ask.own;
   const tint =
@@ -224,7 +342,7 @@ export function Rung({
           : undefined;
 
   if (!row.inRange) {
-    return <div role="row" aria-hidden data-rung-price="" className={`grid h-[22px] ${LADDER_COLUMNS}`} />;
+    return <div role="row" aria-hidden data-rung-price="" className={`grid ${rowH} ${cols}`} />;
   }
 
   const toneCls = tone === 'buy' ? 'text-buy' : tone === 'sell' ? 'text-sell' : 'text-muted';
@@ -233,14 +351,16 @@ export function Rung({
     <div
       role="row"
       data-rung-price={row.price}
-      className={`grid h-[22px] ${LADDER_COLUMNS} items-center rounded has-[[data-focus-cell]:focus-visible]:ring-1 has-[[data-focus-cell]:focus-visible]:ring-inset has-[[data-focus-cell]:focus-visible]:ring-accent/50`}
+      className={`grid ${rowH} ${cols} items-center ${phone ? 'rounded-md' : 'rounded'} has-[[data-focus-cell]:focus-visible]:ring-1 has-[[data-focus-cell]:focus-visible]:ring-inset has-[[data-focus-cell]:focus-visible]:ring-accent/50`}
       style={tint ? { background: tint } : undefined}
     >
+      {!phone && (
       <span role="gridcell" className="flex items-center">
         {ownBid && (
           <OwnOrderChip side="BID" own={ownBid} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} actions={ownActions} />
         )}
       </span>
+      )}
       <DepthCell
         side="BID"
         cell={row.bid}
@@ -253,13 +373,14 @@ export function Rung({
         staged={stagedSide === 'BID'}
         onStage={onStage}
         onMenu={onMenu}
+        density={density}
       />
       <span
         role="gridcell"
         tabIndex={focusable ? 0 : -1}
         data-focus-cell
         aria-label={rungLabel(row, priceText, sizeDecimals)}
-        className="flex h-full items-center justify-center rounded text-[13px] outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+        className={`flex h-full items-center justify-center rounded ${phone ? 'text-[14px]' : 'text-[13px]'} outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent`}
       >
         {row.isLastTrade ? (
           <span
@@ -295,12 +416,15 @@ export function Rung({
         staged={stagedSide === 'ASK'}
         onStage={onStage}
         onMenu={onMenu}
+        density={density}
       />
+      {!phone && (
       <span role="gridcell" className="flex items-center justify-end">
         {ownAsk && (
           <OwnOrderChip side="ASK" own={ownAsk} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} actions={ownActions} />
         )}
       </span>
+      )}
     </div>
   );
 }
@@ -309,11 +433,16 @@ export function Rung({
 const SKELETON_WIDTHS = [55, 70, 45, 65, 50, 75, 60, 40];
 
 /** Placeholder rungs while a market's first snapshot is in flight. */
-export function SkeletonRung({ index }: { index: number }) {
+export function SkeletonRung({ index, density = 'desktop' }: { index: number; density?: RungDensity }) {
   const w = (k: number) => `${SKELETON_WIDTHS[(index + k) % SKELETON_WIDTHS.length]}%`;
+  const phone = density === 'phone';
   return (
-    <div aria-hidden data-skeleton-rung className={`grid h-[22px] ${LADDER_COLUMNS} items-center animate-pulse`}>
-      <span />
+    <div
+      aria-hidden
+      data-skeleton-rung
+      className={`grid ${phone ? `h-[44px] ${PHONE_LADDER_COLUMNS}` : `h-[22px] ${LADDER_COLUMNS}`} items-center animate-pulse`}
+    >
+      {!phone && <span />}
       <span className="flex justify-end pr-3">
         <span className="h-3 rounded-sm bg-surface-2" style={{ width: w(0) }} />
       </span>
@@ -323,7 +452,7 @@ export function SkeletonRung({ index }: { index: number }) {
       <span className="flex justify-start pl-3">
         <span className="h-3 rounded-sm bg-surface-2" style={{ width: w(3) }} />
       </span>
-      <span />
+      {!phone && <span />}
     </div>
   );
 }

@@ -71,13 +71,13 @@ export interface TerminalDesktopProps {
   onReplaceOrder: (order: UserOrder, price?: number, quantity?: number) => Promise<{ success: boolean; message: string }>;
 }
 
-interface ActionsStore {
+export interface ActionsStore {
   get: () => LadderOrderActions | null;
   set: (actions: LadderOrderActions | null) => void;
   subscribe: (listener: () => void) => () => void;
 }
 
-function createActionsStore(): ActionsStore {
+export function createActionsStore(): ActionsStore {
   let value: LadderOrderActions | null = null;
   const listeners = new Set<() => void>();
   return {
@@ -94,7 +94,7 @@ function createActionsStore(): ActionsStore {
   };
 }
 
-function ConnectedOrdersPanel({ store, ...rest }: Omit<OrdersPanelProps, 'actions'> & { store: ActionsStore }) {
+export function ConnectedOrdersPanel({ store, ...rest }: Omit<OrdersPanelProps, 'actions'> & { store: ActionsStore }) {
   const actions = useSyncExternalStore(store.subscribe, store.get, store.get);
   return <OrdersPanel {...rest} actions={actions} />;
 }
