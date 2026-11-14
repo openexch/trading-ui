@@ -66,8 +66,9 @@ export interface CancelResult {
   message: string;
 }
 
-/** One line for the strip after a Cancel all run. */
-export function cancelAllSummary(results: CancelResult[]): { ok: boolean; text: string } {
+/** One line for the strip after a Cancel all (or Cancel selected) run;
+ *  `label` names the run in the failure line. */
+export function cancelAllSummary(results: CancelResult[], label = 'Cancel all'): { ok: boolean; text: string } {
   const failed = results.filter(r => !r.success);
   const done = results.length - failed.length;
   if (failed.length === 0) {
@@ -76,7 +77,7 @@ export function cancelAllSummary(results: CancelResult[]): { ok: boolean; text: 
   const first = failed[0].message;
   return {
     ok: false,
-    text: `Cancel all: ${done} cancelled, ${failed.length} failed${first ? ` (${first})` : ''}`,
+    text: `${label}: ${done} cancelled, ${failed.length} failed${first ? ` (${first})` : ''}`,
   };
 }
 

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Open orders, compact: Open · N | Fills tabs, a ⋯ menu with Cancel all and
- * a ⤢ button for the full table (View all, not built yet).
+ * a ⤢ button for the full table (View all: the all-orders dialog, with every
+ * market, selection, History and Fills).
  *
  * - Rows are this market's orders, 30 px: a side rule, "Buy 0.50", type,
  *   price, fill % and × cancel. Orders on other markets are counted in a
@@ -14,7 +15,7 @@
  *   strip (nothing is sent before it is confirmed), the same results.
  * - Rows keep omsOrderId keys and have no mount animation (rule 4).
  */
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import type { Market, UserOrder } from '../../types/market';
 import { Menu, MenuItem, useMenuTrigger } from '../../ui';
 import { marketUi } from '../../trading/marketUi';
@@ -26,6 +27,7 @@ import type { SlotChrome } from '../layout/SideColumn';
 import { NONE, PanelFrame, PanelNote, PanelSignIn } from './PanelFrame';
 import { FillsList } from './FillsPanel';
 import { fillPercent, isAwaitingTrigger, panelOrders } from './ordersModel';
+import { AllOrdersDialog } from '../orders/AllOrdersDialog';
 
 export interface OrdersPanelProps {
   chrome: SlotChrome;
@@ -36,13 +38,18 @@ export interface OrdersPanelProps {
   onSignIn: () => void;
   /** The ladder's own-order actions; null while there are none. */
   actions: LadderOrderActions | null;
+  /** Show on ladder from the all-orders dialog: switch market if needed and
+   *  bring the order's rung into view. */
+  onShowOnLadder?: (order: UserOrder) => void;
 }
 
 const ICON_BTN =
   'grid h-7 w-7 flex-none place-items-center rounded-md text-muted hover:bg-chip hover:text-text-strong aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent';
 
-export function OrdersPanel({ chrome, market, orders, signedIn, onSignIn, actions }: OrdersPanelProps) {
+export function OrdersPanel({ chrome, market, orders, signedIn, onSignIn, actions, onShowOnLadder }: OrdersPanelProps) {
   const [tab, setTab] = useState<'open' | 'fills'>('open');
+  const [viewAll, setViewAll] = useState(false);
+  const viewAllRef = useRef<HTMLButtonElement>(null);
   const { here, elsewhere } = useMemo(() => panelOrders(orders, market.id), [orders, market.id]);
   const more = useMenuTrigger();
   const uid = useId();
@@ -108,15 +115,33 @@ export function OrdersPanel({ chrome, market, orders, signedIn, onSignIn, action
         </MenuItem>
       </Menu>
       <button
+        ref={viewAllRef}
         type="button"
-        aria-disabled="true"
-        aria-label="View all orders (arrives next)"
-        title="View all arrives next"
-        onClick={e => e.preventDefault()}
+        aria-disabled={signedIn ? undefined : 'true'}
+        aria-haspopup="dialog"
+        aria-label={signedIn ? 'View all orders' : 'View all orders (sign in first)'}
+        title="View all"
+        onClick={e => {
+          if (!signedIn) {
+            e.preventDefault();
+            return;
+          }
+          setViewAll(true);
+        }}
         className={`${ICON_BTN} border border-ctl text-[13px] text-text`}
       >
         ⤢
       </button>
+      <AllOrdersDialog
+        open={viewAll && signedIn}
+        onClose={() => setViewAll(false)}
+        market={market}
+        orders={orders}
+        actions={actions}
+        onShowOnLadder={onShowOnLadder}
+        initialTab={tab === 'fills' ? 'fills' : 'open'}
+        returnFocusRef={viewAllRef}
+      />
     </>
   );
 

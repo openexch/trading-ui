@@ -8,7 +8,7 @@
  * (two per column, a height handle between them); each slot's title picks
  * its panel (layout/, DESIGN.md rules 15 and 16).
  */
-import { useState, useSyncExternalStore } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 import type {
   ClusterState,
   ExtendedConnectionStatus,
@@ -26,6 +26,7 @@ import { Header } from './Header';
 import { SIDE_COLUMNS } from './layoutColumns';
 import { TradingLadder } from './ladder/TradingLadder';
 import type { LadderOrderActions } from './ladder/TradingLadder';
+import type { LadderReveal } from './ladder/useLadderKeys';
 import { SideColumn } from './layout/SideColumn';
 import type { SlotChrome } from './layout/SideColumn';
 import { useLayout } from './layout/useLayout';
@@ -109,6 +110,22 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
   // shell and the ladder around it.
   const [actionsStore] = useState(createActionsStore);
 
+  // Show on ladder (the all-orders dialog): switch to the order's market if
+  // needed; the ladder brings the order's rung into view once its book is in.
+  const [reveal, setReveal] = useState<LadderReveal | null>(null);
+  const { markets, onSelectMarket } = props;
+  const showOnLadder = useCallback(
+    (order: UserOrder) => {
+      if (order.marketId !== market.id) {
+        const next = markets.find(m => m.id === order.marketId);
+        if (!next) return;
+        onSelectMarket(next);
+      }
+      setReveal(prev => ({ seq: (prev?.seq ?? 0) + 1, order }));
+    },
+    [market.id, markets, onSelectMarket],
+  );
+
   const renderPanel = (panel: PanelId, chrome: SlotChrome) => {
     switch (panel) {
       case 'markets':
@@ -134,6 +151,7 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
             orders={props.orders}
             signedIn={props.signedIn}
             onSignIn={props.onSignIn}
+            onShowOnLadder={showOnLadder}
           />
         );
       case 'fills':
@@ -178,6 +196,7 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
             onCancelOrder={props.onCancelOrder}
             onReplaceOrder={props.onReplaceOrder}
             onOrderActions={actionsStore.set}
+            reveal={reveal}
           />
         </section>
         <SideColumn column="right" api={layout} renderPanel={renderPanel} />

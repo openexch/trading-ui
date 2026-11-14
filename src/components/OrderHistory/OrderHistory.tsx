@@ -9,6 +9,9 @@ import { formatRejectReason } from '../../utils/rejectReasons';
 
 interface OrderHistoryProps {
   market: Market;
+  /** Show one list only, without the Orders | Trades switch (the all-orders
+   *  dialog lists fills in a tab of its own). */
+  only?: 'orders' | 'trades';
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -25,8 +28,9 @@ function symbolFor(marketId: number): string {
 
 /** History panel: terminal order history (Orders) and the user's fills
  *  (Trades), both from the principal-scoped OMS REST reads (oms#72). */
-export function OrderHistory({ market }: OrderHistoryProps) {
-  const [subTab, setSubTab] = useState<'orders' | 'trades'>('orders');
+export function OrderHistory({ market, only }: OrderHistoryProps) {
+  const [picked, setSubTab] = useState<'orders' | 'trades'>('orders');
+  const subTab = only ?? picked;
   const ordersState = useOrderHistory();
   const execState = useExecutions();
   const [thisMarketOnly, setThisMarketOnly] = useState(false);
@@ -55,7 +59,7 @@ export function OrderHistory({ market }: OrderHistoryProps) {
     <div className="flex h-full flex-col font-sans">
       <div className="flex flex-shrink-0 items-center justify-between border-b border-hairline px-3 py-1">
         <div className="flex items-center gap-3">
-          <div className="flex items-center">
+          {!only && <div className="flex items-center">
             <button className={subTabClass(subTab === 'orders')} onClick={() => setSubTab('orders')}>
               Orders
               {subTab === 'orders' && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-t bg-accent" />}
@@ -64,7 +68,7 @@ export function OrderHistory({ market }: OrderHistoryProps) {
               Trades
               {subTab === 'trades' && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-t bg-accent" />}
             </button>
-          </div>
+          </div>}
           <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted">
             <input
               type="checkbox"

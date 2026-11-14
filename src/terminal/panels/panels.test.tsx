@@ -76,7 +76,8 @@ function order(over: Partial<UserOrder> = {}): UserOrder {
 function actions(over: Partial<LadderOrderActions> = {}): LadderOrderActions {
   return {
     pending: new Map(),
-    cancel: vi.fn(),
+    cancel: vi.fn(async () => null),
+    cancelMany: vi.fn(async () => []),
     askCancelAll: vi.fn(),
     cancelAllCount: 2,
     cancelAllRunning: false,
@@ -295,11 +296,21 @@ describe('OrdersPanel', () => {
     expect(screen.getByRole('menuitem', { name: /cancel all/i }).getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('⤢ View all is present but not built yet', () => {
-    render0();
-    const v = screen.getByRole('button', { name: /view all orders/i });
-    expect(v.getAttribute('aria-disabled')).toBe('true');
-    expect(v.getAttribute('title')).toBe('View all arrives next');
+  it('⤢ View all opens the all-orders dialog; signed out it stays disabled', () => {
+    render0({ orders: [order()] });
+    const v = screen.getByRole('button', { name: 'View all orders' });
+    expect(v.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(v);
+    expect(screen.getByRole('dialog', { name: 'Your orders' })).toBeTruthy();
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(v);
+    cleanup();
+    render0({ signedIn: false });
+    const off = screen.getByRole('button', { name: /view all orders \(sign in first\)/i });
+    expect(off.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(off);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('the Fills tab shows the fills list', () => {
