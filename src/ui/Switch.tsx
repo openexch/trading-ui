@@ -4,18 +4,20 @@
  * it because it is a real <button>.
  *
  * `tone` colours the "on" track: accent by default, or a trade side when the
- * switch arms something side-specific (one-click trading takes the side
- * colour while armed).
+ * switch arms something side-specific. `split` carries both side colours,
+ * buy to sell, for something armed on both sides at once (one-click trading:
+ * a bid click buys, an ask click sells).
  */
 import { useId } from 'react';
 import type { ReactNode } from 'react';
 
-type Tone = 'accent' | 'buy' | 'sell';
+type Tone = 'accent' | 'buy' | 'sell' | 'split';
 
 const ON_TRACK: Record<Tone, string> = {
   accent: 'border-accent bg-accent',
   buy: 'border-buy bg-buy',
   sell: 'border-sell bg-sell',
+  split: 'border-transparent bg-[linear-gradient(90deg,var(--buy),var(--sell))]',
 };
 
 export interface SwitchProps {

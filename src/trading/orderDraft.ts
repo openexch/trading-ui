@@ -3,7 +3,7 @@
 // validation and the OrderRequest the API receives. No React, no I/O: the
 // order form and the ladder build the same wire request from the same rules.
 import type { Market, OrderRequest, OrderSide, OrderType, TimeInForce } from '../types/market';
-import { snapPrice, isInPriceRange, priceRangeLabel } from '../utils/ticks';
+import { snapPrice, isInPriceRange, priceRangeLabel, tickDecimals } from '../utils/ticks';
 
 export const SYNTHETIC_TYPES: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
 export const needsStopPrice = (t: OrderType) => t === 'STOP_LOSS' || t === 'STOP_LIMIT';
@@ -144,4 +144,15 @@ export function orderSubmitProps(args: {
     from_book_click: args.fromBookClick,
     used_slider: args.usedSlider,
   };
+}
+
+/** Snap a typed price distance (a trailing stop's trail) onto the tick.
+ *  Returns the new field text, or null when it is not a positive number or
+ *  rounds to zero. Unlike a price it has no range: it is a distance. */
+export function snapDeltaText(market: Market, delta: string): string | null {
+  const d = parseFloat(delta);
+  if (!(d > 0) || !isFinite(d)) return null;
+  const decimals = tickDecimals(market.tickSize);
+  const snapped = Number((Math.round(d / market.tickSize) * market.tickSize).toFixed(decimals));
+  return snapped > 0 ? snapped.toString() : null;
 }

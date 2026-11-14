@@ -8,7 +8,8 @@
  * - An own order shows three ways: a faint side-coloured row tint, its share
  *   of the level drawn inside the bar (a fill at --own-slice-alpha plus a 1px
  *   side-coloured outline; the quantity stays in --text-strong so it reads on
- *   top), and a Mine chip with filled / original.
+ *   top), and a Mine chip with filled / original (OwnOrderChip: a menu with
+ *   Cancel and, for limit orders, Move).
  * - Cells beyond the known depth are dimmed and hatched, never shown as empty
  *   liquidity (DESIGN.md rule 9). The deepest known rung, when part of its
  *   group lies beyond the known depth, prints its quantity as a lower bound.
@@ -17,11 +18,16 @@
  *   buy above the best ask crosses, and the strip warns). The cells are
  *   buttons out of the tab order: the grid is one tab stop (DESIGN.md rule
  *   11), so a click stages and Enter places from the staging strip.
+ *   Right-click or the Menu key opens the rung menu with the other order
+ *   types at that price.
  */
-import type { CSSProperties } from 'react';
-import type { LadderRow, LadderSide, OwnAggregate, SideCell } from './ladderModel';
+import type { CSSProperties, KeyboardEvent, MouseEvent } from 'react';
+import type { LadderRow, LadderSide, SideCell } from './ladderModel';
 import type { TickDirection } from '../../ui/useTickDirection';
-import { formatCompactSize, formatFixed } from './format';
+import type { Anchor } from '../../ui';
+import { formatFixed } from './format';
+import { OwnOrderChip } from './OwnOrderChip';
+import type { OwnOrderActions } from './OwnOrderChip';
 
 export const LADDER_COLUMNS = 'grid-cols-[52px_minmax(0,1fr)_112px_minmax(0,1fr)_52px]';
 
@@ -43,6 +49,10 @@ export interface RungProps {
   /** Which cell of this rung holds the staged order, if any. */
   stagedSide: LadderSide | null;
   onStage?: (side: LadderSide, price: number) => void;
+  /** Open the rung menu (right-click, the Menu key or Shift+F10 on a cell). */
+  onMenu?: (price: number, anchor: Anchor) => void;
+  /** Cancel / Move on the Mine chips; without it the chips are labels. */
+  ownActions?: OwnOrderActions;
 }
 
 const HATCH: CSSProperties = {
@@ -53,44 +63,27 @@ function pct(f: number): string {
   return `${Math.max(0, Math.min(1, f)) * 100}%`;
 }
 
-function sideWord(side: LadderSide): string {
-  return side === 'BID' ? 'buy' : 'sell';
+/** Right-click opens at the pointer; the Menu key (which also fires
+ *  contextmenu, at 0,0 or the element) opens at the cell. */
+function menuHandlers(price: number, onMenu?: (price: number, anchor: Anchor) => void) {
+  if (!onMenu) return {};
+  return {
+    onContextMenu: (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      const el = e.currentTarget;
+      const pointer = e.clientX !== 0 || e.clientY !== 0;
+      onMenu(price, pointer ? { x: e.clientX, y: e.clientY } : { current: el });
+    },
+    onKeyDown: (e: KeyboardEvent<HTMLButtonElement>) => {
+      if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+        e.preventDefault();
+        onMenu(price, { current: e.currentTarget });
+      }
+    },
+  };
 }
 
-function ownSummary(own: OwnAggregate, sizeDecimals: number): string {
-  const f = formatCompactSize(own.filled, sizeDecimals);
-  const o = formatCompactSize(own.original, sizeDecimals);
-  return own.filled > 0 ? `${f}/${o}` : o;
-}
-
-function MineChip({ side, own, priceText, sizeDecimals, baseAsset }: {
-  side: LadderSide;
-  own: OwnAggregate;
-  priceText: string;
-  sizeDecimals: number;
-  baseAsset: string;
-}) {
-  const n = own.orders.length;
-  const label =
-    `Your ${sideWord(side)} order${n > 1 ? `s (${n})` : ''} at ${priceText}: ` +
-    `${formatCompactSize(own.filled, sizeDecimals)} of ${formatCompactSize(own.original, sizeDecimals)} ${baseAsset} filled`;
-  const cls =
-    side === 'BID'
-      ? 'border-l-[3px] border-buy bg-buy-soft'
-      : 'border-r-[3px] border-sell bg-sell-soft';
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      className={`relative z-[1] inline-flex h-[18px] items-center whitespace-nowrap rounded px-[5px] text-[11px] font-semibold leading-none text-text-strong ${cls}`}
-    >
-      {ownSummary(own, sizeDecimals)}
-    </span>
-  );
-}
-
-function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsset, sizeText, staged, onStage }: {
+function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsset, sizeText, staged, onStage, onMenu }: {
   side: LadderSide;
   cell: SideCell;
   flash: boolean;
@@ -101,6 +94,7 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
   sizeText: string | null;
   staged: boolean;
   onStage?: (side: LadderSide, price: number) => void;
+  onMenu?: (price: number, anchor: Anchor) => void;
 }) {
   const isBid = side === 'BID';
   const edge: CSSProperties = isBid ? { right: 0 } : { left: 0 };
@@ -134,6 +128,7 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
       data-staged={staged ? 'true' : undefined}
       title={cell.partial ? 'Part of this group lies beyond the known depth' : undefined}
       onClick={() => onStage?.(side, price)}
+      {...menuHandlers(price, onMenu)}
       className={`group relative h-full cursor-pointer overflow-hidden rounded border-0 bg-transparent p-0 font-[inherit] text-[13px] leading-[22px] text-text-strong outline-offset-[-1px] hover:bg-chip hover:outline hover:outline-1 ${
         staged ? `outline outline-1 ${ring}` : ''
       } ${hoverRing} ${sideCls} ${flashCls}`}
@@ -184,6 +179,8 @@ export function Rung({
   sizeText,
   stagedSide,
   onStage,
+  onMenu,
+  ownActions,
 }: RungProps) {
   const ownBid = row.bid.own;
   const ownAsk = row.ask.own;
@@ -211,7 +208,7 @@ export function Rung({
     >
       <span role="gridcell" className="flex items-center">
         {ownBid && (
-          <MineChip side="BID" own={ownBid} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} />
+          <OwnOrderChip side="BID" own={ownBid} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} actions={ownActions} />
         )}
       </span>
       <DepthCell
@@ -225,6 +222,7 @@ export function Rung({
         sizeText={sizeText}
         staged={stagedSide === 'BID'}
         onStage={onStage}
+        onMenu={onMenu}
       />
       <span role="gridcell" className="flex justify-center text-[13px]">
         {row.isLastTrade ? (
@@ -260,10 +258,11 @@ export function Rung({
         sizeText={sizeText}
         staged={stagedSide === 'ASK'}
         onStage={onStage}
+        onMenu={onMenu}
       />
       <span role="gridcell" className="flex items-center justify-end">
         {ownAsk && (
-          <MineChip side="ASK" own={ownAsk} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} />
+          <OwnOrderChip side="ASK" own={ownAsk} priceText={priceText} sizeDecimals={sizeDecimals} baseAsset={baseAsset} actions={ownActions} />
         )}
       </span>
     </div>

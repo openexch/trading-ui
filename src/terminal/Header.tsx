@@ -20,8 +20,9 @@ import { useTickDirection } from '../ui/useTickDirection';
 import { tickDecimals } from '../utils/ticks';
 import { LivePill } from './LivePill';
 import { formatFixed } from './ladder/format';
+import { SIDE_COLUMNS } from './layoutColumns';
 
-export const SIDE_COLUMNS = 'grid-cols-[340px_minmax(0,1fr)_340px] max-[1199px]:grid-cols-[280px_minmax(0,1fr)_280px]';
+export { SIDE_COLUMNS };
 
 /** Placeholder for a value that has not arrived (en dash, not a zero). */
 const NONE = '–';

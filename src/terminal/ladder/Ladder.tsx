@@ -5,7 +5,8 @@
  * stages a buy at that rung's price, on an ask cell a sell (`onStage`); the
  * staging strip above places it.
  *
- * Layout, top to bottom, inside a 640px column:
+ * Layout, top to bottom, inside a column 640px wide up to about 1600px of
+ * viewport, growing to 760px on wide screens (LADDER_MAX_WIDTH):
  *   jump-above slot (fixed height, Re-centre on the left)
  *   column header with the grouping select
  *   rung area (measured: its height sets the odd row count)
@@ -22,9 +23,12 @@ import { useTickDirection } from '../../ui/useTickDirection';
 import { buildLadder, defaultCentre, ladderWindow } from './ladderModel';
 import type { LadderModel, LadderRow, LadderSide } from './ladderModel';
 import { RUNG_PX, useLadderWindow } from './useLadderWindow';
+import { LADDER_MAX_WIDTH } from '../layoutColumns';
 import { LADDER_COLUMNS, Rung, SkeletonRung } from './Rung';
 import type { PriceTone } from './Rung';
 import { JumpMarker } from './JumpMarker';
+import type { OwnOrderActions } from './OwnOrderChip';
+import type { Anchor } from '../../ui';
 import { formatFixed, formatSmall } from './format';
 
 export interface LadderProps {
@@ -41,8 +45,12 @@ export interface LadderProps {
   onStage?: (side: LadderSide, price: number) => void;
   /** The staged order's cell, drawn outlined. */
   staged?: { side: LadderSide; price: number } | null;
-  /** Pin the window (an order is staged). */
+  /** Pin the window (an order is staged, or a menu or popover is open). */
   hold?: boolean;
+  /** Open the rung menu at a rung (right-click or the Menu key). */
+  onRungMenu?: (price: number, anchor: Anchor) => void;
+  /** Cancel / Move on the Mine chips. */
+  ownActions?: OwnOrderActions;
 }
 
 /** The rung the window follows, or null when the model has nothing yet. */
@@ -78,6 +86,8 @@ export function Ladder({
   onStage,
   staged = null,
   hold = false,
+  onRungMenu,
+  ownActions,
 }: LadderProps) {
   const ui = marketUi(market);
   // Grouping belongs to the market it was chosen on; a switch starts from the
@@ -134,7 +144,7 @@ export function Ladder({
       data-ladder-region
       data-pinned={win.pinned ? 'true' : 'false'}
       onKeyDown={onKeyDown}
-      className="mx-auto flex h-full min-h-0 w-full max-w-[640px] flex-col px-4"
+      className={`mx-auto flex h-full min-h-0 w-full ${LADDER_MAX_WIDTH} flex-col px-4`}
     >
       {/* Above: Re-centre (while held) and the jump marker. */}
       <div className="flex h-[34px] flex-none items-end justify-between gap-2">
@@ -202,6 +212,8 @@ export function Ladder({
                     sizeText={sizeText}
                     stagedSide={staged && Math.abs(staged.price - row.price) < market.tickSize / 2 ? staged.side : null}
                     onStage={onStage}
+                    onMenu={onRungMenu}
+                    ownActions={ownActions}
                   />
                 ))}
           </div>
