@@ -5,7 +5,7 @@ import { useLayoutEffect, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { BookLevel, Market, OrderBook, UserOrder } from '../../types/market';
 import { Ladder } from './Ladder';
-import { deadBand, rowsForHeight } from './useLadderWindow';
+import { PHONE_RUNG_PX, PHONE_SPREAD_ROW_PX, SPREAD_ROW_PX, rowsForHeight } from './useLadderWindow';
 import type { OwnOrderActions } from './OwnOrderChip';
 import type { PassedCommand } from './useLadderKeys';
 
@@ -147,7 +147,7 @@ afterEach(() => cleanup());
 
 // ---- pure helpers ----------------------------------------------------------
 
-describe('rowsForHeight / deadBand', () => {
+describe('rowsForHeight', () => {
   it('fits whole 22px rungs and keeps the count odd', () => {
     expect(rowsForHeight(0)).toBe(0);
     expect(rowsForHeight(21)).toBe(0);
@@ -159,24 +159,29 @@ describe('rowsForHeight / deadBand', () => {
     expect(rowsForHeight(500)).toBe(21); // 22 fit -> 21
   });
 
-  it('re-centres outside max(2, floor(N/4))', () => {
-    expect(deadBand(3)).toBe(2);
-    expect(deadBand(9)).toBe(2);
-    expect(deadBand(21)).toBe(5);
+  it('sets the spread row aside before counting rungs', () => {
+    // 9 rungs + the 12px spread row = 210px: fits in 210, not in 209.
+    expect(rowsForHeight(9 * 22 + SPREAD_ROW_PX, 22, SPREAD_ROW_PX)).toBe(9);
+    expect(rowsForHeight(9 * 22 + SPREAD_ROW_PX - 1, 22, SPREAD_ROW_PX)).toBe(7);
+    expect(rowsForHeight(220, 22, SPREAD_ROW_PX)).toBe(9);
+    expect(rowsForHeight(66, 22, SPREAD_ROW_PX)).toBe(1);
+    // Phone: 44px rungs and a 20px spread row.
+    expect(rowsForHeight(5 * 44 + PHONE_SPREAD_ROW_PX, PHONE_RUNG_PX, PHONE_SPREAD_ROW_PX)).toBe(5);
+    expect(rowsForHeight(5 * 44, PHONE_RUNG_PX, PHONE_SPREAD_ROW_PX)).toBe(3);
   });
 });
 
 // ---- row count -------------------------------------------------------------
 
 describe('Ladder row count', () => {
-  it('renders the odd row count the ResizeObserver reports, at fixed 22px rungs', () => {
+  it('renders the odd row count the ResizeObserver reports, at fixed 22px rungs, less the spread row', () => {
     const { container } = setup();
     expect(rungPrices(container)).toHaveLength(0); // not measured yet
     resize(220);
     expect(rungPrices(container)).toHaveLength(9);
     resize(500);
     expect(rungPrices(container)).toHaveLength(21);
-    resize(66);
+    resize(78); // 66 for rungs after the 12px spread row
     expect(rungPrices(container)).toHaveLength(3);
     // Every rung is the same fixed height class (never shrunk to fit).
     for (const r of container.querySelectorAll('[data-rung-price]')) {
@@ -199,41 +204,58 @@ describe('Ladder row count', () => {
   });
 });
 
-// ---- dead band and pinning -------------------------------------------------
+// ---- centring and pinning (DESIGN.md rule 8) ----------------------------------
 
-describe('Ladder re-centring', () => {
-  it('stays put inside the dead band and re-centres once the mid leaves it', () => {
-    const { container, update } = setup();
-    resize(220); // 9 rows, band = 2
-    expect(middle(container)).toBe(1000);
-    update({ book: bookAround(1002), last: 1002 });
-    expect(middle(container)).toBe(1000); // |2| <= band: no move
-    update({ book: bookAround(1003), last: 1003 });
-    expect(middle(container)).toBe(1003); // left the band: re-centred
-  });
-
-  it('never re-centres while the pointer is over the ladder', () => {
+describe('Ladder centring', () => {
+  it('keeps the last price in the middle row on every move, with the pointer over the ladder', () => {
     const { container, update, region } = setup();
     resize(220);
     fireEvent.pointerEnter(region);
-    update({ book: bookAround(1050), last: 1050 });
-    expect(middle(container)).toBe(1000);
-    expect(region.dataset.pinned).toBe('true');
-    fireEvent.pointerLeave(region);
-    expect(middle(container)).toBe(1050);
+    fireEvent.pointerMove(region);
+    for (const p of [1001, 1002, 999, 1050, 1049]) {
+      update({ book: bookAround(p), last: p });
+      expect(middle(container)).toBe(p);
+      expect(container.querySelector('[data-last-trade]')!.closest<HTMLElement>('[data-rung-price]')!.dataset.rungPrice).toBe(
+        String(p),
+      );
+    }
+    expect(region.dataset.pinned).toBe('false');
+    expect(screen.queryByRole('button', { name: /re-centre/i })).toBeNull();
   });
 
-  it('never re-centres while the ladder has focus', () => {
+  it('re-centres while the ladder has focus', () => {
     const { container, update, region } = setup();
     resize(220);
     const grid = screen.getByRole('grid');
     act(() => grid.focus());
     update({ book: bookAround(1050), last: 1050 });
-    expect(middle(container)).toBe(1000);
-    // Focus handed from the grid to its tab-stop cell; blur that.
-    expect(grid.contains(document.activeElement)).toBe(true);
-    act(() => (document.activeElement as HTMLElement).blur());
+    expect(middle(container)).toBe(1050);
     expect(region.dataset.pinned).toBe('false');
+    expect(grid.contains(document.activeElement)).toBe(true);
+  });
+
+  it('a hold (staged order, one-click armed, open menu) pins; its end re-centres', () => {
+    const { container, update, region } = setup();
+    resize(220);
+    update({ hold: true });
+    update({ book: bookAround(1050), last: 1050 });
+    expect(middle(container)).toBe(1000);
+    expect(region.dataset.pinned).toBe('true');
+    // Not centred: Re-centre is offered even while held.
+    expect(screen.getByRole('button', { name: /re-centre/i })).toBeTruthy();
+    update({ hold: false });
+    expect(middle(container)).toBe(1050);
+    expect(region.dataset.pinned).toBe('false');
+    expect(screen.queryByRole('button', { name: /re-centre/i })).toBeNull();
+  });
+
+  it('Re-centre during a hold centres once; the hold keeps it there', () => {
+    const { container, update } = setup({ hold: true });
+    resize(220);
+    update({ book: bookAround(1050), last: 1050 });
+    fireEvent.click(screen.getByRole('button', { name: /re-centre/i }));
+    expect(middle(container)).toBe(1050);
+    update({ book: bookAround(1060), last: 1060 });
     expect(middle(container)).toBe(1050);
   });
 
@@ -244,7 +266,7 @@ describe('Ladder re-centring', () => {
     expect(middle(container)).toBe(997);
     fireEvent.wheel(region, { deltaY: -22 });
     expect(middle(container)).toBe(998);
-    fireEvent.pointerLeave(region);
+    expect(region.dataset.pinned).toBe('true');
     update({ book: bookAround(1050), last: 1050 });
     expect(middle(container)).toBe(998); // held
 
@@ -256,6 +278,36 @@ describe('Ladder re-centring', () => {
     expect(middle(container)).toBe(1049);
     fireEvent.keyDown(screen.getByRole('grid'), { key: 'c' });
     expect(middle(container)).toBe(1050);
+    update({ book: bookAround(1052), last: 1052 });
+    expect(middle(container)).toBe(1052); // following again
+  });
+
+  it('a scroll pin ends with the hold it was made under', () => {
+    const { container, update, region } = setup({ hold: true });
+    resize(220);
+    fireEvent.wheel(region, { deltaY: 88 });
+    expect(middle(container)).toBe(996);
+    update({ book: bookAround(1050), last: 1050 });
+    expect(middle(container)).toBe(996);
+    update({ hold: false });
+    expect(middle(container)).toBe(1050);
+  });
+
+  it('PageDown and PageUp scroll a page and hold', () => {
+    const { container, update } = setup();
+    resize(220); // 9 rows: a page is 8 rungs
+    const grid = focusLadder();
+    fireEvent.keyDown(document.activeElement!, { key: 'PageDown' });
+    expect(middle(container)).toBe(992);
+    expect(focusedPrice()).toBe(992);
+    update({ book: bookAround(1003), last: 1003 });
+    expect(middle(container)).toBe(992);
+    fireEvent.keyDown(document.activeElement!, { key: 'PageUp' });
+    fireEvent.keyDown(document.activeElement!, { key: 'PageUp' });
+    expect(middle(container)).toBe(1008);
+    expect(grid.contains(document.activeElement)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /re-centre/i }));
+    expect(middle(container)).toBe(1003);
   });
 
   it('C typed into the grouping select does not re-centre', () => {
@@ -320,20 +372,127 @@ describe('Ladder depth', () => {
     expect(unknownAsk.querySelector('[data-unknown]')).toBeTruthy();
     expect(screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,004, depth unknown$/i })).toBeTruthy();
     expect(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 996, depth unknown$/i })).toBeTruthy();
-    expect(screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,002, 1.20000000 on book$/i })).toBeTruthy();
+    expect(
+      screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,002, 1.20000000 on book, 2.30 cumulative$/i }),
+    ).toBeTruthy();
+    // Beyond the known depth: no quantity, no cumulative, no bar.
+    const cell = screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,004/i });
+    expect(cell.querySelector('[data-depth-bar]')).toBeNull();
+    expect(cell.querySelector('[data-qty]')!.textContent).toBe('');
+    expect(cell.querySelector('[data-cum]')!.textContent).toBe('');
   });
 
-  it('draws the spread line between the touch rungs without taking a row', () => {
+  it('prints the level quantity by the price and the cumulative on the outer side', () => {
+    const { container } = setup({ book: bookAround(1000, 3) });
+    resize(220);
+    const ask = container.querySelector('[data-rung-price="1003"]')!.querySelectorAll('button[role="gridcell"]')[1];
+    // Ask cell: quantity first (next to the price), cumulative after it.
+    const askSpans = Array.from(ask.querySelectorAll('[data-qty],[data-cum]')).map(e => e.textContent);
+    expect(askSpans).toEqual(['1.30000000', '3.60']);
+    const bid = container.querySelector('[data-rung-price="997"]')!.querySelectorAll('button[role="gridcell"]')[0];
+    // Bid cell: cumulative first (outer side), quantity next to the price.
+    const bidSpans = Array.from(bid.querySelectorAll('[data-cum],[data-qty]')).map(e => e.textContent);
+    expect(bidSpans).toEqual(['3.60', '1.30000000']);
+  });
+
+  it('cumulative bars share one scale: the largest cumulative in the window', () => {
+    const book: OrderBook = {
+      bids: [
+        { price: 999, quantity: 1, orderCount: 1 },
+        { price: 998, quantity: 3, orderCount: 1 },
+      ],
+      asks: [
+        { price: 1001, quantity: 2, orderCount: 1 },
+        { price: 1003, quantity: 6, orderCount: 1 },
+      ],
+      lastUpdate: 1,
+    };
+    const { container } = setup({ book });
+    resize(220); // 1004..996; ask cum 2, 2, 8; bid cum 1, 4; scale 8
+    const width = (price: number, i: 0 | 1) =>
+      container
+        .querySelector(`[data-rung-price="${price}"]`)!
+        .querySelectorAll('button[role="gridcell"]')
+        [i].querySelector<HTMLElement>('[data-depth-bar]')?.style.width ?? null;
+    expect(width(1001, 1)).toBe('25%');
+    expect(width(1002, 1)).toBe('25%'); // a gap carries the cumulative
+    expect(width(1003, 1)).toBe('100%');
+    expect(width(1004, 1)).toBeNull(); // unknown
+    expect(width(999, 0)).toBe('12.5%');
+    expect(width(998, 0)).toBe('50%');
+    expect(width(997, 0)).toBeNull();
+    expect(width(1000, 0)).toBeNull(); // inside the spread: none
+  });
+
+  it('draws the own slice from the price edge at own / the bar scale', () => {
+    const book: OrderBook = {
+      bids: [{ price: 999, quantity: 2, orderCount: 1 }],
+      asks: [{ price: 1001, quantity: 8, orderCount: 1 }],
+      lastUpdate: 1,
+    };
+    const { container } = setup({ book, open: [order('BID', 999, 1)] });
+    resize(220);
+    const slice = container.querySelector<HTMLElement>('[data-rung-price="999"] [data-own-slice]')!;
+    expect(slice.style.width).toBe('12.5%');
+    expect(slice.style.right).toBe('0px');
+  });
+
+  it('keeps every number on a bar in an AA colour (tokens.test.ts measures the pairs)', () => {
+    const book: OrderBook = {
+      bids: [{ price: 999, quantity: 2, orderCount: 1 }],
+      asks: [{ price: 1001, quantity: 8, orderCount: 1 }],
+      lastUpdate: 1,
+    };
+    const { container } = setup({ book, open: [order('BID', 999, 2)] });
+    resize(220);
+    const cells = (p: number) => container.querySelector(`[data-rung-price="${p}"]`)!.querySelectorAll('button[role="gridcell"]');
+    const ask = cells(1001)[1];
+    expect(ask.querySelector('[data-qty]')!.className).not.toMatch(/text-(muted|buy|sell)\b/);
+    expect(ask.querySelector('[data-cum]')!.className).toContain('text-text');
+    expect(ask.querySelector('[data-cum]')!.className).not.toContain('text-muted');
+    // The hover preview sits on the bar: --text-strong, never a side colour.
+    const preview = ask.querySelector('[data-stage-preview]')!;
+    expect(preview.className).toContain('text-text-strong');
+    expect(preview.className).not.toMatch(/text-(buy|sell)\b/);
+    // A cell with an own slice prints its cumulative in --text-strong.
+    expect(cells(999)[0].querySelector('[data-cum]')!.className).toContain('text-text-strong');
+  });
+
+  it('gives the spread its own row between the best ask and the best bid rungs', () => {
     const { container } = setup();
     resize(220);
-    const line = container.querySelector<HTMLElement>('[data-spread-line]')!;
-    expect(line).toBeTruthy();
-    expect(line.textContent).toContain('Spread 2');
-    // The touch is 999 | 1001 and the line goes between the 1001 and 1000
-    // rungs: on the boundary under the 4th row (1004, 1003, 1002, 1001),
-    // centred on it, taking no height of its own.
-    expect(line.style.top).toBe(`${4 * 22 - 5}px`);
+    const row = container.querySelector<HTMLElement>('[data-spread-row]')!;
+    expect(row).toBeTruthy();
+    expect(row.textContent).toBe('Spread 2');
+    expect(row.style.height).toBe(`${SPREAD_ROW_PX}px`);
+    // A sibling of the rungs, never inside or on top of one.
+    expect(row.closest('[data-rung-price]')).toBeNull();
+    expect(row.className).not.toContain('absolute');
+    const prev = row.previousElementSibling as HTMLElement;
+    const next = row.nextElementSibling as HTMLElement;
+    // The touch is 999 | 1001; 1000 is inside the spread. The row sits below
+    // the best ask and above the best bid.
+    expect(Number(prev.dataset.rungPrice)).toBe(1001);
+    expect(Number(next.dataset.rungPrice)).toBe(1000);
+    const order = rungPrices(container);
+    expect(order.indexOf(1001)).toBeLessThan(order.indexOf(999));
+    // Rungs plus the spread row fit the measured height: nothing overflows.
+    expect(order.length * 22 + SPREAD_ROW_PX).toBeLessThanOrEqual(220);
     expect(screen.getByRole('grid').getAttribute('aria-label')).toContain('spread 2');
+  });
+
+  it('a one-tick spread puts the row straight between the two touch rungs', () => {
+    const book: OrderBook = {
+      bids: [{ price: 1000, quantity: 1, orderCount: 1 }],
+      asks: [{ price: 1001, quantity: 1, orderCount: 1 }],
+      lastUpdate: 1,
+    };
+    const { container } = setup({ book, last: 1000 });
+    resize(220);
+    const row = container.querySelector<HTMLElement>('[data-spread-row]')!;
+    expect((row.previousElementSibling as HTMLElement).dataset.rungPrice).toBe('1001');
+    expect((row.nextElementSibling as HTMLElement).dataset.rungPrice).toBe('1000');
+    expect(row.textContent).toBe('Spread 1');
   });
 
   it('regroups from the price column select', () => {
@@ -350,42 +509,26 @@ describe('Ladder depth', () => {
 // ---- first centre ---------------------------------------------------------------
 
 describe('Ladder first centre', () => {
-  it('settles on the first two-sided book even with the pointer resting on the ladder', () => {
-    // Load: a stale last price and a one-sided first update arrive first,
-    // and the pointer already rests over the ladder.
-    const asksOnly: OrderBook = { bids: [], asks: bookAround(1040).asks, lastUpdate: 1 };
-    const { container, update, region } = setup({ book: asksOnly, last: 1050 });
-    resize(220);
-    fireEvent.pointerEnter(region);
-    // Provisional: follows the only value it has.
-    expect(middle(container)).toBe(1050);
-    update({ last: 1049 });
-    expect(middle(container)).toBe(1049);
-
-    // The real book arrives: the window takes the middle of the touch,
-    // not the value computed before data, although the pointer pins.
-    update({ book: bookAround(1000), last: 1049 });
-    expect(middle(container)).toBe(1000);
-    const prices = rungPrices(container);
-    // Asks above, bids below, balanced around the spread line.
-    expect(prices.filter(p => p > 1000)).toHaveLength(4);
-    expect(prices.filter(p => p < 1000)).toHaveLength(4);
-
-    // From here on the normal rules apply: pinned while hovered.
-    update({ book: bookAround(1030), last: 1030 });
-    expect(middle(container)).toBe(1000);
-  });
-
-  it('the first paint of a two-sided book is centred, whatever the row count arrives as', () => {
+  it('before the first trade, centres on the middle of the touch', () => {
     const { container } = setup({ book: bookAround(2000), last: null });
     resize(500);
     expect(middle(container)).toBe(2000);
   });
 
-  it('a reconnect (empty book) settles again on the next two-sided book', () => {
-    const { container, update, region } = setup();
+  it('a one-sided book before any trade centres on the side it has', () => {
+    const asksOnly: OrderBook = { bids: [], asks: bookAround(1040).asks, lastUpdate: 1 };
+    const { container, update } = setup({ book: asksOnly, last: null });
     resize(220);
-    fireEvent.pointerEnter(region);
+    expect(middle(container)).toBe(1041);
+    update({ book: bookAround(1000), last: null });
+    expect(middle(container)).toBe(1000);
+  });
+
+  it('the first trade takes the centre, and a reconnect centres again', () => {
+    const { container, update } = setup({ book: bookAround(1000), last: null });
+    resize(220);
+    update({ last: 1003 });
+    expect(middle(container)).toBe(1003);
     update({ book: { bids: [], asks: [], lastUpdate: 2 }, last: null });
     update({ book: bookAround(1100), last: null });
     expect(middle(container)).toBe(1100);
@@ -399,7 +542,7 @@ describe('Ladder staging clicks', () => {
     const onStage = vi.fn();
     setup({ onStage });
     resize(220);
-    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 998, 1.20000000 on book$/i }));
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 998, 1.20000000 on book, 2.30 cumulative$/i }));
     expect(onStage).toHaveBeenLastCalledWith('BID', 998);
     fireEvent.click(screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,003/i }));
     expect(onStage).toHaveBeenLastCalledWith('ASK', 1003);
@@ -508,17 +651,29 @@ describe('Ladder keyboard', () => {
     expect(focusedPrice()).toBe(999);
   });
 
-  it('focus follows the price across live updates, and a focused ladder does not re-centre', () => {
+  it('focus follows the price, not the row, when the ladder re-centres under it', () => {
     const { container, update } = setup();
-    resize(220);
+    resize(220); // 1004..996
     focusLadder();
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
     const el = document.activeElement;
-    update({ book: bookAround(1001), last: 1001 });
-    update({ book: bookAround(1050), last: 1050 });
-    expect(middle(container)).toBe(1000);
+    expect(focusedPrice()).toBe(999);
+    // Re-centred on 1002 (1006..998): 999 is still visible, on another row.
+    update({ book: bookAround(1002), last: 1002 });
+    expect(middle(container)).toBe(1002);
     expect(document.activeElement).toBe(el);
     expect(focusedPrice()).toBe(999);
+    // Re-centred on 1050 (1054..1046): 999 left; the nearest visible price.
+    update({ book: bookAround(1050), last: 1050 });
+    expect(middle(container)).toBe(1050);
+    expect(focusedPrice()).toBe(1046);
+    expect(screen.getByRole('grid').contains(document.activeElement)).toBe(true);
+    // Re-centred far below (904..896): the nearest visible price is the top row.
+    update({ book: bookAround(900), last: 900 });
+    expect(focusedPrice()).toBe(904);
+    // Keys continue from the new focus.
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(focusedPrice()).toBe(903);
   });
 
   it('C re-centres on the last price and takes focus there', () => {

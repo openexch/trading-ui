@@ -2,23 +2,19 @@
 /**
  * Which rungs the ladder shows, and when that set is allowed to move.
  *
- * - Row count: fixed-height rungs, as many as fit in the measured element,
- *   always odd so the centre rung is the middle row. The element is held in
- *   state (not a ref) so the effect cleanup disconnects the observer it
- *   created (DESIGN.md rule 1).
- * - First centre: the window is provisional (it follows the anchor exactly,
- *   ignoring pins and the dead band) until the book has both sides. Then it
- *   settles once on `settleAt` (the middle of the touch), so a value computed
- *   before data (a stale last price, a one-sided first update) never stays
- *   on screen because the pointer happened to rest on the ladder at load.
- *   An empty book (reconnect) makes it provisional again.
- * - Dead band: once settled, the window follows the anchor (last trade, else
- *   the middle of the spread) only when the anchor leaves
- *   +-max(2, floor(N/4)) rungs of the centre, never per tick.
- * - Pinning (DESIGN.md rule 8): the window never moves while the pointer is
- *   over the ladder, while it has focus, while the caller holds it (an order
- *   staged, a menu or popover open), or after a wheel or jump. A wheel or jump
- *   pin lasts until `recentre()` (the Re-centre button or the C key).
+ * - Row count: fixed-height rungs, as many as fit in the measured element
+ *   after the spread row's height is set aside, always odd so the centre
+ *   rung is the middle row. The element is held in state (not a ref) so the
+ *   effect cleanup disconnects the observer it created (DESIGN.md rule 1).
+ * - Centred (DESIGN.md rule 8): the middle row is the anchor (the last
+ *   trade, else the middle of the touch), re-centred on every change,
+ *   whether or not the pointer is over the ladder or it has focus.
+ * - Pinned: the window stays where it is only while the caller holds it
+ *   (one-click armed, an order staged, a menu or popover open) or after an
+ *   explicit scroll (the wheel, a finger drag, PageUp / PageDown, a jump
+ *   marker). An explicit scroll holds until `recentre()` (the Re-centre
+ *   button, C or Esc) or until the caller's hold ends; when the hold ends
+ *   the window re-centres.
  * - The ladder never scrolls as a container: the wheel moves a virtual centre.
  *   With `touchDrag` (the phone), a vertical finger drag moves it the same
  *   way and holds it like a wheel; the tap that ends a drag stages nothing.
@@ -31,33 +27,30 @@ export const RUNG_PX = 22;
 /** Phone rung height: a whole rung is a 44px touch target. */
 export const PHONE_RUNG_PX = 44;
 
+/** Desktop spread row: its own row between the best ask and the best bid
+ *  (10px label on a 12px line). */
+export const SPREAD_ROW_PX = 12;
+
+/** Phone spread row (11px label). */
+export const PHONE_SPREAD_ROW_PX = 20;
+
 /** How far a finger travels before a touch counts as a drag, not a tap. */
 export const DRAG_SLOP_PX = 8;
 
-/** Rungs that fit in `height`, rounded down to an odd count. */
-export function rowsForHeight(height: number, rungPx: number = RUNG_PX): number {
+/** Rungs that fit in `height` once `reservePx` (the spread row) is set
+ *  aside, rounded down to an odd count. */
+export function rowsForHeight(height: number, rungPx: number = RUNG_PX, reservePx = 0): number {
   if (!(height > 0) || !(rungPx > 0)) return 0;
-  const n = Math.floor(height / rungPx);
+  const n = Math.floor((height - Math.max(0, reservePx)) / rungPx);
   if (n <= 0) return 0;
   return n % 2 === 1 ? n : n - 1;
 }
 
-/** How far (in rungs) the anchor may drift from the centre before the
- *  window re-centres. */
-export function deadBand(rowCount: number): number {
-  return Math.max(2, Math.floor(rowCount / 4));
-}
-
 export interface LadderWindowOptions {
-  /** The rung the window follows; null while there is nothing to follow
-   *  (market switch in flight). */
+  /** The rung the window follows (the last trade, else the middle of the
+   *  touch); null while there is nothing to follow (market switch in
+   *  flight). */
   anchor: number | null;
-  /** The rung to settle the first centre on: the middle of the touch once
-   *  the book has both sides, else null (the window stays provisional). */
-  settleAt?: number | null;
-  /** True while the book is empty (market switch, reconnect): the next
-   *  centre is provisional again. */
-  empty?: boolean;
   /** Changing this starts over: new centre at the anchor, pins dropped. The
    *  market id. */
   resetKey: string | number;
@@ -67,9 +60,12 @@ export interface LadderWindowOptions {
   /** The market's rung range; the wheel never moves the centre outside it. */
   minRung: number;
   maxRung: number;
-  /** Pin reasons owned by the caller (an order staged, a menu open). */
+  /** Pin reasons owned by the caller (one-click armed, an order staged, a
+   *  menu or popover open). Its end re-centres the window. */
   hold?: boolean;
   rungPx?: number;
+  /** Height set aside for the spread row before rungs are counted. */
+  reservePx?: number;
   /** A vertical touch drag moves the window (the phone). */
   touchDrag?: boolean;
 }
@@ -78,17 +74,20 @@ export interface LadderWindowState {
   rowCount: number;
   /** Rung shown in the middle row; null until there is an anchor. */
   centre: number | null;
-  /** True while anything pins the window. */
+  /** True while anything pins the window (the caller's hold or a scroll). */
   pinned: boolean;
-  /** True after a wheel or jump, until `recentre()`. */
+  /** True after an explicit scroll (wheel, drag, page keys, jump), until
+   *  `recentre()` or the end of the caller's hold. */
   held: boolean;
+  /** True while the middle row is the anchor. */
+  centred: boolean;
   /** Attach to the element whose height sets the row count. */
   measureRef: (el: HTMLElement | null) => void;
-  /** Attach to the region whose hover, focus and wheel pin the window. */
+  /** Attach to the region whose wheel (and finger drag) scrolls the window. */
   regionRef: (el: HTMLElement | null) => void;
-  /** Drop the wheel or jump pin and centre on the anchor now. */
+  /** Drop the scroll pin and centre on the anchor now. */
   recentre: () => void;
-  /** Centre on a rung and hold it there (jump markers). */
+  /** Centre on a rung and hold it there (jump markers, page keys). */
   pinTo: (rung: number) => void;
 }
 
@@ -97,8 +96,8 @@ interface CentreState {
   group: number;
   centre: number | null;
   held: boolean;
-  /** False until the first centre is taken from a two-sided book. */
-  settled: boolean;
+  /** The caller's hold as of the last render, to see it end. */
+  hold: boolean;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -106,35 +105,42 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
-  const { anchor, settleAt = null, empty = false, resetKey, groupTicks, minRung, maxRung, hold = false, rungPx = RUNG_PX, touchDrag = false } =
-    opts;
+  const {
+    anchor,
+    resetKey,
+    groupTicks,
+    minRung,
+    maxRung,
+    hold = false,
+    rungPx = RUNG_PX,
+    reservePx = 0,
+    touchDrag = false,
+  } = opts;
 
   const [measureEl, setMeasureEl] = useState<HTMLElement | null>(null);
   const [region, setRegion] = useState<HTMLElement | null>(null);
   const [rowCount, setRowCount] = useState(0);
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
   const [s, setS] = useState<CentreState>(() => ({
     key: resetKey,
     group: groupTicks,
-    centre: settleAt ?? anchor,
+    centre: anchor,
     held: false,
-    settled: settleAt !== null,
+    hold,
   }));
 
   // Row count from the rendered element.
   useLayoutEffect(() => {
     if (!measureEl) return;
     const h0 = measureEl.getBoundingClientRect().height;
-    if (h0 > 0) setRowCount(rowsForHeight(h0, rungPx));
+    if (h0 > 0) setRowCount(rowsForHeight(h0, rungPx, reservePx));
     const ro = new ResizeObserver(([entry]) => {
       const h = entry.contentRect.height;
       if (h <= 0) return; // hidden or unpainted: keep the last count
-      setRowCount(rowsForHeight(h, rungPx));
+      setRowCount(rowsForHeight(h, rungPx, reservePx));
     });
     ro.observe(measureEl);
     return () => ro.disconnect();
-  }, [measureEl, rungPx]);
+  }, [measureEl, rungPx, reservePx]);
 
   // Latest values for the native wheel listener.
   const live = useRef({ minRung, maxRung, rowCount });
@@ -142,18 +148,11 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
     live.current = { minRung, maxRung, rowCount };
   }, [minRung, maxRung, rowCount]);
 
-  // Hover, focus and wheel on the region. Native listeners: the wheel one
+  // Wheel (and finger drag) on the region. Native listeners: the wheel one
   // must be non-passive so the page never scrolls under the ladder.
   useEffect(() => {
     if (!region) return;
     let acc = 0;
-    const onEnter = () => setHovered(true);
-    const onLeave = () => setHovered(false);
-    const onFocusIn = () => setFocused(true);
-    const onFocusOut = (e: FocusEvent) => {
-      const next = e.relatedTarget as Node | null;
-      if (!next || !region.contains(next)) setFocused(false);
-    };
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) return; // pinch zoom
       e.preventDefault();
@@ -205,10 +204,6 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
       e.stopPropagation();
       e.preventDefault();
     };
-    region.addEventListener('pointerenter', onEnter);
-    region.addEventListener('pointerleave', onLeave);
-    region.addEventListener('focusin', onFocusIn);
-    region.addEventListener('focusout', onFocusOut);
     region.addEventListener('wheel', onWheel, { passive: false });
     if (touchDrag) {
       region.addEventListener('pointerdown', onPointerDown);
@@ -218,10 +213,6 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
       region.addEventListener('click', onClickCapture, true);
     }
     return () => {
-      region.removeEventListener('pointerenter', onEnter);
-      region.removeEventListener('pointerleave', onLeave);
-      region.removeEventListener('focusin', onFocusIn);
-      region.removeEventListener('focusout', onFocusOut);
       region.removeEventListener('wheel', onWheel);
       region.removeEventListener('pointerdown', onPointerDown);
       region.removeEventListener('pointermove', onPointerMove);
@@ -235,7 +226,7 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
   // an effect) means a re-centre never paints one stale frame first.
   let next = s;
   if (s.key !== resetKey) {
-    next = { key: resetKey, group: groupTicks, centre: null, held: false, settled: false };
+    next = { key: resetKey, group: groupTicks, centre: anchor, held: false, hold };
   } else if (s.group !== groupTicks) {
     next = {
       ...s,
@@ -243,28 +234,14 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
       centre: s.centre === null ? anchor : Math.round((s.centre * s.group) / groupTicks),
     };
   }
-  // A reconnect empties the book: start provisional again, unless the user
-  // holds the window (an order staged, a wheel or jump pin).
-  if (empty && next.settled && !hold && !next.held) next = { ...next, settled: false };
-  if (!next.settled) {
-    // Provisional: no pin or dead band applies before the first real centre.
-    if (settleAt !== null) {
-      next = { ...next, centre: settleAt, settled: true, held: false };
-    } else if (anchor !== null && next.centre !== anchor && !next.held) {
-      next = { ...next, centre: anchor };
-    }
-  }
-  const pinned = hovered || focused || hold || next.held;
-  if (
-    next.settled &&
-    !pinned &&
-    anchor !== null &&
-    next.centre !== null &&
-    rowCount > 0 &&
-    Math.abs(anchor - next.centre) > deadBand(rowCount)
-  ) {
-    next = { ...next, centre: anchor };
-  }
+  // The end of the caller's hold (one-click off, the stage cleared, the menu
+  // closed) also ends a scroll pin: the window goes back to the centre.
+  if (next.hold !== hold) next = { ...next, hold, held: hold ? next.held : false };
+  const pinned = hold || next.held;
+  // Not pinned: the anchor is the middle row, on every change.
+  if (!pinned && anchor !== null && next.centre !== anchor) next = { ...next, centre: anchor };
+  // Nothing shown yet (the first anchor arrives while pinned): take it.
+  if (next.centre === null && anchor !== null) next = { ...next, centre: anchor };
   if (next !== s) setS(next);
 
   const recentre = useCallback(() => {
@@ -280,6 +257,7 @@ export function useLadderWindow(opts: LadderWindowOptions): LadderWindowState {
     centre: next.centre,
     pinned,
     held: next.held,
+    centred: anchor === null || next.centre === anchor,
     measureRef: setMeasureEl,
     regionRef: setRegion,
     recentre,

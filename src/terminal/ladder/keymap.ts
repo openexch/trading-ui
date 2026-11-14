@@ -9,6 +9,8 @@
  * - Every other key works only while the ladder grid has focus, never inside
  *   an input, a select or an open menu.
  * - Tab keeps its normal meaning: own orders cycle with [ and ].
+ * - PageUp / PageDown scroll the window a page (an explicit scroll, held
+ *   until Re-centre, C or Esc).
  */
 
 export type LadderKeySide = 'BID' | 'ASK';
@@ -16,6 +18,8 @@ export type LadderKeySide = 'BID' | 'ASK';
 export type LadderCommand =
   /** Move the focused rung up (+) or down (-) by this many rungs. */
   | { kind: 'move'; rungs: number }
+  /** Scroll the window a page up (+1) or down (-1) and hold it there. */
+  | { kind: 'page'; dir: 1 | -1 }
   /** Back to the last price. */
   | { kind: 'recentre' }
   /** Stage at the focused rung's price. */
@@ -62,6 +66,8 @@ export function ladderCommand(e: KeyLike): LadderCommand | null {
     return { kind: 'move', rungs: dir * (shift ? 10 : 1) };
   }
   if (alt) return null;
+  // A page of rungs: an explicit scroll, held until Re-centre.
+  if (key === 'PageUp' || key === 'PageDown') return shift ? null : { kind: 'page', dir: key === 'PageUp' ? 1 : -1 };
 
   if (key === 'Delete' || key === 'Backspace') return shift ? null : { kind: 'cancelOwn' };
   // + is Shift+= on most layouts; accept = as well so it works without Shift.
@@ -115,6 +121,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ['Focus the ladder', ['L']],
     ['Price up or down one rung', ['↑', '↓']],
     ['Ten rungs', ['Shift', '↑ ↓']],
+    ['A page up or down', ['PgUp', 'PgDn']],
     ['Back to last price', ['C']],
   ]),
   g('Order', [

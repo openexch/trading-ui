@@ -1,18 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The depth ladder: the book as fixed 22px rungs around the last trade, with
- * own orders, the spread line and the last-trade rung. A click on a bid cell
- * stages a buy at that rung's price, on an ask cell a sell (`onStage`); the
- * staging strip above places it.
+ * The depth ladder: the book as fixed 22px rungs with the last trade in the
+ * middle row, own orders, cumulative depth, the spread row and the
+ * last-trade rung. A click on a bid cell stages a buy at that rung's price,
+ * on an ask cell a sell (`onStage`); the staging strip above places it.
  *
- * Layout, top to bottom, inside a column 640px wide up to about 1600px of
- * viewport, growing to 760px on wide screens (LADDER_MAX_WIDTH):
+ * Layout, top to bottom, filling the centre column up to a 1200px frame
+ * (LADDER_FRAME, shared with the defaults bar and the strip):
  *   jump-above slot (fixed height, Re-centre on the left)
  *   column header with the grouping select
- *   rung area (measured: its height sets the odd row count)
+ *   rung area (measured: its height, less the spread row, sets the odd row
+ *   count)
  *   jump-below slot (fixed height)
  * The marker slots are always reserved, so a marker appearing never resizes
- * the rung area or moves a rung.
+ * the rung area or moves a rung. The spread row is a row of its own between
+ * the best ask and the best bid rungs; its height is set aside before rungs
+ * are counted, so it never overlaps a rung and the area never overflows.
+ *
+ * Re-centre shows whenever the middle row is not the last price (a pin
+ * held it while the price moved, or the user scrolled away).
  *
  * Phone (`density="phone"`): 44px rungs in Bids | Price | Asks, a vertical
  * finger drag moves the window (useLadderWindow `touchDrag`), and the
@@ -32,9 +38,9 @@ import type { LevelChange } from '../../hooks/useOrderBook';
 import { marketUi, groupingOptions } from '../../trading/marketUi';
 import { useTickDirection } from '../../ui/useTickDirection';
 import { buildLadder, defaultCentre, ladderWindow } from './ladderModel';
-import type { LadderModel, LadderRow, LadderSide } from './ladderModel';
-import { PHONE_RUNG_PX, RUNG_PX, useLadderWindow } from './useLadderWindow';
-import { LADDER_MAX_WIDTH } from '../layoutColumns';
+import type { LadderModel, LadderSide } from './ladderModel';
+import { PHONE_RUNG_PX, PHONE_SPREAD_ROW_PX, RUNG_PX, SPREAD_ROW_PX, useLadderWindow } from './useLadderWindow';
+import { LADDER_FRAME } from '../layoutColumns';
 import { LADDER_COLUMNS, PHONE_LADDER_COLUMNS, Rung, SkeletonRung } from './Rung';
 import type { PriceTone, RungDensity } from './Rung';
 import { JumpMarker } from './JumpMarker';
@@ -59,7 +65,8 @@ export interface LadderProps {
   onStage?: (side: LadderSide, price: number, anchor?: HTMLElement) => void;
   /** The staged order's cell, drawn outlined. */
   staged?: { side: LadderSide; price: number } | null;
-  /** Pin the window (an order is staged, or a menu or popover is open). */
+  /** Pin the window (one-click armed, an order staged, or a menu or popover
+   *  open); its end re-centres the window. */
   hold?: boolean;
   /** Open the rung menu at a rung (right-click or the Menu key). */
   onRungMenu?: (price: number, anchor: Anchor) => void;
@@ -93,12 +100,6 @@ function toneOf(model: LadderModel, rung: number): PriceTone {
   return 'muted';
 }
 
-/** The middle of the touch, once the book has both sides. */
-function settleRung(model: LadderModel): number | null {
-  if (model.bestBidRung === null || model.bestAskRung === null) return null;
-  return Math.floor((model.bestBidRung + model.bestAskRung) / 2);
-}
-
 export function Ladder({
   market,
   orderBook,
@@ -121,6 +122,7 @@ export function Ladder({
   const ui = marketUi(market);
   const phone = density === 'phone';
   const rungPx = phone ? PHONE_RUNG_PX : RUNG_PX;
+  const spreadPx = phone ? PHONE_SPREAD_ROW_PX : SPREAD_ROW_PX;
   const columns = phone ? PHONE_LADDER_COLUMNS : LADDER_COLUMNS;
   // Grouping belongs to the market it was chosen on; a switch starts from the
   // next market's default.
@@ -140,14 +142,13 @@ export function Ladder({
   const awaitingBook = orderBook.bids.length === 0 && orderBook.asks.length === 0;
   const win = useLadderWindow({
     anchor,
-    settleAt: settleRung(model),
-    empty: awaitingBook,
     hold,
     resetKey: market.id,
     groupTicks,
     minRung: model.minRung,
     maxRung: model.maxRung,
     rungPx,
+    reservePx: spreadPx,
     touchDrag: phone,
   });
   const { dir } = useTickDirection(live);
@@ -158,6 +159,7 @@ export function Ladder({
   const decimals = model.grid.decimals;
   const spread = model.spread;
   const spreadText = spread && spread.state === 'open' ? formatSmall(spread.groups) : null;
+  const spreadLabel = spreadText !== null ? `Spread ${spreadText}` : spread?.state === 'locked' ? 'Locked' : 'Crossed';
   const gridLabel =
     `Price ladder, grouped by ${groupLabel}` +
     (spreadText !== null ? `, spread ${spreadText}` : spread ? `, book ${spread.state}` : '');
@@ -188,7 +190,31 @@ export function Ladder({
   );
 
   const flashed = (priceKeys: string[]) => priceKeys.some(k => levelChanges.has(k));
-  const spreadIndex = view ? view.rows.findIndex((r: LadderRow) => r.spreadBelow) : -1;
+
+  // The spread row: a row of its own between the best ask and the best bid
+  // rungs (its height is set aside in the row count), the rule fading from
+  // buy to sell with the spread in the price column.
+  const spreadRow = (
+    <div
+      key="spread"
+      aria-hidden
+      data-spread-row
+      className={`pointer-events-none grid flex-none ${columns} items-center`}
+      style={{ height: spreadPx }}
+    >
+      {!phone && <span />}
+      <span className="h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--buy))' }} />
+      <span
+        className={`justify-self-center whitespace-nowrap px-1 font-medium uppercase tracking-[0.06em] text-muted ${
+          phone ? 'text-[11px] leading-[20px]' : 'text-[10px] leading-[12px]'
+        }`}
+      >
+        {spreadLabel}
+      </span>
+      <span className="h-px" style={{ background: 'linear-gradient(90deg, var(--sell), transparent)' }} />
+      {!phone && <span />}
+    </div>
+  );
 
   const rungGrid = (
     <div
@@ -215,7 +241,7 @@ export function Ladder({
       <div role="rowgroup">
         {awaitingBook
           ? Array.from({ length: win.rowCount }, (_, i) => <SkeletonRung key={i} index={i} density={density} />)
-          : view?.rows.map(row => (
+          : view?.rows.flatMap(row => [
               <Rung
                 key={row.price}
                 row={row}
@@ -233,29 +259,10 @@ export function Ladder({
                 ownActions={ownActions}
                 focusable={row.rung === keys.tabStopRung}
                 density={density}
-              />
-            ))}
+              />,
+              ...(row.spreadBelow ? [spreadRow] : []),
+            ])}
       </div>
-      {/* Spread line: drawn ON the boundary between the two rungs that
-          straddle the spread, taking no height, so rungs never shift when
-          the touch moves (DESIGN.md rule 8). The label sits in the
-          price column's gap between the two prices. */}
-      {spreadIndex >= 0 && (
-        <div
-          aria-hidden
-          data-spread-line
-          className={`pointer-events-none absolute inset-x-0 grid h-[10px] ${columns} items-center`}
-          style={{ top: (spreadIndex + 1) * rungPx - 5 }}
-        >
-          {!phone && <span />}
-          <span className="h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--buy))' }} />
-          <span className="justify-self-center rounded-sm bg-surface px-1 text-[9px] font-medium uppercase leading-[10px] tracking-[0.06em] text-muted">
-            Spread {spreadText}
-          </span>
-          <span className="h-px" style={{ background: 'linear-gradient(90deg, var(--sell), transparent)' }} />
-          {!phone && <span />}
-        </div>
-      )}
     </div>
   );
 
@@ -277,7 +284,7 @@ export function Ladder({
           <span className="truncate pl-2.5">Asks · tap to sell</span>
         </div>
         {rungGrid}
-        {win.held && (
+        {view && !win.centred && (
           <button type="button" onClick={win.recentre} className={`${floatBtn} right-4 top-9`}>
             Re-centre
           </button>
@@ -315,11 +322,11 @@ export function Ladder({
       ref={win.regionRef}
       data-ladder-region
       data-pinned={win.pinned ? 'true' : 'false'}
-      className={`mx-auto flex h-full min-h-0 w-full ${LADDER_MAX_WIDTH} flex-col px-4`}
+      className={`flex h-full min-h-0 w-full flex-col ${LADDER_FRAME}`}
     >
-      {/* Above: Re-centre (while held) and the jump marker. */}
+      {/* Above: Re-centre (while not centred) and the jump marker. */}
       <div className="flex h-[34px] flex-none items-end justify-between gap-2">
-        {win.held ? (
+        {view && !win.centred ? (
           <button
             type="button"
             onClick={win.recentre}

@@ -206,7 +206,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     await screen.findByRole('button', { name: /^dev$/i });
     pushBook();
     // BTC opens at its default preset (0.25) and x5 grouping.
-    await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book$/i });
+    await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book, 1.00 cumulative$/i });
     return utils;
   }
 
@@ -693,6 +693,63 @@ describe('Ladder shell (?ui=ladder)', () => {
     await act(async () => {});
     expect(posts()).toHaveLength(1);
     expect(strip().textContent).toContain('Crosses the spread: executes now');
+  });
+
+  it('the ladder pins only for one-click, a staged order or an open menu; each end re-centres', async () => {
+    const { container } = await ladderWithBook();
+    const region = container.querySelector<HTMLElement>('[data-ladder-region]')!;
+    const middle = () => {
+      const p = Array.from(container.querySelectorAll<HTMLElement>('[data-rung-price]')).map(e => Number(e.dataset.rungPrice));
+      return p[(p.length - 1) / 2];
+    };
+    let ts = 10;
+    /** The same book moved: best bid at `bid`, best ask 5 above. No trade
+     *  yet, so the centre is the middle of the touch (the bid rung at x5). */
+    const bookAt = (bid: number) => {
+      const ws = MockWebSocket.instances.find(w => w.url.endsWith('/ws'))!;
+      const bids = Array.from({ length: 20 }, (_, i) => ({ price: bid - i * 5, quantity: 1, orderCount: 1 }));
+      const asks = Array.from({ length: 20 }, (_, i) => ({ price: bid + 5 + i * 5, quantity: 1, orderCount: 1 }));
+      act(() => {
+        ws.onmessage?.({
+          data: JSON.stringify({ type: 'BOOK_SNAPSHOT', marketId: 1, market: 'BTC-USD', bids, asks, timestamp: ts++ }),
+        });
+      });
+    };
+    expect(middle()).toBe(97_400);
+    // Pointer over the ladder: still follows.
+    fireEvent.pointerEnter(region);
+    bookAt(97_420);
+    await waitFor(() => expect(middle()).toBe(97_420));
+    const recentreShown = () => screen.findByRole('button', { name: /re-centre/i });
+
+    // A staged order pins; clearing it re-centres.
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,415/i }));
+    bookAt(97_450);
+    // The book moved (Re-centre appears) but the window held.
+    expect(await recentreShown()).toBeTruthy();
+    expect(middle()).toBe(97_420);
+    expect(region.dataset.pinned).toBe('true');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(middle()).toBe(97_450);
+    expect(region.dataset.pinned).toBe('false');
+
+    // One-click armed pins; disarming re-centres.
+    fireEvent.click(oneClick());
+    expect(oneClick().getAttribute('aria-checked')).toBe('true');
+    bookAt(97_500);
+    expect(await recentreShown()).toBeTruthy();
+    expect(middle()).toBe(97_450);
+    fireEvent.click(oneClick());
+    expect(middle()).toBe(97_500);
+
+    // An open rung menu pins; closing it re-centres.
+    const menu = openRungMenu(/^buy 0.25 btc at 97,495/i);
+    bookAt(97_550);
+    expect(await recentreShown()).toBeTruthy();
+    expect(middle()).toBe(97_500);
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(screen.queryByRole('menu', { name: /^orders at/i })).toBeNull();
+    expect(middle()).toBe(97_550);
   });
 
   it('one-click: a market order still needs a second Enter', async () => {

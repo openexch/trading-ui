@@ -15,8 +15,14 @@ No ornamental effects on the trading screen.
 
 ## Layout (desktop)
 
-- A **fixed centre ladder**: the price column with bids on the left and asks
-  on the right. The ladder IS order entry; there is no separate order form.
+- A **centre ladder**: the price column with bids on the left and asks on
+  the right. The ladder IS order entry; there is no separate order form. It
+  fills the centre column up to a 1200 px frame, centred, so the depth
+  columns never become absurdly wide on large screens (a 2522 px window gets
+  a 1200 px frame in its 1560 px centre). The defaults bar and the staging
+  strip share that frame: their content lines up with the ladder's edges,
+  their background and hairline span the column. At 1440 the side columns
+  stay 340 px and the ladder fills the 758 px between them.
 - An always-visible **staging strip** above the ladder: a click (or B / S)
   stages an order there; Enter places it, Esc clears it. Results (accepted,
   rejected with the code) land in the same strip.
@@ -48,7 +54,7 @@ Each fixed a reported problem or protects money; keep them.
    container.** Rungs have a fixed height (22 px desktop, 44 px phone). The
    rung count comes from a `ResizeObserver` on the rendered element, held in
    state (not a ref) so the effect cleanup disconnects the observer it
-   created. Moving through prices shifts a virtual offset; it is never a
+   created, after the spread row's height is set aside. Moving through prices shifts a virtual offset; it is never a
    `justify-end` overflow container (that was the clipped-asks bug).
 2. **Nothing flickers on market switch.** Stats are nullable and render
    dashes (never $0.00); the chart keeps old candles under a loading veil;
@@ -66,12 +72,23 @@ Each fixed a reported problem or protects money; keep them.
 7. **No client-side ownership filtering.** Own orders come from the
    user-scoped OMS surfaces. Filtering that user-scoped feed by market is
    fine; filtering a shared feed by user is not.
-8. **A rung's price never moves under the user.** The ladder is pinned while
-   the pointer is over it, while it has focus, while an order is staged and
-   while a menu or popover is open. It re-centres only when the last price
-   leaves a dead band around the centre, never per tick.
-9. **Rungs beyond known depth render as unknown** (dimmed, no quantity), never
-   as empty liquidity.
+8. **The last price is always centred; the ladder pins only while the user
+   is committing to a price.** The last-trade rung is the middle row and the
+   ladder re-centres on every change, also while the pointer is over it and
+   while it has focus (before the first trade it centres on the middle of
+   the best bid and best ask). It pins only while one-click is armed, while
+   an order is staged and while a menu or popover is open; when that ends it
+   re-centres. An explicit scroll (wheel, finger drag, PageUp / PageDown, a
+   jump marker) also moves away from the centre and holds until Re-centre,
+   C, Esc, or the end of the pin above. Re-centre shows whenever the ladder
+   is not centred. Keyboard focus follows a price, not a row: when the
+   ladder re-centres under a focused rung, focus stays on that price while
+   it is visible, otherwise on the nearest visible price. Because a click
+   only stages (rule 10), a rung that moved between aim and click shows its
+   real price in the strip before anything is placed; one-click, the one
+   path without that check, pins.
+9. **Rungs beyond known depth render as unknown** (dimmed, no quantity, no
+   cumulative, no depth bar), never as empty liquidity.
 10. **Click stages, Enter places.** One-click is off by default, never
     persisted, and disarms on Esc, market switch, sign-out and any connection
     state other than connected. Market orders and Cancel all always need a
@@ -94,11 +111,28 @@ Each fixed a reported problem or protects money; keep them.
     unknown, duplicated or corrupt falls back to Default. Storage failures
     never throw.
 
+## Depth on the ladder
+
+Depth is **cumulative**: each side's bar is the volume from its best price
+outward (best ask upwards, best bid downwards) to that rung, drawn solid from
+the price edge outward, 3 px clear of the rung's top and bottom. Both sides
+use one scale, the largest cumulative visible in the window, so their volumes
+compare and the deepest visible rung on the heavier side fills its cell. A
+cell shows the level quantity next to the price (`--text-strong`) and the
+cumulative total, smaller and quieter, on the outer side (`--text`: `--muted`
+is not AA on a bar). A known price with no level (a gap) carries the bar and
+the cumulative but no quantity. The deepest known rung, when part of its
+price group lies beyond the known depth, prints both numbers as lower
+bounds (≥). The hover preview of a click ("Buy 0.25") sits on the bar, so it
+is `--text-strong`; the side-coloured outline carries the side.
+
 ## Own orders on the ladder
 
 An own order is visible three ways at its rung: a faint side-coloured row
-tint, its share of the level drawn inside the depth bar (outlined, so the
-quantity text stays readable), and a Mine chip showing filled / original.
+tint, an outlined slice anchored at the price edge with width own quantity /
+the bar scale (so the numbers stay readable on it; a cell with a slice prints
+its cumulative in `--text-strong`), and a Mine chip showing filled /
+original.
 Own orders outside the visible window are summarised by "N above" and "N
 below" markers that jump to the nearest one. Stop orders awaiting their
 trigger are not in the book, so they appear in the orders panel, not on the
@@ -118,19 +152,24 @@ ladder.
 - **Dark = brand ink**: surfaces and hairlines carry a blue undertone derived
   from the logo. Light is an instrument grey-blue with the same undertone,
   designed rather than inverted.
-- Trade colours stay WCAG AA on their surfaces, including on the depth bars
-  and own-order slices; interactive borders reach 3:1. A test asserts the
-  pairs that matter.
+- Trade colours stay WCAG AA on their surfaces; every number on a depth bar
+  or own-order slice (level, cumulative, hover preview) is AA, side-coloured
+  marks on a bar reach 3:1, and interactive borders reach 3:1. A test
+  asserts the pairs that matter.
 - The chart palette mirrors the tokens by hand; a test guards the mirror.
 - Scrollbars are thin and token-coloured, with a stable gutter on scrolling
   panels. Checkboxes and switches are drawn from the tokens over real inputs.
 
 ## Signature element
 
-The **spread line**: a thin rule between the best bid and the best ask rungs,
-fading from buy to sell, labelled with the spread, plus the marked last-trade
-rung. It encodes the meeting point of the two sides. There is no separate mid
-price row: the header ticker is the only price hero.
+The **spread row**: a row of its own between the best ask rung and the best
+bid rung (12 px desktop, 20 px phone), a thin rule fading from buy to sell,
+labelled with the spread in the price column, plus the marked last-trade
+rung. It never overlaps a rung: its height is set aside before the rung
+count is taken (rule 1). With rungs inside the spread it sits in their
+middle; a locked or crossed book says so. It encodes the meeting point of
+the two sides. It carries no price: the header ticker is the only price
+hero.
 
 ## Where things live
 

@@ -19,6 +19,10 @@ describe('ladderCommand', () => {
     expect(ladderCommand(k('ArrowUp', { shiftKey: true }))).toEqual({ kind: 'move', rungs: 10 });
     expect(ladderCommand(k('ArrowDown', { shiftKey: true }))).toEqual({ kind: 'move', rungs: -10 });
     expect(ladderCommand(k('c'))).toEqual({ kind: 'recentre' });
+    expect(ladderCommand(k('PageUp'))).toEqual({ kind: 'page', dir: 1 });
+    expect(ladderCommand(k('PageDown'))).toEqual({ kind: 'page', dir: -1 });
+    expect(ladderCommand(k('PageDown', { shiftKey: true }))).toBeNull();
+    expect(ladderCommand(k('PageUp', { altKey: true }))).toBeNull();
     expect(ladderCommand(k('b'))).toEqual({ kind: 'stage', side: 'BID' });
     expect(ladderCommand(k('s'))).toEqual({ kind: 'stage', side: 'ASK' });
     expect(ladderCommand(k('B', { shiftKey: true }))).toEqual({ kind: 'stageMarket', side: 'BID' });

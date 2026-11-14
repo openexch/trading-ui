@@ -13,6 +13,7 @@ import { TIF_CHOICES, TYPE_CHOICES, parseSize, tifChoice, typeLabel } from '../.
 import type { OrderDefaults as Defaults } from '../../trading/staging';
 import { Menu, MenuGroup, MenuItemRadio, MenuSeparator, Switch, useMenuTrigger } from '../../ui';
 import { formatCompactSize } from './format';
+import { LADDER_FRAME } from '../layoutColumns';
 
 export interface OrderDefaultsProps {
   market: Market;
@@ -40,7 +41,7 @@ export function OrderDefaults({ market, value, onSize, onType, onTif, oneClick, 
     <form
       aria-label="Order defaults"
       onSubmit={(e: FormEvent) => e.preventDefault()}
-      className="flex h-12 flex-none items-center gap-2 overflow-hidden border-b border-hairline px-5"
+      className={`flex h-12 flex-none items-center gap-2 overflow-hidden border-b border-hairline ${LADDER_FRAME}`}
     >
       <span className="mr-0.5 text-[12px] text-muted">Size</span>
       {ui.sizePresets.map(p => {

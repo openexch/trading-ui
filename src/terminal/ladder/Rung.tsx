@@ -2,17 +2,24 @@
 /**
  * One ladder rung: Mine | Bids | Price | Asks | Mine (52 / 1fr / 112 / 1fr / 52).
  *
- * - Depth bars are inset 3px and grow out from the price column. Their scale
- *   is the model's maxQuantity over ALL known levels, so bars do not rescale
- *   when the row count changes.
+ * - Depth is cumulative: the bar is the volume from the side's best price
+ *   out to this rung, inset 3px top and bottom and growing out from the
+ *   price column. The scale is the largest cumulative the window shows, the
+ *   same for both sides (ladderWindow). The cell prints the level quantity
+ *   next to the price (--text-strong) and the cumulative on the outer side,
+ *   smaller and in --text (--muted is not AA on a bar; on a cell with an own
+ *   slice, --text-strong, since --text is not AA on the slice). A known rung with no
+ *   level (a gap) carries the bar and the cumulative but no quantity.
  * - An own order shows three ways: a faint side-coloured row tint, its share
- *   of the level drawn inside the bar (a fill at --own-slice-alpha plus a 1px
- *   side-coloured outline; the quantity stays in --text-strong so it reads on
- *   top), and a Mine chip with filled / original (OwnOrderChip: a menu with
- *   Cancel and, for limit orders, Move).
- * - Cells beyond the known depth are dimmed and hatched, never shown as empty
- *   liquidity (DESIGN.md rule 9). The deepest known rung, when part of its
- *   group lies beyond the known depth, prints its quantity as a lower bound.
+ *   of the level drawn as a slice anchored at the price edge, width own /
+ *   the bar scale (a fill at --own-slice-alpha plus a 1px side-coloured
+ *   outline; the numbers stay readable on top), and a Mine chip with filled
+ *   / original (OwnOrderChip: a menu with Cancel and, for limit orders,
+ *   Move).
+ * - Cells beyond the known depth are dimmed and hatched, with no quantity,
+ *   no cumulative and no bar, never shown as empty liquidity (DESIGN.md rule
+ *   9). The deepest known rung, when part of its group lies beyond the known
+ *   depth, prints its quantity and cumulative as lower bounds.
  * - Every in-range rung offers both actions: the bid cell stages a buy at the
  *   rung's price and the ask cell a sell, on either side of the spread (a
  *   buy above the best ask crosses, and the strip warns). The cells are
@@ -210,18 +217,25 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
   const longPress = useLongPress(price, phone ? onMenu : undefined);
   const isBid = side === 'BID';
   const edge: CSSProperties = isBid ? { right: 0 } : { left: 0 };
-  const sideCls = isBid ? 'pr-3 text-right' : 'pl-3 text-left';
+  const sideCls = isBid ? 'pl-2 pr-3' : 'pl-3 pr-2';
   const flashCls = flash ? (isBid ? 'animate-flash-buy' : 'animate-flash-sell') : '';
   const verb = isBid ? 'Buy' : 'Sell';
 
   let text = '';
+  let cumText = '';
   let depth = '';
+  const atLeast = cell.partial ? 'at least ' : '';
   if (cell.state === 'level' && cell.quantity !== null) {
     const q = formatFixed(cell.quantity, sizeDecimals);
     text = cell.partial ? `≥${q}` : q;
-    depth = `, ${cell.partial ? 'at least ' : ''}${q} on book`;
+    depth = `, ${atLeast}${q} on book`;
   } else if (cell.state === 'unknown') {
     depth = ', depth unknown';
+  }
+  if (cell.cumulative !== null && cell.cumulative > 0) {
+    const c = formatCompactSize(cell.cumulative, sizeDecimals);
+    cumText = cell.partial ? `≥${c}` : c;
+    depth += `, ${atLeast}${c} cumulative`;
   }
   const what = sizeText !== null ? `${verb} ${sizeText} ${baseAsset}` : `${verb} ${baseAsset}`;
   const own = cell.own;
@@ -230,7 +244,36 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
   const sliceW = own && own.slice > 0 ? pct(own.sliceFraction) : null;
   // Literal class names: Tailwind only generates what it can read.
   const ring = isBid ? 'outline-buy' : 'outline-sell';
-  const barInset = phone ? 'top-1.5 bottom-1.5 rounded' : 'bottom-[3px] top-[3px] rounded-[3px]';
+  // 3px clear of the rung's top and bottom: the desktop cell is the full
+  // 22px rung, the phone cell 40px inside a 44px rung.
+  const barInset = phone ? 'top-px bottom-px rounded' : 'bottom-[3px] top-[3px] rounded-[3px]';
+  const hasBar = cell.cumulative !== null && cell.bar > 0;
+  // Level quantity next to the price, cumulative on the outer side.
+  const qtyEl = (cls: string) => (
+    <span aria-hidden data-qty className={`relative min-w-0 truncate ${cls}`}>
+      {text}
+    </span>
+  );
+  // --text is AA on the bar but not on an own slice, which a wide own order
+  // can stretch under the cumulative: that cell prints it in --text-strong.
+  const cumTone = sliceW ? 'text-text-strong' : 'text-text';
+  const cumEl = (cls: string) => (
+    <span aria-hidden data-cum className={`relative min-w-0 truncate ${cumTone} ${cls}`}>
+      {cumText}
+    </span>
+  );
+  const pair = (qtyCls: string, cumCls: string) =>
+    isBid ? (
+      <>
+        {cumEl(cumCls)}
+        {qtyEl(qtyCls)}
+      </>
+    ) : (
+      <>
+        {qtyEl(qtyCls)}
+        {cumEl(cumCls)}
+      </>
+    );
   const hoverRing = isBid ? 'hover:outline-buy' : 'hover:outline-sell';
 
   return (
@@ -248,17 +291,18 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
       {...(phone ? longPress.handlers : menuHandlers(price, onMenu))}
       className={
         phone
-          ? `relative h-10 cursor-pointer select-none overflow-hidden rounded-md border-0 p-0 font-[inherit] text-[14px] leading-10 text-text-strong outline-offset-[-2px] [-webkit-touch-callout:none] ${
+          ? `relative flex h-10 cursor-pointer select-none items-center justify-between gap-1.5 overflow-hidden rounded-md border-0 p-0 font-[inherit] text-[14px] leading-10 text-text-strong outline-offset-[-2px] [-webkit-touch-callout:none] ${
               staged ? `bg-chip outline outline-2 ${ring}` : 'bg-transparent'
-            } ${isBid ? 'pr-2.5 text-right' : 'pl-2.5 text-left'} ${flashCls}`
-          : `group relative h-full cursor-pointer overflow-hidden rounded border-0 bg-transparent p-0 font-[inherit] text-[13px] leading-[22px] text-text-strong outline-offset-[-1px] hover:bg-chip hover:outline hover:outline-1 ${
+            } ${isBid ? 'pl-4 pr-2.5' : 'pl-2.5 pr-4'} ${flashCls}`
+          : `group relative flex h-full cursor-pointer items-center justify-between gap-2 overflow-hidden rounded border-0 bg-transparent p-0 font-[inherit] text-[13px] leading-[22px] text-text-strong outline-offset-[-1px] hover:bg-chip hover:outline hover:outline-1 ${
               staged ? `outline outline-1 ${ring}` : ''
             } ${hoverRing} ${sideCls} ${flashCls}`
       }
     >
-      {cell.state === 'level' && (
+      {hasBar && (
         <span
           aria-hidden
+          data-depth-bar
           className={`absolute ${barInset} ${isBid ? 'bg-buy-soft' : 'bg-sell-soft'}`}
           style={{ ...edge, width: pct(cell.bar) }}
         />
@@ -282,7 +326,7 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
         <span
           aria-hidden
           data-unknown
-          className={`absolute inset-x-0 opacity-60 ${phone ? 'inset-y-1.5 rounded' : 'inset-y-[3px] rounded-[3px]'}`}
+          className={`absolute inset-x-0 opacity-60 ${phone ? 'inset-y-px rounded' : 'inset-y-[3px] rounded-[3px]'}`}
           style={HATCH}
         />
       )}
@@ -295,13 +339,20 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
               className={`absolute top-1/2 -mt-1 h-2 w-2 rounded-full ${isBid ? 'left-1.5 bg-buy' : 'right-1.5 bg-sell'}`}
             />
           )}
-          <span aria-hidden className="relative">{text}</span>
+          {pair('', 'text-[12px]')}
         </>
       ) : (
         <>
-          {/* On hover the cell previews what a click stages ("Buy 0.25"). */}
-          <span aria-hidden className="relative group-hover:hidden">{text}</span>
-          <span aria-hidden className={`relative hidden font-semibold group-hover:inline ${isBid ? 'text-buy' : 'text-sell'}`}>
+          {/* On hover the cell previews what a click stages ("Buy 0.25") at
+              the price edge, in --text-strong: it sits on the depth bar,
+              where the side colours are not AA; the side-coloured outline
+              carries the side. */}
+          {pair('group-hover:hidden', 'text-[11px] group-hover:hidden')}
+          <span
+            aria-hidden
+            data-stage-preview
+            className={`relative hidden font-semibold text-text-strong group-hover:inline ${isBid ? 'ml-auto' : 'mr-auto'}`}
+          >
             {sizeText !== null ? `${verb} ${sizeText}` : verb}
           </span>
         </>

@@ -706,6 +706,8 @@ export function TradingLadder(props: TradingLadderProps) {
           handled = true;
         }
         if ((onPage || inRoot) && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          // Esc also ends a scroll pin: back to the last price.
+          ladderHandle.current?.recentre();
           if (k.asking) {
             setCancelAsk(null);
             handled = true;
@@ -741,7 +743,9 @@ export function TradingLadder(props: TradingLadderProps) {
 
   const sizeOk = parseSize(size) !== null;
   const reference = menuReference(props.lastPrice, bestBid, bestAsk);
-  const hold = staged !== null || menuNow !== null || ticketNow !== null || chipOverlays > 0;
+  // The ladder pins only while one of these lasts (DESIGN.md rule 8); its
+  // end re-centres the window on the last price.
+  const hold = armed || staged !== null || menuNow !== null || ticketNow !== null || chipOverlays > 0;
 
   // ---- phone: grouping in the settings row, % sizing in the sheet ---------
   const [groupSel, setGroupSel] = useState<{ marketId: number; mult: number } | null>(null);

@@ -6,11 +6,15 @@
  *   holds tabindex 0; every other cell is -1. Before any rung was focused,
  *   or once the focused rung has left the window, the tab stop is the
  *   centre row. With no rows yet (skeletons) the grid itself is the stop.
- * - The focused rung is kept as its price, so focus follows the price across
- *   live updates (rows are keyed by price). A focused ladder is pinned
- *   (useLadderWindow); only C re-centres it, and focus goes with it.
+ * - The focused rung is kept as its price, so focus follows the price, not
+ *   the row, across live updates and re-centring (rows are keyed by price).
+ *   Focus does not pin the ladder: when it re-centres under a focused rung,
+ *   focus stays on that price while it is visible, else it lands on the
+ *   nearest visible price.
  * - Arrow keys move focus one rung (Shift: ten). Past the window's edge the
  *   window shifts with it and holds there until Re-centre or C.
+ * - PageUp / PageDown scroll the window a page (rows - 1) and move focus by
+ *   the same amount; the window holds there until Re-centre, C or Esc.
  * - [ and ] step through own orders in ladder order (highest price first),
  *   wrapping; the window pins to the order's rung when it is outside.
  * - Del cancels and Alt+Up / Alt+Down move the selected own order (the one
@@ -52,6 +56,8 @@ export interface LadderReveal {
 export interface LadderHandle {
   /** Move keyboard focus to the ladder (the L key). */
   focus: () => void;
+  /** Drop a scroll pin and centre on the last price (Esc). */
+  recentre: () => void;
 }
 
 export interface LadderKeysOptions {
@@ -114,8 +120,17 @@ export function useLadderKeys(opts: LadderKeysOptions) {
   let tabStopRung: number | null = null;
   if (focusRung !== null && visible(focusRung)) tabStopRung = focusRung;
   else if (view && view.rows.length > 0) {
-    const mid = view.rows[(view.rows.length - 1) >> 1];
-    tabStopRung = mid.inRange ? mid.rung : (view.rows.find(r => r.inRange)?.rung ?? null);
+    const inRange = view.rows.filter(r => r.inRange);
+    if (focusRung !== null && inRange.length > 0) {
+      // The focused price left the window (a re-centre): the nearest
+      // visible price takes the focus.
+      const hi = inRange[0].rung;
+      const lo = inRange[inRange.length - 1].rung;
+      tabStopRung = Math.min(hi, Math.max(lo, focusRung));
+    } else {
+      const mid = view.rows[(view.rows.length - 1) >> 1];
+      tabStopRung = mid.inRange ? mid.rung : (inRange[0]?.rung ?? null);
+    }
   }
 
   // Focus follows keys: after a key moved the focused rung, focus its cell.
@@ -149,8 +164,9 @@ export function useLadderKeys(opts: LadderKeysOptions) {
         const cell = gridEl.querySelector<HTMLElement>(`${FOCUS_CELL}[tabindex="0"]`);
         (cell ?? gridEl).focus();
       },
+      recentre,
     }),
-    [gridEl],
+    [gridEl, recentre],
   );
 
   const announce = (text: string) => onAnnounce?.(text);
@@ -215,6 +231,15 @@ export function useLadderKeys(opts: LadderKeysOptions) {
         if (next > view.top) pinTo(centre + (next - view.top));
         else if (next < view.bottom) pinTo(centre - (view.bottom - next));
         focusRungAt(next, null);
+        return;
+      }
+      case 'page': {
+        if (!view || centre === null) return;
+        e.preventDefault();
+        const step = Math.max(1, view.rows.length - 1) * cmd.dir;
+        const nextCentre = Math.min(model.maxRung, Math.max(model.minRung, centre + step));
+        pinTo(nextCentre);
+        if (cur !== null) focusRungAt(Math.min(model.maxRung, Math.max(model.minRung, cur + (nextCentre - centre))), null);
         return;
       }
       case 'recentre': {
