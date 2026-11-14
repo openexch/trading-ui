@@ -2,9 +2,21 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { Market, OrderSide, OrderType, OrderRequest, TimeInForce } from '../../types/market';
 import { formatPrice } from '../../utils/formatters';
-import { snapPrice, isInPriceRange, tickLabel, priceRangeLabel } from '../../utils/ticks';
+import { snapPrice, tickLabel } from '../../utils/ticks';
 import { useBalances } from '../../hooks/useBalances';
 import { EV, track } from '../../analytics';
+import {
+  SYNTHETIC_TYPES,
+  needsStopPrice,
+  needsTrailingDelta,
+  needsDisplayQty,
+  needsPrice,
+  draftTotal,
+  sizeForPercent as draftSizeForPercent,
+  snapPriceText,
+  buildOrderRequest,
+  orderSubmitProps,
+} from '../../trading/orderDraft';
 
 interface OrderFormProps {
   market: Market;
@@ -27,12 +39,6 @@ interface OrderFormProps {
    *  visible text is the friendly form. */
   rejectNotice?: { text: string; code: string | null } | null;
 }
-
-const SYNTHETIC_TYPES: OrderType[] = ['STOP_LOSS', 'STOP_LIMIT', 'TRAILING_STOP', 'ICEBERG'];
-const needsStopPrice = (t: OrderType) => t === 'STOP_LOSS' || t === 'STOP_LIMIT';
-const needsTrailingDelta = (t: OrderType) => t === 'TRAILING_STOP';
-const needsDisplayQty = (t: OrderType) => t === 'ICEBERG';
-const needsPrice = (t: OrderType) => t !== 'MARKET' && t !== 'STOP_LOSS';
 
 const inputClass =
   'w-full rounded-md border border-hairline bg-surface-2 px-2.5 py-2 pr-14 font-mono text-[13px] tabular-nums text-text placeholder:text-faint focus:border-accent focus:outline-none disabled:opacity-50';
@@ -111,33 +117,17 @@ function OrderSideForm({
 
   // Snap the typed price onto the engine grid when leaving the field
   const handlePriceBlur = useCallback(() => {
-    const p = parseFloat(price);
-    if (p > 0 && isInPriceRange(market, p)) {
-      setPrice(snapPrice(market, p).toString());
-    }
+    const snapped = snapPriceText(market, price);
+    if (snapped !== null) setPrice(snapped);
   }, [price, market]);
 
-  const total = useMemo(() => {
-    const p = parseFloat(price) || 0;
-    const q = parseFloat(quantity) || 0;
-    return p * q;
-  }, [price, quantity]);
+  const total = useMemo(() => draftTotal(price, quantity), [price, quantity]);
 
-  // pct% of the real balance: buy = quote balance / price (form price, else
-  // last trade price), sell = base balance. 8 dp, floored at 0 when there is
-  // no balance or no usable price.
-  const sizeForPercent = useCallback((percent: number) => {
-    let qty = 0;
-    if (isBuy) {
-      const formPrice = parseFloat(price);
-      const p = formPrice > 0 ? formPrice : (lastPrice ?? 0);
-      qty = p > 0 ? (available * percent / 100) / p : 0;
-    } else {
-      qty = available * percent / 100;
-    }
-    if (!isFinite(qty) || qty < 0) qty = 0;
-    return qty.toFixed(8);
-  }, [isBuy, available, price, lastPrice]);
+  // pct% of the real balance (see orderDraft.sizeForPercent)
+  const sizeForPercent = useCallback(
+    (percent: number) => draftSizeForPercent({ side, available, percent, price, lastPrice }),
+    [side, available, price, lastPrice]
+  );
 
   const handlePercentage = useCallback((percent: number) => {
     setSliderValue(percent);
@@ -153,63 +143,25 @@ function OrderSideForm({
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const priceNum = parseFloat(price);
-    const quantityNum = parseFloat(quantity);
-
-    if (orderType !== 'MARKET' && (!priceNum || priceNum <= 0)) {
-      setNotification({ type: 'error', message: 'Enter a valid price' });
+    const built = buildOrderRequest(
+      { market, side, orderType, timeInForce, price, quantity, stopPrice, trailingDelta, displayQuantity },
+      Date.now()
+    );
+    if (!built.ok) {
+      setNotification({ type: 'error', message: built.error });
       return;
     }
+    if (built.snappedPrice !== undefined) setPrice(built.snappedPrice.toString());
+    const order = built.order;
 
-    if (!quantityNum || quantityNum <= 0) {
-      setNotification({ type: 'error', message: 'Enter a valid amount' });
-      return;
-    }
-
-    // Engine price grid: out-of-range prices are a hard error; anything else
-    // is snapped to the tick so the engine can never reject on PRICE_OFF_TICK.
-    let submitPrice = priceNum;
-    if (needsPrice(orderType)) {
-      if (!isInPriceRange(market, priceNum)) {
-        setNotification({
-          type: 'error',
-          message: `Price must be within ${priceRangeLabel(market)} for ${market.symbol}`,
-        });
-        return;
-      }
-      submitPrice = snapPrice(market, priceNum);
-      if (submitPrice !== priceNum) setPrice(submitPrice.toString());
-    }
-    const stopNum = parseFloat(stopPrice);
-    const submitStop = needsStopPrice(orderType) && stopNum > 0
-      ? snapPrice(market, stopNum)
-      : undefined;
-
-    const order: OrderRequest = {
-      market: market.symbol,
+    const submitProps = orderSubmitProps({
+      market,
       orderType,
-      orderSide: side,
-      price: !needsPrice(orderType) ? 0 : submitPrice,
-      quantity: quantityNum,
-      totalPrice: orderType === 'MARKET' && isBuy ? total : undefined,
-      timeInForce,
-      stopPrice: submitStop,
-      trailingDelta: needsTrailingDelta(orderType) ? parseFloat(trailingDelta) || undefined : undefined,
-      displayQuantity: needsDisplayQty(orderType) ? parseFloat(displayQuantity) || undefined : undefined,
-      timestamp: Date.now(),
-    };
-
-    // Shape only: no price, no quantity, no total. scrubMoney would strip
-    // them anyway; not collecting them is the actual policy.
-    const submitProps = {
-      market: market.symbol,
-      order_type: orderType,
       side,
-      time_in_force: timeInForce,
-      priced: needsPrice(orderType),
-      from_book_click: externalPrice != null,
-      used_slider: sliderValue > 0,
-    };
+      timeInForce,
+      fromBookClick: externalPrice != null,
+      usedSlider: sliderValue > 0,
+    });
     track(EV.order_submit, submitProps);
     const startedAt = Date.now();
 
@@ -242,7 +194,7 @@ function OrderSideForm({
     }
 
     setTimeout(() => setNotification(null), 3000);
-  }, [price, quantity, orderType, side, market, isBuy, total, onSubmitOrder, stopPrice, trailingDelta, displayQuantity, timeInForce, refreshBalances]);
+  }, [price, quantity, orderType, side, market, isBuy, onSubmitOrder, stopPrice, trailingDelta, displayQuantity, timeInForce, refreshBalances, externalPrice, sliderValue]);
 
   return (
     <form onSubmit={handleSubmit} className={`flex flex-1 flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
