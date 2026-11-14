@@ -32,12 +32,23 @@ setStackVersion(STACK_VERSION)
 initAnalytics()
 track(EV.app_open, { signed_in: getSession() !== null })
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <BrowserRouter>
-    <AuthProvider>
-      <BalancesProvider>
-        <App />
-      </BalancesProvider>
-    </AuthProvider>
-  </BrowserRouter>
-)
+const root = ReactDOM.createRoot(document.getElementById('root')!)
+
+// Browser check page for the UI primitives, behind the ladder flag. Read once,
+// never persisted, and split into its own chunk.
+const params = new URLSearchParams(window.location.search)
+if (params.get('ui') === 'ladder' && params.get('check') === 'primitives') {
+  import('./ui/check/PrimitivesCheck').then(({ PrimitivesCheck }) => {
+    root.render(<PrimitivesCheck />)
+  })
+} else {
+  root.render(
+    <BrowserRouter>
+      <AuthProvider>
+        <BalancesProvider>
+          <App />
+        </BalancesProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  )
+}
