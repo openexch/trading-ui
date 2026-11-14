@@ -70,3 +70,22 @@ export function groupingOptions(market: Pick<Market, 'tickSize'>): GroupingOptio
 export function isGroupingMultiplier(n: number): n is GroupingMultiplier {
   return (GROUPING_MULTIPLIERS as readonly number[]).includes(n);
 }
+
+/**
+ * The size one step up or down (the + and - keys), as text. A step is the
+ * market's smallest preset; going down never goes below one step. Computed
+ * in integer units of the market's size precision so no float tail appears.
+ * Null when the market has no presets (no step to take).
+ */
+export function stepSize(market: Pick<Market, 'symbol'>, sizeText: string, dir: 1 | -1): string | null {
+  const ui = marketUi(market);
+  const step = ui.sizePresets[0];
+  if (step === undefined) return null;
+  const scale = 10 ** ui.sizeDecimals;
+  const t = sizeText.trim();
+  const cur = /^\d*\.?\d+$|^\d+\.$/.test(t) ? Number(t) : 0;
+  const stepU = Math.round(step * scale);
+  const curU = cur > 0 && isFinite(cur) ? Math.round(cur * scale) : 0;
+  const nextU = Math.max(stepU, curU + dir * stepU);
+  return String(Number((nextU / scale).toFixed(ui.sizeDecimals)));
+}

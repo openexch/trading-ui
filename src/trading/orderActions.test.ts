@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UserOrder } from '../types/market';
 import { MARKETS } from '../types/market';
-import { cancelAllSummary, canMove, menuReference, oneClickPlaces, rungMenuSides, MOVE_LABEL } from './orderActions';
+import { cancelAllSummary, canMove, menuReference, oneClickPlaces, rungMenuSides, stepPrice, MOVE_LABEL } from './orderActions';
 import { snapDeltaText } from './orderDraft';
 import { buildStaged, describeStaged } from './staging';
 import type { OrderDefaults, Staged } from './staging';
@@ -117,5 +117,21 @@ describe('order tickets on a staged order', () => {
     const s: Staged = { marketId: BTC.id, side: 'BID', price: 97_390, ticket: { type: 'LIMIT' } };
     const r = buildStaged(BTC, s, { ...bar, type: 'STOP_LIMIT' }, '', 1);
     expect(r.ok && r.order).toMatchObject({ orderType: 'LIMIT', price: 97_390, quantity: 0.25 });
+  });
+});
+
+describe('stepPrice (Alt+Up / Alt+Down)', () => {
+  it('moves by whole groups in integer ticks', () => {
+    expect(stepPrice(BTC, 97_390, 5, 1)).toBe(97_395);
+    expect(stepPrice(BTC, 97_392, 5, -1)).toBe(97_387);
+    expect(stepPrice(ETH, 3000, 5, 1)).toBe(3002.5);
+  });
+  it('picks up no float tail on DOGE', () => {
+    expect(stepPrice(DOGE, 0.3812, 1, 1)).toBe(0.3813);
+    expect(stepPrice(DOGE, 0.3, 1, -1)).toBe(0.2999);
+  });
+  it('refuses to leave the price range', () => {
+    expect(stepPrice(BTC, BTC.maxPrice, 1, 1)).toBeNull();
+    expect(stepPrice(BTC, BTC.minPrice, 1, -1)).toBeNull();
   });
 });

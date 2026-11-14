@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, it, expect } from 'vitest';
 import { MARKETS } from '../types/market';
-import { marketUi, groupingOptions, groupSize, GROUPING_MULTIPLIERS, isGroupingMultiplier } from './marketUi';
+import { marketUi, groupingOptions, groupSize, GROUPING_MULTIPLIERS, isGroupingMultiplier, stepSize } from './marketUi';
 
 describe('marketUi', () => {
   it('every listed market has presets, a valid default preset and a valid default grouping', () => {
@@ -54,5 +54,25 @@ describe('grouping', () => {
   it('isGroupingMultiplier', () => {
     expect(isGroupingMultiplier(25)).toBe(true);
     expect(isGroupingMultiplier(2)).toBe(false);
+  });
+});
+
+describe('stepSize (the + and - keys)', () => {
+  const btc = { symbol: 'BTC-USD' };
+  const doge = { symbol: 'DOGE-USD' };
+  it('steps by the smallest preset, float-safe', () => {
+    expect(stepSize(btc, '0.25', 1)).toBe('0.35');
+    expect(stepSize(btc, '0.35', -1)).toBe('0.25');
+    expect(stepSize(btc, '0.7', 1)).toBe('0.8');
+    expect(stepSize(doge, '5000', 1)).toBe('6000');
+  });
+  it('never goes below one step; an empty or invalid size starts from one step', () => {
+    expect(stepSize(btc, '0.15', -1)).toBe('0.1');
+    expect(stepSize(btc, '0.1', -1)).toBe('0.1');
+    expect(stepSize(btc, '', 1)).toBe('0.1');
+    expect(stepSize(btc, 'abc', -1)).toBe('0.1');
+  });
+  it('a market without presets has no step', () => {
+    expect(stepSize({ symbol: 'NEW-USD' }, '1', 1)).toBeNull();
   });
 });

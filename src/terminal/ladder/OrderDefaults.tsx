@@ -22,12 +22,14 @@ export interface OrderDefaultsProps {
   onTif: (tif: TimeInForce) => void;
   /** One-click state. Without it the switch shows off and disabled. */
   oneClick?: { armed: boolean; available: boolean; onChange: (armed: boolean) => void };
+  /** Opens the shortcut sheet; without it there is no button. */
+  onShowShortcuts?: () => void;
 }
 
 // Scrolling over a focused number field must never change an order size.
 const blurOnWheel = (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur();
 
-export function OrderDefaults({ market, value, onSize, onType, onTif, oneClick }: OrderDefaultsProps) {
+export function OrderDefaults({ market, value, onSize, onType, onTif, oneClick, onShowShortcuts }: OrderDefaultsProps) {
   const ui = marketUi(market);
   const menu = useMenuTrigger();
   const size = parseSize(value.size);
@@ -103,6 +105,18 @@ export function OrderDefaults({ market, value, onSize, onType, onTif, oneClick }
         </MenuGroup>
       </Menu>
       <div className="min-w-0 flex-1" />
+      {onShowShortcuts && (
+        <button
+          type="button"
+          onClick={onShowShortcuts}
+          aria-label="Keyboard shortcuts"
+          aria-keyshortcuts="?"
+          title="Keyboard shortcuts (?)"
+          className="grid h-[30px] w-[30px] flex-none place-items-center rounded-md border border-ctl text-[12px] text-muted hover:bg-chip hover:text-text"
+        >
+          ?
+        </button>
+      )}
       <span
         className="flex-none"
         title={

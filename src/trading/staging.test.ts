@@ -7,6 +7,8 @@ import {
   buildStaged,
   crossing,
   describeStaged,
+  nextTif,
+  nextType,
   parseSize,
   stagedTotal,
   stagedType,
@@ -110,5 +112,19 @@ describe('describeStaged / stagedTotal', () => {
     expect(stagedTotal('MARKET', 97_395, '0.25')).toBeNull();
     expect(stagedTotal('STOP_LIMIT', 97_395, '0.25')).toBeNull();
     expect(stagedTotal('LIMIT', 97_395, '')).toBeNull();
+  });
+});
+
+describe('nextType / nextTif (the T and F keys)', () => {
+  it('walk the picker order and wrap', () => {
+    const seen = [TYPE_CHOICES[0].type];
+    for (let i = 1; i < TYPE_CHOICES.length; i++) seen.push(nextType(seen[i - 1]));
+    expect(seen).toEqual(TYPE_CHOICES.map(c => c.type));
+    expect(nextType(seen[seen.length - 1])).toBe(TYPE_CHOICES[0].type);
+    expect(nextTif('GTC')).toBe('IOC');
+    expect(nextTif('IOC')).toBe('FOK');
+    expect(nextTif('FOK')).toBe('GTC');
+    // GTD is not offered: F from it starts the cycle over.
+    expect(nextTif('GTD')).toBe('GTC');
   });
 });

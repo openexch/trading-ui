@@ -2,8 +2,9 @@
 // Pure rules for the ladder's order actions: which sides the rung menu
 // offers, which own orders can be moved, when an armed one-click click may
 // place at once, and how a Cancel all run reads in the strip.
-import type { OrderSide, OrderType, UserOrder } from '../types/market';
+import type { Market, OrderSide, OrderType, UserOrder } from '../types/market';
 import { crossing, extraField } from './staging';
+import { tickDecimals } from '../utils/ticks';
 
 /** Move is an amend (engine cancel-and-replace): the backend allows it for
  *  limit orders only (DESIGN.md rule 13). Stops and icebergs offer Cancel
@@ -77,4 +78,26 @@ export function cancelAllSummary(results: CancelResult[]): { ok: boolean; text: 
     ok: false,
     text: `Cancel all: ${done} cancelled, ${failed.length} failed${first ? ` (${first})` : ''}`,
   };
+}
+
+/**
+ * A price moved by whole price groups (Alt+Up / Alt+Down on an own order):
+ * `groups` x `groupTicks` ticks up (positive) or down. Computed in integer
+ * ticks so DOGE and XRP pick up no float tail. Null when the result leaves
+ * the market's price range.
+ */
+export function stepPrice(
+  market: Pick<Market, 'tickSize' | 'minPrice' | 'maxPrice'>,
+  price: number,
+  groupTicks: number,
+  groups: number,
+): number | null {
+  const d = tickDecimals(market.tickSize);
+  const scale = 10 ** d;
+  const unit = Math.round(market.tickSize * scale);
+  const ticks = Math.round(Math.round(price * scale) / unit);
+  const next = ticks + groups * Math.max(1, Math.floor(groupTicks));
+  const p = Number(((next * unit) / scale).toFixed(d));
+  if (p < market.minPrice || p > market.maxPrice) return null;
+  return p;
 }

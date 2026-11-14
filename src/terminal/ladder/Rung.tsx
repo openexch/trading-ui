@@ -20,12 +20,15 @@
  *   11), so a click stages and Enter places from the staging strip.
  *   Right-click or the Menu key opens the rung menu with the other order
  *   types at that price.
+ * - The price cell is the rung's keyboard focus target. Exactly one rung's
+ *   price cell holds tabindex 0 (`focusable`); its label reads the rung as
+ *   a whole: price, depth each side and your orders on it.
  */
 import type { CSSProperties, KeyboardEvent, MouseEvent } from 'react';
 import type { LadderRow, LadderSide, SideCell } from './ladderModel';
 import type { TickDirection } from '../../ui/useTickDirection';
 import type { Anchor } from '../../ui';
-import { formatFixed } from './format';
+import { formatCompactSize, formatFixed } from './format';
 import { OwnOrderChip } from './OwnOrderChip';
 import type { OwnOrderActions } from './OwnOrderChip';
 
@@ -53,6 +56,8 @@ export interface RungProps {
   onMenu?: (price: number, anchor: Anchor) => void;
   /** Cancel / Move on the Mine chips; without it the chips are labels. */
   ownActions?: OwnOrderActions;
+  /** This rung's price cell is the grid's tab stop (roving tabindex). */
+  focusable?: boolean;
 }
 
 const HATCH: CSSProperties = {
@@ -81,6 +86,30 @@ function menuHandlers(price: number, onMenu?: (price: number, anchor: Anchor) =>
       }
     },
   };
+}
+
+function depthWords(cell: SideCell, sizeDecimals: number): string {
+  if (cell.state === 'level' && cell.quantity !== null) {
+    const q = formatFixed(cell.quantity, sizeDecimals);
+    return cell.partial ? `at least ${q}` : q;
+  }
+  return cell.state === 'unknown' ? 'unknown' : 'none';
+}
+
+/** The focused rung read as one line: "97,400, last trade, bids 1.0000,
+ *  asks none, your buy 0.50". */
+function rungLabel(row: LadderRow, priceText: string, sizeDecimals: number): string {
+  const parts = [priceText];
+  if (row.isLastTrade) parts.push('last trade');
+  parts.push(`bids ${depthWords(row.bid, sizeDecimals)}`, `asks ${depthWords(row.ask, sizeDecimals)}`);
+  const own = (word: string, o: SideCell['own']) => {
+    if (!o) return;
+    const n = o.orders.length;
+    parts.push(`your ${word}${n > 1 ? ` (${n} orders)` : ''} ${formatCompactSize(o.quantity, sizeDecimals)}`);
+  };
+  own('buy', row.bid.own);
+  own('sell', row.ask.own);
+  return parts.join(', ');
 }
 
 function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsset, sizeText, staged, onStage, onMenu }: {
@@ -181,6 +210,7 @@ export function Rung({
   onStage,
   onMenu,
   ownActions,
+  focusable = false,
 }: RungProps) {
   const ownBid = row.bid.own;
   const ownAsk = row.ask.own;
@@ -203,7 +233,7 @@ export function Rung({
     <div
       role="row"
       data-rung-price={row.price}
-      className={`grid h-[22px] ${LADDER_COLUMNS} items-center rounded`}
+      className={`grid h-[22px] ${LADDER_COLUMNS} items-center rounded has-[[data-focus-cell]:focus-visible]:ring-1 has-[[data-focus-cell]:focus-visible]:ring-inset has-[[data-focus-cell]:focus-visible]:ring-accent/50`}
       style={tint ? { background: tint } : undefined}
     >
       <span role="gridcell" className="flex items-center">
@@ -224,7 +254,13 @@ export function Rung({
         onStage={onStage}
         onMenu={onMenu}
       />
-      <span role="gridcell" className="flex justify-center text-[13px]">
+      <span
+        role="gridcell"
+        tabIndex={focusable ? 0 : -1}
+        data-focus-cell
+        aria-label={rungLabel(row, priceText, sizeDecimals)}
+        className="flex h-full items-center justify-center rounded text-[13px] outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+      >
         {row.isLastTrade ? (
           <span
             data-last-trade

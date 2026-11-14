@@ -5,6 +5,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { BookLevel, Market, OrderBook, UserOrder } from '../../types/market';
 import { Ladder } from './Ladder';
 import { deadBand, rowsForHeight } from './useLadderWindow';
+import type { OwnOrderActions } from './OwnOrderChip';
+import type { PassedCommand } from './useLadderKeys';
 
 // ---- ResizeObserver mock: tests set the observed height ------------------
 
@@ -95,6 +97,9 @@ interface Props {
   open?: UserOrder[];
   hold?: boolean;
   onStage?: (side: 'BID' | 'ASK', price: number) => void;
+  ownActions?: OwnOrderActions;
+  onCommand?: (cmd: PassedCommand) => void;
+  onAnnounce?: (text: string) => void;
 }
 
 function setup(initial: Props = {}) {
@@ -104,6 +109,9 @@ function setup(initial: Props = {}) {
     open: [] as UserOrder[],
     hold: false,
     onStage: undefined as Props['onStage'],
+    ownActions: undefined as Props['ownActions'],
+    onCommand: undefined as Props['onCommand'],
+    onAnnounce: undefined as Props['onAnnounce'],
     ...initial,
   };
   const el = (p: typeof state) => (
@@ -115,6 +123,9 @@ function setup(initial: Props = {}) {
       lastPrice={p.last}
       hold={p.hold}
       onStage={p.onStage}
+      ownActions={p.ownActions}
+      onCommand={p.onCommand}
+      onAnnounce={p.onAnnounce}
       sizeText="0.5"
     />
   );
@@ -218,7 +229,9 @@ describe('Ladder re-centring', () => {
     act(() => grid.focus());
     update({ book: bookAround(1050), last: 1050 });
     expect(middle(container)).toBe(1000);
-    act(() => grid.blur());
+    // Focus handed from the grid to its tab-stop cell; blur that.
+    expect(grid.contains(document.activeElement)).toBe(true);
+    act(() => (document.activeElement as HTMLElement).blur());
     expect(region.dataset.pinned).toBe('false');
     expect(middle(container)).toBe(1050);
   });
@@ -418,5 +431,216 @@ describe('Ladder staging clicks', () => {
     expect(middle(container)).toBe(1000);
     update({ hold: false });
     expect(middle(container)).toBe(1050);
+  });
+});
+
+// ---- keyboard -------------------------------------------------------------------
+
+/** The rung price of the element that has focus, or null. */
+function focusedPrice(): number | null {
+  const el = document.activeElement as HTMLElement | null;
+  const row = el?.closest<HTMLElement>('[data-rung-price]');
+  return row ? Number(row.dataset.rungPrice) : null;
+}
+
+/** Elements Tab would stop on: `root` and everything inside it. */
+function tabStops(root: HTMLElement): HTMLElement[] {
+  const sel = 'a[href],button,input,select,textarea,[tabindex]';
+  return [root, ...Array.from(root.querySelectorAll<HTMLElement>(sel))].filter(
+    el => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled,
+  );
+}
+
+function focusLadder() {
+  const grid = screen.getByRole('grid');
+  const stop = grid.querySelector<HTMLElement>('[tabindex="0"]')!;
+  act(() => stop.focus());
+  return grid;
+}
+
+function actions(over: Partial<OwnOrderActions> = {}): OwnOrderActions {
+  return {
+    market: TEST,
+    pending: new Map(),
+    onCancel: vi.fn(),
+    onMove: vi.fn(),
+    onOverlay: vi.fn(),
+    ...over,
+  };
+}
+
+describe('Ladder keyboard', () => {
+  it('the grid is exactly one tab stop: the centre rung, and the grid itself before rows exist', () => {
+    const { container, update } = setup({ book: { bids: [], asks: [], lastUpdate: 0 }, last: null });
+    resize(220);
+    const grid = screen.getByRole('grid');
+    expect(tabStops(grid)).toEqual([grid]);
+    update({ book: bookAround(1000), last: 1000 });
+    const stops = tabStops(grid);
+    expect(stops).toHaveLength(1);
+    expect(stops[0].closest<HTMLElement>('[data-rung-price]')!.dataset.rungPrice).toBe('1000');
+    expect(stops[0].getAttribute('aria-label')).toBe('1,000, last trade, bids none, asks none');
+    // The grouping select is outside the grid: its own stop.
+    expect(grid.contains(screen.getByRole('combobox', { name: /price grouping/i }))).toBe(false);
+    void container;
+  });
+
+  it('arrows move one rung, Shift ten; past the edge the window follows and holds', () => {
+    const { container } = setup();
+    resize(220); // 1004..996
+    const grid = focusLadder();
+    expect(focusedPrice()).toBe(1000);
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    expect(focusedPrice()).toBe(1001);
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(focusedPrice()).toBe(999);
+    expect(middle(container)).toBe(1000); // inside the window: no move
+    // Still one tab stop, now on the focused rung.
+    expect(tabStops(grid)).toEqual([document.activeElement]);
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp', shiftKey: true });
+    expect(focusedPrice()).toBe(1009);
+    expect(rungPrices(container)[0]).toBe(1009); // the window followed, focus at its top edge
+    expect(screen.getByRole('button', { name: /re-centre/i })).toBeTruthy();
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown', shiftKey: true });
+    expect(focusedPrice()).toBe(999);
+  });
+
+  it('focus follows the price across live updates, and a focused ladder does not re-centre', () => {
+    const { container, update } = setup();
+    resize(220);
+    focusLadder();
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    const el = document.activeElement;
+    update({ book: bookAround(1001), last: 1001 });
+    update({ book: bookAround(1050), last: 1050 });
+    expect(middle(container)).toBe(1000);
+    expect(document.activeElement).toBe(el);
+    expect(focusedPrice()).toBe(999);
+  });
+
+  it('C re-centres on the last price and takes focus there', () => {
+    const { container, update } = setup();
+    resize(220);
+    focusLadder();
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp', shiftKey: true }); // window held at 1005..
+    update({ book: bookAround(1050), last: 1050 });
+    expect(middle(container)).not.toBe(1050);
+    fireEvent.keyDown(document.activeElement!, { key: 'c' });
+    expect(middle(container)).toBe(1050);
+    expect(focusedPrice()).toBe(1050);
+    expect(screen.queryByRole('button', { name: /re-centre/i })).toBeNull();
+  });
+
+  it('B and S stage at the focused rung; the other order keys go to the caller', () => {
+    const onStage = vi.fn();
+    const onCommand = vi.fn();
+    setup({ onStage, onCommand });
+    resize(220);
+    focusLadder();
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    fireEvent.keyDown(document.activeElement!, { key: 'b' });
+    expect(onStage).toHaveBeenLastCalledWith('BID', 999, document.activeElement);
+    fireEvent.keyDown(document.activeElement!, { key: 'S' }); // Caps Lock: still a plain S
+    expect(onStage).toHaveBeenLastCalledWith('ASK', 999, document.activeElement);
+    fireEvent.keyDown(document.activeElement!, { key: 'B', shiftKey: true });
+    expect(onCommand).toHaveBeenLastCalledWith({ kind: 'stageMarket', side: 'BID' });
+    fireEvent.keyDown(document.activeElement!, { key: '2' });
+    expect(onCommand).toHaveBeenLastCalledWith({ kind: 'preset', index: 1 });
+    fireEvent.keyDown(document.activeElement!, { key: 'X', ctrlKey: true, shiftKey: true });
+    expect(onCommand).toHaveBeenLastCalledWith({ kind: 'cancelAll' });
+    expect(onStage).toHaveBeenCalledTimes(2);
+  });
+
+  it('ladder keys in the grouping select do nothing', () => {
+    const onStage = vi.fn();
+    const onCommand = vi.fn();
+    setup({ onStage, onCommand });
+    resize(220);
+    const select = screen.getByRole('combobox', { name: /price grouping/i });
+    for (const key of ['b', 's', 't', '1', 'ArrowUp']) fireEvent.keyDown(select, { key });
+    expect(onStage).not.toHaveBeenCalled();
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it('[ and ] cycle own orders in ladder order (highest first) and wrap, pinning to orders outside', () => {
+    const open = [order('BID', 998, 1), order('ASK', 1003, 1), order('ASK', 1030, 1), order('BID', 990, 1)];
+    const onAnnounce = vi.fn();
+    const { container } = setup({ open, onAnnounce, ownActions: actions() });
+    resize(220); // 1004..996
+    focusLadder(); // at 1000
+    fireEvent.keyDown(document.activeElement!, { key: ']' });
+    expect(focusedPrice()).toBe(998); // first own order at or below the focus
+    expect(onAnnounce).toHaveBeenLastCalledWith('Order 3 of 4: Buy 1.00 TST @ 998');
+    fireEvent.keyDown(document.activeElement!, { key: ']' });
+    expect(focusedPrice()).toBe(990);
+    expect(middle(container)).toBe(990); // outside: pinned there
+    fireEvent.keyDown(document.activeElement!, { key: ']' }); // wraps to the top
+    expect(focusedPrice()).toBe(1030);
+    fireEvent.keyDown(document.activeElement!, { key: ']' });
+    expect(focusedPrice()).toBe(1003);
+    fireEvent.keyDown(document.activeElement!, { key: '[' });
+    expect(focusedPrice()).toBe(1030);
+    fireEvent.keyDown(document.activeElement!, { key: '[' }); // wraps to the bottom
+    expect(focusedPrice()).toBe(990);
+  });
+
+  it('Del cancels the focused own order; with two on the rung, [ or ] picks one first', () => {
+    const a = order('BID', 998, 1);
+    const b = order('BID', 998, 0.5);
+    const own = actions();
+    const onAnnounce = vi.fn();
+    setup({ open: [a, b], ownActions: own, onAnnounce });
+    resize(220);
+    focusLadder();
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(focusedPrice()).toBe(998);
+    fireEvent.keyDown(document.activeElement!, { key: 'Delete' });
+    expect(own.onCancel).not.toHaveBeenCalled();
+    expect(onAnnounce).toHaveBeenLastCalledWith('2 orders of yours at 998: press [ or ] to pick one');
+    fireEvent.keyDown(document.activeElement!, { key: ']' });
+    fireEvent.keyDown(document.activeElement!, { key: ']' });
+    fireEvent.keyDown(document.activeElement!, { key: 'Delete' });
+    expect(own.onCancel).toHaveBeenCalledWith(b);
+    // An empty rung says so.
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    fireEvent.keyDown(document.activeElement!, { key: 'Delete' });
+    expect(own.onCancel).toHaveBeenCalledTimes(1);
+    expect(onAnnounce).toHaveBeenLastCalledWith('No order of yours at 999');
+  });
+
+  it('Alt+Up moves a limit order one group up and focus goes with it; a stop is refused', () => {
+    const lim = order('BID', 998, 1);
+    const stop = { ...order('ASK', 1002, 1), type: 'STOP_LIMIT' as const };
+    const own = actions();
+    const onAnnounce = vi.fn();
+    setup({ open: [lim, stop], ownActions: own, onAnnounce });
+    resize(220);
+    fireEvent.change(screen.getByRole('combobox', { name: /price grouping/i }), { target: { value: '5' } });
+    focusLadder();
+    // x5: rungs are 5 apart. ] lands on the limit (995 rung, price 998).
+    fireEvent.keyDown(document.activeElement!, { key: ']' });
+    expect(focusedPrice()).toBe(995);
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp', altKey: true });
+    expect(own.onMove).toHaveBeenCalledWith(lim, 1003);
+    expect(focusedPrice()).toBe(1000);
+
+    fireEvent.keyDown(document.activeElement!, { key: '[' }); // the stop at 1002 (ask rung 1005)
+    expect(focusedPrice()).toBe(1005);
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown', altKey: true });
+    expect(own.onMove).toHaveBeenCalledTimes(1);
+    expect(onAnnounce).toHaveBeenLastCalledWith('Stop limit orders cannot be moved: cancel instead');
+  });
+
+  it('own-order keys signed out (no actions) only explain', () => {
+    const onAnnounce = vi.fn();
+    setup({ open: [order('BID', 998, 1)], onAnnounce });
+    resize(220);
+    focusLadder();
+    fireEvent.keyDown(document.activeElement!, { key: ']' });
+    fireEvent.keyDown(document.activeElement!, { key: 'Delete' });
+    expect(onAnnounce).toHaveBeenLastCalledWith('Sign in to manage your orders');
   });
 });

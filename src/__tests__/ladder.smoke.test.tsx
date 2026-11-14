@@ -663,6 +663,179 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect((oneClick() as HTMLButtonElement).disabled).toBe(true);
   });
 
+  // ---- keyboard trading ------------------------------------------------------
+
+  /** The focused rung's price, from the element that has focus. */
+  const focusedRung = () =>
+    (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[data-rung-price]')?.dataset.rungPrice ?? null;
+  const key = (k: string, mods: Partial<Record<'shiftKey' | 'ctrlKey' | 'altKey', boolean>> = {}) =>
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: k, ...mods });
+
+  it('L focuses the ladder from anywhere; arrows and Shift move the focused rung', async () => {
+    await ladderWithBook();
+    expect(document.activeElement).toBe(document.body);
+    key('l');
+    const grid = screen.getByRole('grid', { name: /price ladder/i });
+    expect(grid.contains(document.activeElement)).toBe(true);
+    expect(focusedRung()).toBe('97400');
+    key('ArrowUp');
+    expect(focusedRung()).toBe('97405');
+    key('ArrowDown', { shiftKey: true });
+    expect(focusedRung()).toBe('97355');
+  });
+
+  it('B then Enter places at the focused rung; Esc clears a stage', async () => {
+    await ladderWithBook();
+    key('l');
+    key('ArrowDown');
+    key('s');
+    expect(strip().textContent).toContain('Sell 0.25 BTC @ 97,395');
+    key('Escape');
+    expect(strip().textContent).not.toContain('Sell 0.25 BTC');
+    key('b');
+    expect(strip().textContent).toContain('Buy 0.25 BTC @ 97,395');
+    expect(posts()).toHaveLength(0);
+    key('Enter');
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    const body = JSON.parse(String(posts()[0].init!.body));
+    expect(body.side).toBe('BUY');
+    expect(body.price).toBe('97395.00000000');
+    expect(body.quantity).toBe('0.25000000');
+    expect(body.orderType).toBe('LIMIT');
+    expect(body.userId).toBeUndefined();
+    // Focus stayed on the ladder.
+    expect(focusedRung()).toBe('97395');
+  });
+
+  it('Shift+B stages a market buy that needs a second Enter', async () => {
+    await ladderWithBook();
+    key('l');
+    key('B', { shiftKey: true });
+    expect(strip().textContent).toContain('Buy 0.25 BTC at market');
+    key('Enter');
+    await act(async () => {});
+    expect(posts()).toHaveLength(0);
+    expect(strip().textContent).toContain('press Enter again');
+    key('Enter');
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(JSON.parse(String(posts()[0].init!.body)).orderType).toBe('MARKET');
+  });
+
+  it('size, type, TIF and one-click keys change the defaults and say so in the strip', async () => {
+    await ladderWithBook();
+    key('l');
+    key('3');
+    expect(screen.getByRole('button', { name: /^size 1.00 btc$/i }).getAttribute('aria-pressed')).toBe('true');
+    expect(strip().textContent).toContain('Size 1.00 BTC');
+    key('-');
+    expect((screen.getByRole('spinbutton', { name: /order size in btc/i }) as HTMLInputElement).value).toBe('0.9');
+    key('+', { shiftKey: true });
+    expect((screen.getByRole('spinbutton', { name: /order size in btc/i }) as HTMLInputElement).value).toBe('1');
+    key('t');
+    expect(screen.getByRole('button', { name: /order type and time in force: post only, good till cancelled/i })).toBeTruthy();
+    expect(strip().textContent).toContain('Order type: Post only');
+    key('f');
+    expect(screen.getByRole('button', { name: /order type and time in force: post only, immediate or cancel/i })).toBeTruthy();
+    key('o', { ctrlKey: true });
+    expect(oneClick().getAttribute('aria-checked')).toBe('true');
+    key('o', { ctrlKey: true });
+    expect(oneClick().getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('Del on a focused own order sends a DELETE', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9501', price: 97_390 });
+    await screen.findByRole('button', { name: /your buy order at 97,390/i });
+    key('l');
+    key('ArrowDown');
+    key('ArrowDown');
+    expect(focusedRung()).toBe('97390');
+    key('Delete');
+    await waitFor(() => expect(deletes()).toHaveLength(1));
+    expect(deletes()[0].url).toMatch(/\/api\/v1\/orders\/9501$/);
+    await waitFor(() => expect(strip().textContent).toContain('Cancelled: Buy 0.5 BTC @ 97,390'));
+  });
+
+  it('Alt+Up moves a limit order one group up (PUT); a stop is refused with a reason', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9601', price: 97_390 });
+    pushOwn({ id: '9602', type: 'STOP_LIMIT', side: 'SELL', price: 97_420 });
+    await screen.findByRole('button', { name: /your buy order at 97,390/i });
+    key('l');
+    key(']'); // the first own order at or below the focus: the limit at 97,390
+    expect(focusedRung()).toBe('97390');
+    key('ArrowUp', { altKey: true });
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0].url).toMatch(/\/api\/v1\/orders\/9601$/);
+    expect(JSON.parse(String(puts()[0].init!.body))).toEqual({ price: '97395.00000000' });
+    expect(focusedRung()).toBe('97395'); // focus goes with the order
+    await waitFor(() => expect(strip().textContent).toContain('Moved to 97,395 (re-queued)'));
+
+    key('['); // previous in ladder order: the stop at 97,420
+    expect(focusedRung()).toBe('97420');
+    key('ArrowUp', { altKey: true });
+    await act(async () => {});
+    expect(puts()).toHaveLength(1);
+    expect(strip().textContent).toContain('Stop limit orders cannot be moved: cancel instead');
+    expect(screen.queryByRole('alert')).toBeNull(); // a refusal is polite, not an alert
+  });
+
+  it('Ctrl+Shift+X asks first; Enter confirms and cancels', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9701', price: 97_390 });
+    pushOwn({ id: '9702', price: 97_380 });
+    await screen.findByRole('button', { name: /^cancel all · 2$/i });
+    key('l');
+    key('X', { ctrlKey: true, shiftKey: true });
+    expect(strip().textContent).toContain('Cancel all 2 open BTC-USD orders?');
+    await act(async () => {});
+    expect(deletes()).toHaveLength(0);
+    key('Escape');
+    expect(strip().textContent).not.toContain('Cancel all 2 open');
+    key('X', { ctrlKey: true, shiftKey: true });
+    key('Enter');
+    await waitFor(() => expect(deletes()).toHaveLength(2));
+    await waitFor(() => expect(strip().textContent).toContain('Cancelled 2 orders'));
+  });
+
+  it('letters typed in the size field never trigger shortcuts', async () => {
+    await ladderWithBook();
+    const input = screen.getByRole('spinbutton', { name: /order size in btc/i });
+    act(() => input.focus());
+    for (const k of ['l', 'b', 's', 't', 'f', '1', 'c', '?', 'Delete']) fireEvent.keyDown(input, { key: k });
+    fireEvent.keyDown(input, { key: 'B', shiftKey: true });
+    fireEvent.keyDown(input, { key: 'X', ctrlKey: true, shiftKey: true });
+    expect(document.activeElement).toBe(input);
+    expect(strip().textContent).not.toContain('Staged');
+    expect(strip().textContent).not.toContain('Order type');
+    expect(screen.getByRole('button', { name: /order type and time in force: limit, good till cancelled/i })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('? opens the shortcut sheet; Esc closes it and focus returns', async () => {
+    await ladderWithBook();
+    key('l');
+    key('ArrowUp');
+    const cell = document.activeElement as HTMLElement;
+    key('?', { shiftKey: true });
+    const sheet = screen.getByRole('dialog', { name: /trade from the keyboard/i });
+    expect(sheet.contains(document.activeElement)).toBe(true);
+    for (const t of ['Move', 'Order', 'Size and type', 'Cancel and move']) {
+      expect(screen.getByRole('region', { name: t })).toBeTruthy();
+    }
+    expect(sheet.textContent).toContain('Previous or next own order');
+    expect(sheet.textContent).not.toContain('Tab');
+    // Ladder keys do not reach the ladder behind the sheet.
+    key('b');
+    expect(strip().textContent).not.toContain('Staged');
+    key('Escape');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(cell);
+    // The visible button opens it too.
+    fireEvent.click(screen.getByRole('button', { name: /keyboard shortcuts/i }));
+    expect(screen.getByRole('dialog', { name: /trade from the keyboard/i })).toBeTruthy();
+  });
+
   it('keeps the default screen without the flag', async () => {
     renderApp();
     expect(await screen.findByRole('button', { name: /open orders/i })).toBeTruthy();
