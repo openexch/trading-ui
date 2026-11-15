@@ -202,8 +202,13 @@ ladder.
 ## Colour
 
 - **Dark = brand ink**: surfaces and hairlines carry a blue undertone derived
-  from the logo. Light is an instrument grey-blue with the same undertone,
-  designed rather than inverted.
+  from the logo. **Light = paper** (the ledger identity): a warm off-white
+  ground whose surfaces step warm, never blue, with ink text and an ink-blue
+  accent and wordmark; designed rather than inverted.
+- **Ledger rules** on the ladder, from the tokens and never changing a
+  measured height: a hairline under every rung, a double rule either side
+  of the price column, and a heavy rule (`--rule-heavy`: solid ink on paper,
+  subdued on ink) under the column header and around the spread row.
 - Trade colours stay WCAG AA on their surfaces; every number on a depth bar
   or own-order slice (level, cumulative, hover preview) is AA, side-coloured
   marks on a bar reach 3:1, and interactive borders reach 3:1. A test

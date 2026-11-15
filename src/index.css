@@ -5,41 +5,46 @@
 
 /* ================================================================
    Open Exchange design tokens (depth ladder direction, see DESIGN.md)
-   Light is an instrument grey-blue, dark is brand ink; both carry the
-   logo's blue undertone. Semantic vars flip between themes and are mapped
+   Light is paper (a warm off-white ground, ink text, ink-blue accent),
+   dark is brand ink with the logo's blue undertone. Semantic vars flip between themes and are mapped
    into Tailwind below. Values mirror the approved design canvas; the chart
    palette mirrors them by hand (src/components/Chart/palette.ts) and
    src/__tests__/tokens.test.ts guards that mirror and the contrast pairs.
    ================================================================ */
 :root {
-  /* Surfaces */
-  --bg: #f3f5f8;
-  --surface: #ffffff;
-  --surface-2: #f0f3f7;
-  --surface-3: #e6eaf0;
-  --chip: #e9edf2;
-  --text: #364152;
-  --text-strong: #0d1420;
-  --muted: #5b6576;
-  --faint: #646c79;
-  --hairline: #e1e6ed;
-  --hairline-strong: #d1d7e2;
+  /* Paper (the ledger identity, DESIGN.md): a warm off-white ground with
+     ink text and an ink-blue accent. Surfaces step warm, never blue. */
+  --bg: #f5f3ec;
+  --surface: #fbfaf6;
+  --surface-2: #f1eee5;
+  --surface-3: #e7e3d7;
+  --chip: #ebe7dc;
+  --text: #2a3142;
+  --text-strong: #10162a;
+  --muted: #5d6577;
+  --faint: #646a76;
+  --hairline: #e6e1d3;
+  --hairline-strong: #d9d3c3;
   /* Interactive control borders (inputs, buttons): 3:1 on the surface. */
-  --ctl: #8a94a6;
+  --ctl: #8a8678;
 
-  /* Signature accent: logo blue, deep in light, bright in dark.
+  /* Signature accent: ink blue in light, bright logo blue in dark.
      --on-accent is the readable text colour on a solid accent fill. */
-  --accent: #1f5bd6;
-  --accent-hover: #1a4cb3;
-  --accent-soft: rgba(31, 91, 214, 0.12);
-  --accent-ring: rgba(31, 91, 214, 0.40);
+  --accent: #1d3f9e;
+  --accent-hover: #132c72;
+  --accent-soft: rgba(29, 63, 158, 0.12);
+  --accent-ring: rgba(29, 63, 158, 0.40);
   --on-accent: #ffffff;
   /* Selected / last-trade highlight fill. */
-  --mid: rgba(31, 91, 214, 0.10);
+  --mid: rgba(29, 63, 158, 0.10);
 
   /* Decorative background FX (subtle, derived from accent) */
-  --glow: color-mix(in srgb, var(--accent) 16%, transparent);
-  --grid-dot: rgba(30, 60, 120, 0.05);
+  --glow: color-mix(in srgb, var(--accent) 14%, transparent);
+  --grid-dot: rgba(74, 62, 36, 0.06);
+
+  /* Ledger rules on the ladder: the heavy rule under the column header and
+     around the spread row. Solid ink on paper. */
+  --rule-heavy: var(--text);
 
   /* Trade semantics.
      -soft is the depth-bar fill: text on it uses --text-strong.
@@ -48,9 +53,9 @@
   --buy: #17774f;
   --buy-soft: rgba(23, 119, 79, 0.28);
   --buy-faint: rgba(23, 119, 79, 0.08);
-  --sell: #c23a27;
-  --sell-soft: rgba(194, 58, 39, 0.26);
-  --sell-faint: rgba(194, 58, 39, 0.08);
+  --sell: #b03a26;
+  --sell-soft: rgba(176, 58, 38, 0.26);
+  --sell-faint: rgba(176, 58, 38, 0.08);
   --warn: #d98a1f;
   --warn-soft: rgba(217, 138, 31, 0.12);
 
@@ -58,11 +63,12 @@
      a 1px side-coloured outline, quantities in --text-strong. */
   --own-slice-alpha: 0.35;
 
-  --elev-sm: 0 1px 2px rgba(13, 20, 32, 0.06);
-  --elev-md: 0 6px 20px rgba(13, 20, 32, 0.10);
-  --elev-lg: 0 18px 50px rgba(13, 20, 32, 0.16);
+  /* Warm, ink-brown shadows: a blue cast reads as cold on paper. */
+  --elev-sm: 0 1px 2px rgba(40, 33, 20, 0.07);
+  --elev-md: 0 6px 20px rgba(40, 33, 20, 0.10);
+  --elev-lg: 0 18px 50px rgba(40, 33, 20, 0.16);
   /* Menus and popovers. */
-  --shadow-pop: 0 18px 40px -18px rgba(13, 20, 32, 0.35);
+  --shadow-pop: 0 18px 40px -18px rgba(40, 33, 20, 0.35);
 
   /* Scrollbar thumb */
   --thumb: color-mix(in srgb, var(--muted) 38%, transparent);
@@ -96,6 +102,9 @@
 
   --glow: color-mix(in srgb, var(--accent) 24%, transparent);
   --grid-dot: rgba(140, 170, 255, 0.05);
+
+  /* The heavy ledger rule at reduced strength: solid --text glares on ink. */
+  --rule-heavy: color-mix(in srgb, var(--text) 38%, transparent);
 
   --buy: #2fc489;
   --buy-soft: rgba(47, 196, 137, 0.24);
