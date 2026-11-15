@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * One side column: two slots and the height handle between them.
+ * One side column: two slots and the height handle between them. The left
+ * and right columns always render; the far-right one only in wide mode
+ * (TerminalDesktop), so a hidden column's panels never mount.
  *
  * The column height comes from a ResizeObserver on the rendered element,
  * held in state (not a ref) so the effect cleanup disconnects the observer
@@ -69,6 +71,7 @@ export function SideColumn({ column, api, renderPanel }: SideColumnProps) {
       <PanelPicker
         slot={slot}
         layout={layout}
+        mode={api.mode}
         onPick={api.pick}
         onPreset={api.applyPreset}
         onReset={api.reset}
@@ -77,7 +80,7 @@ export function SideColumn({ column, api, renderPanel }: SideColumnProps) {
     ),
   });
 
-  const side = column === 'left' ? 'Left' : 'Right';
+  const side = column === 'left' ? 'Left' : column === 'right' ? 'Right' : 'Far right';
   return (
     <aside
       ref={setEl}
@@ -94,7 +97,7 @@ export function SideColumn({ column, api, renderPanel }: SideColumnProps) {
       </div>
       <div aria-hidden className="h-px flex-none" />
       <SplitHandle
-        label={`Resize ${column} panels`}
+        label={`Resize ${side.toLowerCase()} panels`}
         top={top}
         bounds={bounds}
         topTitle={PANELS[topPanel].title}

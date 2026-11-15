@@ -3,8 +3,10 @@
  * The panel title as a picker (DESIGN.md: each slot's title is a picker).
  *
  * The menu, "Show in this panel", lists every panel as a radio item with
- * where it lives now (Here, Left top, ..., Hidden). Picking one that is open
- * elsewhere swaps the two; picking a hidden one replaces this slot's panel.
+ * where it lives now (Here, Left top, ..., Far right bottom, Hidden).
+ * Picking one that is open elsewhere swaps the two; picking a hidden one
+ * replaces this slot's panel, which takes the hidden one's place (in
+ * standard mode, the far-right column's slots are the hidden ones).
  * Below them: Layout presets… (opens a second menu at the same place) and
  * Reset layout.
  *
@@ -16,7 +18,8 @@ import type { KeyboardEvent } from 'react';
 import { Menu, MenuGroup, MenuItem, MenuItemRadio, MenuSeparator } from '../../ui';
 import { PANELS, PANEL_IDS } from './registry';
 import type { PanelId } from './registry';
-import type { LayoutState, SlotIndex } from './layoutReducer';
+import { visibleSlots } from './layoutReducer';
+import type { LayoutMode, LayoutState, SlotIndex } from './layoutReducer';
 import { PRESETS, PRESET_IDS, matchingPreset } from './presets';
 import type { PresetId } from './presets';
 
@@ -25,19 +28,22 @@ export const SLOT_NAMES: Readonly<Record<SlotIndex, string>> = {
   1: 'Left bottom',
   2: 'Right top',
   3: 'Right bottom',
+  4: 'Far right top',
+  5: 'Far right bottom',
 };
 
-/** Where a panel lives, as the picker says it, from one slot's view. */
-export function whereLabel(layout: LayoutState, here: SlotIndex, panel: PanelId): string {
-  const at = layout.slots.indexOf(panel);
+/** Where a panel lives, as the picker says it, from one slot's view. A
+ *  panel in a slot the mode does not show is Hidden. */
+export function whereLabel(layout: LayoutState, here: SlotIndex, panel: PanelId, mode: LayoutMode): string {
+  const at = visibleSlots(mode).find(i => layout.slots[i] === panel);
   if (at === here) return 'Here';
-  if (at < 0) return 'Hidden';
-  return SLOT_NAMES[at as SlotIndex];
+  return at === undefined ? 'Hidden' : SLOT_NAMES[at];
 }
 
 export interface PanelPickerProps {
   slot: SlotIndex;
   layout: LayoutState;
+  mode: LayoutMode;
   onPick: (slot: SlotIndex, panel: PanelId) => void;
   onPreset: (id: PresetId) => void;
   onReset: () => void;
@@ -50,7 +56,7 @@ const Chevron = () => (
   </svg>
 );
 
-export function PanelPicker({ slot, layout, onPick, onPreset, onReset, variant = 'title' }: PanelPickerProps) {
+export function PanelPicker({ slot, layout, mode, onPick, onPreset, onReset, variant = 'title' }: PanelPickerProps) {
   const [open, setOpen] = useState<'panels' | 'presets' | null>(null);
   const [initialFocus, setInitialFocus] = useState<'first' | 'last'>('first');
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -59,7 +65,7 @@ export function PanelPicker({ slot, layout, onPick, onPreset, onReset, variant =
 
   const current = layout.slots[slot];
   const title = PANELS[current].title;
-  const preset = matchingPreset(layout);
+  const preset = matchingPreset(layout, mode);
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -113,7 +119,7 @@ export function PanelPicker({ slot, layout, onPick, onPreset, onReset, variant =
             <MenuItemRadio
               key={id}
               checked={id === current}
-              hint={whereLabel(layout, slot, id)}
+              hint={whereLabel(layout, slot, id, mode)}
               onSelect={() => onPick(slot, id)}
             >
               {PANELS[id].title}

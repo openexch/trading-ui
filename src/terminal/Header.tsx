@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Terminal header, 52px, on the same 340 | 1fr | 340 grid as the body.
+ * Terminal header, 52px, on the same grid as the body (SIDE_COLUMNS:
+ * 340 | 1fr | 340 at 1440; left | 960 | right | far right in wide mode).
  *
  * - Left: logo and wordmark (Bricolage).
  * - Centre: the market symbol as a button that opens the market selector, so
  *   switching markets never depends on the panel layout; then the ticker
  *   hero, the only typographic hero on screen, with a persistent arrow.
- * - Right: connection pill, account (username, or Sign in), theme toggle.
+ * - Right: connection pill, account (username, or Sign in), theme toggle,
+ *   in one cell over every column after the centre (AFTER_CENTRE), so the
+ *   centre cell stays exactly the ladder's column in both modes.
  *
  * Stats are nullable: during a market switch every value prints a dash,
  * never $0.00 (DESIGN.md rule 2).
@@ -20,7 +23,7 @@ import { useTickDirection } from '../ui/useTickDirection';
 import { tickDecimals } from '../utils/ticks';
 import { LivePill } from './LivePill';
 import { formatFixed } from './ladder/format';
-import { SIDE_COLUMNS } from './layoutColumns';
+import { AFTER_CENTRE, SIDE_COLUMNS } from './layoutColumns';
 
 export { SIDE_COLUMNS };
 
@@ -118,7 +121,7 @@ export function Header(props: HeaderProps) {
         </span>
       </div>
 
-      <div className="flex items-center justify-end gap-2.5 px-[18px]">
+      <div className={`flex ${AFTER_CENTRE} items-center justify-end gap-2.5 px-[18px]`}>
         <LivePill status={props.status} clusterState={props.clusterState} onReconnect={props.onReconnect} />
         {props.username ? (
           <button

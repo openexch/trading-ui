@@ -2,11 +2,12 @@
 /**
  * Desktop terminal shell (behind ?ui=ladder): a 52px header over a three
  * column grid, 340 | 1fr | 340 at 1440 (280px side columns below 1200,
- * growing to 480px on wide screens; see layoutColumns), with 1px hairline
+ * growing to 480px on wider screens), and from 2140px a four column grid,
+ * left | 960 | right | far right (see layoutColumns), with 1px hairline
  * gaps. The centre is order entry: the defaults bar, the staging
- * strip and the depth ladder. The side columns are the four layout slots
- * (two per column, a height handle between them); each slot's title picks
- * its panel (layout/, DESIGN.md rules 15 and 16).
+ * strip and the depth ladder. The side columns are the layout slots (two
+ * per column, a height handle between them: four slots, six in wide mode);
+ * each slot's title picks its panel (layout/, DESIGN.md rules 15 and 16).
  */
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import type {
@@ -200,6 +201,7 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
           />
         </section>
         <SideColumn column="right" api={layout} renderPanel={renderPanel} />
+        {layout.mode === 'wide' && <SideColumn column="farRight" api={layout} renderPanel={renderPanel} />}
       </main>
 
       {marketsOpen && (
