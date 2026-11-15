@@ -205,6 +205,17 @@ describe('contrast', () => {
     }
   });
 
+  // The engine rail in the header (bg-surface): micro-cap labels in --muted,
+  // values and the state in --text-strong, node marks (shape + id) in --buy
+  // (up), --sell (down) and --muted (in transition, unknown). The marks are
+  // AA as text, so they also clear 3:1 as shapes.
+  it.each(themes)('%s: the engine rail is AA on the header surface', (theme) => {
+    const surface = token(theme, '--surface');
+    for (const fg of ['--muted', '--text-strong', '--buy', '--sell']) {
+      expect(contrast(token(theme, fg), surface), `${fg} on the header`).toBeGreaterThanOrEqual(AA);
+    }
+  });
+
   // Side-coloured marks on a bar (the hover and staged outlines, the phone
   // own-order dot) are non-text: 3:1.
   it.each(themes)('%s: side-coloured marks on a depth bar reach 3:1', (theme) => {

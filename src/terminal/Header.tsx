@@ -6,6 +6,8 @@
  * - Centre: the market symbol as a button that opens the market selector, so
  *   switching markets never depends on the panel layout; then the ticker
  *   hero, the only typographic hero on screen, with a persistent arrow.
+ *   The engine telemetry rail (EngineRail) sits at the centre cell's right
+ *   edge where the width allows it.
  * - Right: connection pill, account (username, or Sign in), theme toggle.
  *
  * Stats are nullable: during a market switch every value prints a dash,
@@ -18,6 +20,7 @@ import { LogoMark } from '../components/LogoMark';
 import { ThemeToggle } from '../components/ThemeToggle/ThemeToggle';
 import { useTickDirection } from '../ui/useTickDirection';
 import { tickDecimals } from '../utils/ticks';
+import { EngineRail } from './EngineRail';
 import { LivePill } from './LivePill';
 import { formatFixed } from './ladder/format';
 import { SIDE_COLUMNS } from './layoutColumns';
@@ -70,52 +73,63 @@ export function Header(props: HeaderProps) {
         </span>
       </div>
 
-      <div className="flex min-w-0 items-baseline justify-center gap-3.5 overflow-hidden whitespace-nowrap">
-        <button
-          type="button"
-          onClick={props.onOpenMarkets}
-          aria-haspopup="dialog"
-          aria-expanded={props.marketsOpen}
-          aria-label={`Market ${market.symbol}. Change market`}
-          className="flex items-center gap-1.5 self-center rounded-md px-1.5 py-1 font-semibold text-text-strong hover:bg-chip"
-        >
-          {market.symbol}
-          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden className="text-muted">
-            <path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-        </button>
-        <span
-          data-ticker-price
-          className={`flex items-baseline gap-1 font-display text-[22px] font-bold tabular-nums leading-none transition-colors ${
-            price === null
-              ? 'text-muted'
-              : tick === 'up'
-                ? 'text-buy'
-                : tick === 'down'
-                  ? 'text-sell'
-                  : dir === 'down'
-                    ? 'text-sell'
-                    : dir === 'up'
-                      ? 'text-buy'
-                      : 'text-text-strong'
-          }`}
-        >
-          {price !== null ? formatFixed(price, d) : NONE}
-          {/* Fixed-width slot, invisible before the first move (DESIGN.md rule 3). */}
-          <span
-            aria-label={dir ? `last move ${dir}` : undefined}
-            className={`w-[14px] text-center text-[13px] ${dir ? '' : 'opacity-0'}`}
+      {/* Centre cell: the ticker at its left edge (20px, the ladder frame's
+          inset), the engine rail at its right edge. The ticker takes its
+          width first and shrinks only when the cell cannot hold it; the
+          rail's slot takes the rest and is a container, so the rail picks
+          its form from the room actually left (both layout modes: the cell
+          is 1fr in standard mode and the 960px ladder column in wide). */}
+      <div className="flex min-w-0 items-center px-5">
+        <div className="flex min-w-0 items-baseline gap-3.5 overflow-hidden whitespace-nowrap">
+          <button
+            type="button"
+            onClick={props.onOpenMarkets}
+            aria-haspopup="dialog"
+            aria-expanded={props.marketsOpen}
+            aria-label={`Market ${market.symbol}. Change market`}
+            className="flex items-center gap-1.5 self-center rounded-md px-1.5 py-1 font-semibold text-text-strong hover:bg-chip"
           >
-            {dir === 'down' ? '▼' : '▲'}
+            {market.symbol}
+            <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden className="text-muted">
+              <path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+          <span
+            data-ticker-price
+            className={`flex items-baseline gap-1 font-display text-[22px] font-bold tabular-nums leading-none transition-colors ${
+              price === null
+                ? 'text-muted'
+                : tick === 'up'
+                  ? 'text-buy'
+                  : tick === 'down'
+                    ? 'text-sell'
+                    : dir === 'down'
+                      ? 'text-sell'
+                      : dir === 'up'
+                        ? 'text-buy'
+                        : 'text-text-strong'
+            }`}
+          >
+            {price !== null ? formatFixed(price, d) : NONE}
+            {/* Fixed-width slot, invisible before the first move (DESIGN.md rule 3). */}
+            <span
+              aria-label={dir ? `last move ${dir}` : undefined}
+              className={`w-[14px] text-center text-[13px] ${dir ? '' : 'opacity-0'}`}
+            >
+              {dir === 'down' ? '▼' : '▲'}
+            </span>
           </span>
-        </span>
-        <span className={`text-[13px] tabular-nums ${pct === null ? 'text-muted' : up ? 'text-buy' : 'text-sell'}`}>
-          {pct === null ? NONE : `${up ? '+' : ''}${pct.toFixed(2)}%`}
-        </span>
-        <span className="truncate text-[12px] tabular-nums text-muted">
-          H {stats ? formatFixed(stats.high24h, d) : NONE} · L {stats ? formatFixed(stats.low24h, d) : NONE} · Vol{' '}
-          {stats ? `${formatVolume(stats.volume24h)} ${market.quoteAsset}` : NONE}
-        </span>
+          <span className={`text-[13px] tabular-nums ${pct === null ? 'text-muted' : up ? 'text-buy' : 'text-sell'}`}>
+            {pct === null ? NONE : `${up ? '+' : ''}${pct.toFixed(2)}%`}
+          </span>
+          <span className="truncate text-[12px] tabular-nums text-muted">
+            H {stats ? formatFixed(stats.high24h, d) : NONE} · L {stats ? formatFixed(stats.low24h, d) : NONE} · Vol{' '}
+            {stats ? `${formatVolume(stats.volume24h)} ${market.quoteAsset}` : NONE}
+          </span>
+        </div>
+        <div className="flex min-w-0 flex-1 justify-end overflow-hidden pl-4 @container">
+          <EngineRail clusterState={props.clusterState} status={props.status} />
+        </div>
       </div>
 
       <div className="flex items-center justify-end gap-2.5 px-[18px]">
