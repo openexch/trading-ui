@@ -12,6 +12,13 @@
  *   column.
  * - Market orders (Buy / Sell market, or the Market type) always take a
  *   second Enter or click.
+ * - Price field (desktop defaults bar): a rung click (or B / S) also writes
+ *   the rung's price there. Buy limit / Sell limit place a limit order at
+ *   it with the current size and TIF, through the rung click's path (staged
+ *   into the strip, or placed at once while one-click is armed and it does
+ *   not cross). Off the tick, out of [minPrice, maxPrice] or empty, the
+ *   buttons are disabled; the reason (not for empty) shows in the strip's
+ *   info line.
  * - While an order is staged the ladder window is pinned (DESIGN.md rule 8).
  * - Signed out, staging still works and Place opens the sign-in dialog.
  * - Right-click (or the Menu key) on a rung opens the rung menu; stop
@@ -77,6 +84,7 @@ import {
   typeLabel,
 } from '../../trading/staging';
 import { groupingOptions, stepSize } from '../../trading/marketUi';
+import { parsePriceField, priceFieldText, stepPriceField } from '../../trading/priceField';
 import { cancelAllSummary, menuReference, oneClickPlaces, rungMenuSides } from '../../trading/orderActions';
 import type { CancelResult } from '../../trading/orderActions';
 import type { Anchor } from '../../ui';
@@ -180,6 +188,10 @@ export function TradingLadder(props: TradingLadderProps) {
   const [type, setType] = useState<OrderType>('LIMIT');
   const [tif, setTif] = useState<TimeInForce>('GTC');
   const defaults: Defaults = useMemo(() => ({ size, type, tif }), [size, type, tif]);
+  // The Price field belongs to the market it was typed on, like the size.
+  const [priceSel, setPriceSel] = useState<{ marketId: number; text: string } | null>(null);
+  const priceText = priceSel && priceSel.marketId === market.id ? priceSel.text : '';
+  const priceField = useMemo(() => parsePriceField(market, priceText), [market, priceText]);
 
   const [stagedRaw, setStaged] = useState<Staged | null>(null);
   // A staged order never survives a market switch.
@@ -331,6 +343,7 @@ export function TradingLadder(props: TradingLadderProps) {
     (side: OrderSide, price: number, anchorEl?: HTMLElement) => {
       const snapped = snap(price);
       if (snapped === null) return;
+      setPriceSel({ marketId: market.id, text: priceFieldText(market, snapped) });
       // Types with a second value go through their popover.
       if (isTicketKind(type)) {
         const at = lastPointer.current;
@@ -354,6 +367,25 @@ export function TradingLadder(props: TradingLadderProps) {
       stage(side, snapped);
     },
     [snap, type, market, armed, placing, bestBid, bestAsk, defaults, submit, stage],
+  );
+
+  /** Buy limit / Sell limit at the Price field: a limit order whatever the
+   *  defaults bar's type, otherwise the rung click's path. */
+  const limitAtField = useCallback(
+    (side: OrderSide) => {
+      if (!priceField.ok) return;
+      const price = priceField.price;
+      const s: Staged = { marketId: market.id, side, price, ticket: { type: 'LIMIT' } };
+      if (armed && !placing && oneClickPlaces('LIMIT', side, price, bestBid, bestAsk)) {
+        if (buildStaged(market, s, defaults, '', 0).ok) {
+          setStaged(null);
+          void submit(s, true);
+          return;
+        }
+      }
+      stage(side, price, { type: 'LIMIT' });
+    },
+    [priceField, market, armed, placing, bestBid, bestAsk, defaults, submit, stage],
   );
 
   const clear = useCallback(() => {
@@ -737,9 +769,10 @@ export function TradingLadder(props: TradingLadderProps) {
 
   // The async reject (order stream) wins over a local result: it is the one
   // the user cannot otherwise see.
+  const priceProblem = priceField.ok ? null : priceField.error;
   const shown: StripResult | null = rejectNotice
     ? { kind: 'rejected', text: rejectNotice.text, code: rejectNotice.code }
-    : result;
+    : (result ?? (!phone && priceProblem !== null ? { kind: 'info', text: priceProblem } : null));
 
   const sizeOk = parseSize(size) !== null;
   const reference = menuReference(props.lastPrice, bestBid, bestAsk);
@@ -902,6 +935,16 @@ export function TradingLadder(props: TradingLadderProps) {
           onChange: on => setArmedOn(on && oneClickAvailable ? market.id : null),
         }}
         onShowShortcuts={() => setShortcutsOpen(true)}
+        price={{
+          text: priceText,
+          problem: priceProblem,
+          onChange: t => setPriceSel({ marketId: market.id, text: t }),
+          onStep: dir =>
+            setPriceSel({
+              marketId: market.id,
+              text: stepPriceField(market, priceText, dir, props.lastPrice ?? bestBid ?? bestAsk),
+            }),
+        }}
       />
       <StagingStrip
         staged={view}
@@ -913,6 +956,10 @@ export function TradingLadder(props: TradingLadderProps) {
         onPlace={() => void place()}
         onClear={clear}
         onMarket={side => stage(side, null)}
+        limit={{
+          onLimit: limitAtField,
+          problem: priceField.ok ? null : (priceField.error ?? 'Enter a price'),
+        }}
       />
       <div className="flex min-h-0 flex-1 flex-col">
         <Ladder

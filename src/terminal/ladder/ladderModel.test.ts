@@ -5,9 +5,10 @@ import type { BookLevel, Market, OrderStatus, UserOrder } from '../../types/mark
 import { priceKey } from '../../hooks/useOrderBook';
 import {
   buildLadder,
+  centredStart,
   cumulativeAt,
-  defaultCentre,
   ladderWindow,
+  levelIndex,
   rungOf,
   rungPrice,
   sideCell,
@@ -133,135 +134,143 @@ describe('bid floor and ask ceil: a group never straddles the spread', () => {
       for (const g of [1, 5, 10, 25, 100]) {
         const m = model({ groupTicks: g, bids: [lvl(bid, 1)], asks: [lvl(ask, 1)] });
         expect(m.bestAskRung!).toBeGreaterThan(m.bestBidRung!);
-        expect(m.spread!.lowerRung).not.toBeNull();
-        expect(m.spread!.lowerRung!).toBeGreaterThanOrEqual(m.bestBidRung!);
-        expect(m.spread!.lowerRung!).toBeLessThan(m.bestAskRung!);
+        // Two rows, the marker between them.
+        expect(m.levels).toEqual([m.bestAskRung, m.bestBidRung]);
+        expect(m.split).toBe(1);
       }
     }
   });
 });
 
 describe('spread', () => {
-  // [name, bid, ask, multiplier, state, ticks, groups, lowerRung price or null]
-  const cases: Array<[string, number, number, number, string, number, number, number | null]> = [
-    ['one tick, x1', 97410, 97411, 1, 'open', 1, 1, 97410],
-    ['one group, x5 (the design mock)', 97410, 97415, 5, 'open', 5, 1, 97410],
-    ['wide, line sits at the mid', 97400, 97420, 1, 'open', 20, 20, 97410],
-    ['wide under x5', 97400, 97430, 5, 'open', 30, 6, 97415],
-    ['locked on a boundary', 97410, 97410, 5, 'locked', 0, 0, null],
-    ['locked inside a group', 97412, 97412, 5, 'locked', 0, 0, 97410],
-    ['crossed', 97411, 97410, 1, 'crossed', -1, -1, null],
+  // [name, bid, ask, multiplier, state, ticks, groups]
+  const cases: Array<[string, number, number, number, string, number, number]> = [
+    ['one tick, x1', 97410, 97411, 1, 'open', 1, 1],
+    ['one group, x5 (the design mock)', 97410, 97415, 5, 'open', 5, 1],
+    ['wide', 97400, 97420, 1, 'open', 20, 20],
+    ['wide under x5', 97400, 97430, 5, 'open', 30, 6],
+    ['locked on a boundary', 97410, 97410, 5, 'locked', 0, 0],
+    ['locked inside a group', 97412, 97412, 5, 'locked', 0, 0],
+    ['crossed', 97411, 97410, 1, 'crossed', -1, -1],
   ];
-  it.each(cases)('%s', (_n, bid, ask, g, state, ticks, groups, lower) => {
+  it.each(cases)('%s', (_n, bid, ask, g, state, ticks, groups) => {
     const m = model({ groupTicks: g, bids: [lvl(bid, 1)], asks: [lvl(ask, 1)] });
     expect(m.spread).toMatchObject({ state, ticks, groups });
-    expect(m.spread!.lowerRung === null ? null : rungPrice(m.grid, g, m.spread!.lowerRung)).toBe(lower);
   });
 
-  it('the window flags the row directly above the line', () => {
-    const m = model({ bids: [lvl(97410, 1)], asks: [lvl(97415, 1)] });
-    const w = ladderWindow(m, 97412, 9);
-    const flagged = w.rows.filter(r => r.spreadBelow).map(r => r.price);
-    expect(flagged).toEqual([97413]);
-    // In-spread rungs are empty on both sides, never unknown.
-    const inSpread = w.rows.filter(r => r.price > 97410 && r.price < 97415);
-    expect(inSpread.map(r => [r.bid.state, r.ask.state])).toEqual(Array(4).fill(['none', 'none']));
+  it('a wide spread draws no rows inside it: the marker sits between the touch levels', () => {
+    const m = model({ bids: [lvl(97410, 1), lvl(97400, 1)], asks: [lvl(97415, 1), lvl(97430, 1)] });
+    const w = ladderWindow(m, null, 8);
+    expect(w.rows.map(r => r.price)).toEqual([97430, 97415, 97410, 97400]);
+    expect(w.rows[w.spreadAt!].price).toBe(97410);
+    expect(w.rows[w.spreadAt! - 1].price).toBe(97415);
+    // The label still counts ticks between the touch, not rows.
+    expect(m.spread).toMatchObject({ ticks: 5, groups: 5 });
   });
 
-  it('no line when the line would fall outside the window', () => {
-    const m = model({ bids: [lvl(97410, 1)], asks: [lvl(97411, 1)] });
-    const w = ladderWindow(m, 97500, 5);
-    expect(w.rows.some(r => r.spreadBelow)).toBe(false);
+  it('no marker when it is scrolled out of the window', () => {
+    const asks = Array.from({ length: 10 }, (_, i) => lvl(97411 + i, 1));
+    const m = model({ bids: [lvl(97410, 1)], asks });
+    // Held with the top ask in the top slot: the marker is 10 rows down.
+    const w = ladderWindow(m, { rung: 97420, slot: 0 }, 4);
+    expect(w.rows.map(r => r.price)).toEqual([97420, 97419, 97418, 97417]);
+    expect(w.spreadAt).toBeNull();
   });
 
   it('locked on one rung shows both sides on that rung', () => {
     const m = model({ bids: [lvl(97410, 2)], asks: [lvl(97410, 3)] });
-    const row = ladderWindow(m, 97410, 1).rows[0];
+    expect(m.levels).toEqual([97410]);
+    const row = ladderWindow(m, null, 2).rows[0];
     expect([row.bid.quantity, row.ask.quantity]).toEqual([2, 3]);
   });
 
   it('crossed book shows each level on its own side', () => {
     const m = model({ bids: [lvl(97411, 2), lvl(97409, 1)], asks: [lvl(97410, 3), lvl(97412, 1)] });
-    const w = ladderWindow(m, 97410, 3);
+    const w = ladderWindow(m, null, 6);
+    expect(w.rows.map(r => r.price)).toEqual([97412, 97411, 97410, 97409]);
     const byPrice = Object.fromEntries(w.rows.map(r => [r.price, [r.bid.state, r.ask.state]]));
     expect(byPrice[97411]).toEqual(['level', 'gap']);
     expect(byPrice[97410]).toEqual(['gap', 'level']);
   });
 });
 
-describe('one side empty', () => {
-  it('no asks: no spread, every ask cell unknown, bids unaffected', () => {
+describe('rows are book levels only', () => {
+  it('a sparse book draws no gap, unknown or out-of-range rows', () => {
+    const m = model({
+      bids: [lvl(60000, 1), lvl(59998, 1), lvl(59990, 1)],
+      asks: [lvl(60001, 1), lvl(60003, 1), lvl(60050, 1)],
+    });
+    expect(m.levels).toEqual([60050, 60003, 60001, 60000, 59998, 59990]);
+    expect(m.split).toBe(3);
+    const w = ladderWindow(m, null, 20);
+    expect(w.rows.map(r => r.price)).toEqual([60050, 60003, 60001, 60000, 59998, 59990]);
+    for (const r of w.rows) {
+      // Every row has a level on at least one side; the other side is 'none'.
+      expect([r.bid.state, r.ask.state]).toContain('level');
+      expect([r.bid.state, r.ask.state].some(st => st === 'gap' || st === 'unknown')).toBe(false);
+    }
+  });
+
+  it('the centred window: asks above the marker (best ask nearest), bids below (best bid nearest)', () => {
+    const m = model({
+      bids: [lvl(60000, 1), lvl(59998, 1), lvl(59990, 1)],
+      asks: [lvl(60001, 1), lvl(60003, 1), lvl(60050, 1)],
+    });
+    const w = ladderWindow(m, null, 4);
+    expect(w.centred).toBe(true);
+    expect([w.padTop, w.padBottom]).toEqual([0, 0]);
+    expect(w.rows.map(r => r.price)).toEqual([60003, 60001, 60000, 59998]);
+    expect(w.spreadAt).toBe(2);
+  });
+
+  it('a short side leaves empty slots, so the marker stays in the middle', () => {
+    const m = model({ bids: Array.from({ length: 6 }, (_, i) => lvl(60000 - i * 3, 1)), asks: [lvl(60010, 1)] });
+    const w = ladderWindow(m, null, 8);
+    expect([w.padTop, w.rows.length, w.padBottom]).toEqual([3, 5, 0]);
+    expect(w.padTop + w.spreadAt!).toBe(4); // half the slots above the marker
+    expect(w.rows[0].price).toBe(60010);
+  });
+
+  it('no asks: every slot above the marker is empty, bids below', () => {
     const m = model({ bids: [lvl(97410, 1), lvl(97408, 2)] });
     expect(m.spread).toBeNull();
-    const w = ladderWindow(m, 97410, 7);
-    expect(w.rows.every(r => r.ask.state === 'unknown' && r.ask.quantity === null)).toBe(true);
-    expect(w.rows.map(r => r.bid.state)).toEqual(['none', 'none', 'none', 'level', 'gap', 'level', 'unknown']);
-    expect(defaultCentre(m)).toBe(97410);
+    expect(m.split).toBe(0);
+    const w = ladderWindow(m, null, 6);
+    expect([w.padTop, w.spreadAt, w.rows.length, w.padBottom]).toEqual([3, 0, 2, 1]);
+    expect(w.rows.map(r => r.bid.state)).toEqual(['level', 'level']);
+    expect(w.rows.every(r => r.ask.state === 'unknown')).toBe(true);
   });
 
-  it('no bids: centres on the best ask', () => {
-    const m = model({ asks: [lvl(97420, 1)] });
-    expect(defaultCentre(m)).toBe(97420);
+  it('no bids: asks above, the marker after the last row', () => {
+    const m = model({ asks: [lvl(97420, 1), lvl(97425, 1)] });
+    expect(m.split).toBe(2);
+    const w = ladderWindow(m, null, 6);
+    expect([w.padTop, w.rows.length, w.spreadAt, w.padBottom]).toEqual([1, 2, 2, 3]);
   });
 
-  it('empty book: centres mid-range and everything is unknown', () => {
+  it('empty book: no rows at all', () => {
     const m = model();
-    expect(defaultCentre(m)).toBe(100000);
-    const w = ladderWindow(m, defaultCentre(m), 3);
-    expect(w.rows.every(r => r.bid.state === 'unknown' && r.ask.state === 'unknown')).toBe(true);
+    const w = ladderWindow(m, null, 6);
+    expect(w.rows).toEqual([]);
+    expect([w.spreadAt, w.scale, w.top, w.bottom]).toEqual([null, 0, null, null]);
     expect(m.maxCumulative).toBe(0);
-    expect(w.scale).toBe(0);
-    expect(w.rows.every(r => r.bid.bar === 0 && r.ask.bar === 0 && r.bid.cumulative === null)).toBe(true);
-  });
-});
-
-describe('known-depth boundary', () => {
-  it('x1: gaps inside known depth are empty, beyond the deepest level is unknown', () => {
-    const m = model({
-      bids: [lvl(60000, 1), lvl(59998, 1), lvl(59997, 1)],
-      asks: [lvl(60001, 1), lvl(60003, 1)],
-    });
-    const w = ladderWindow(m, 60000, 9);
-    const states = Object.fromEntries(w.rows.map(r => [r.price, `${r.bid.state}/${r.ask.state}`]));
-    expect(states).toEqual({
-      60004: 'none/unknown',
-      60003: 'none/level',
-      60002: 'none/gap',
-      60001: 'none/level',
-      60000: 'level/none',
-      59999: 'gap/none',
-      59998: 'level/none',
-      59997: 'level/none',
-      59996: 'unknown/none',
-    });
-    expect(w.rows.every(r => !r.bid.partial && !r.ask.partial)).toBe(true);
-    expect(w.rows.find(r => r.price === 59996)!.bid.quantity).toBeNull();
-    expect(w.rows.find(r => r.price === 59999)!.bid.quantity).toBe(0);
   });
 
-  it('a 20-level book under x100 grouping: two rungs of data, the rest unknown', () => {
+  it('a 20-level book under x100 grouping: two rows, both partial at the deep end', () => {
     const bids = Array.from({ length: 20 }, (_, i) => lvl(97400 - i, 1));
     const asks = Array.from({ length: 20 }, (_, i) => lvl(97401 + i, 1));
     const m = model({ groupTicks: 100, bids, asks, lastPrice: 97400 });
-    const w = ladderWindow(m, defaultCentre(m), 9);
-    expect(w.rows.map(r => r.price)).toEqual([97800, 97700, 97600, 97500, 97400, 97300, 97200, 97100, 97000]);
+    const w = ladderWindow(m, null, 8);
+    // The bucket label is acceptable under grouping: 97401..97420 ceil into
+    // 97500, 97400 floors into 97400, 97381..97399 into 97300.
+    expect(w.rows.map(r => r.price)).toEqual([97500, 97400, 97300]);
     const cells = w.rows.map(r => [r.bid.state, r.bid.quantity, r.bid.partial, r.ask.state, r.ask.quantity, r.ask.partial]);
     expect(cells).toEqual([
-      ['none', null, false, 'unknown', null, false],
-      ['none', null, false, 'unknown', null, false],
-      ['none', null, false, 'unknown', null, false],
-      // 97401..97420 ceil into the 97500 rung; 97421..97500 are not known.
       ['none', null, false, 'level', 20, true],
-      // 97400 alone floors into the 97400 rung (the touch, fully known).
       ['level', 1, false, 'none', null, false],
-      // 97381..97399 floor into 97300; 97300..97380 are not known.
       ['level', 19, true, 'none', null, false],
-      ['unknown', null, false, 'none', null, false],
-      ['unknown', null, false, 'none', null, false],
-      ['unknown', null, false, 'none', null, false],
     ]);
-    expect(w.rows.find(r => r.isLastTrade)!.price).toBe(97400);
-    expect(w.rows.find(r => r.spreadBelow)!.price).toBe(97500);
+    expect(w.rows[w.spreadAt!].price).toBe(97400);
     expect(m.spread).toMatchObject({ ticks: 1, groups: 0.01 });
   });
 });
@@ -292,44 +301,40 @@ describe('cumulative depth', () => {
     expect(cumulativeAt(m, 'BID', 97408)).toBe(5);
   });
 
-  it('cells carry the level quantity and the cumulative; unknown and none carry neither', () => {
+  it('cells carry the level quantity and the cumulative; none carries neither', () => {
     const m = book();
-    const w = ladderWindow(m, 97411, 11); // 97416..97406
+    const w = ladderWindow(m, null, 6);
     const cells = Object.fromEntries(
       w.rows.map(r => [r.price, [r.bid.quantity, r.bid.cumulative, r.ask.quantity, r.ask.cumulative]]),
     );
     expect(cells).toEqual({
-      97416: [null, null, null, null], // ask unknown, bid none
-      97415: [null, null, null, null],
       97414: [null, null, 1, 6],
       97413: [null, null, 3, 5],
-      97412: [null, null, 0, 2], // gap
       97411: [null, null, 2, 2],
       97410: [1, 1, null, null],
       97409: [4, 5, null, null],
-      97408: [0, 5, null, null], // gap
       97407: [2, 7, null, null],
-      97406: [null, null, null, null], // bid unknown
     });
     for (const r of w.rows) {
       for (const c of [r.bid, r.ask]) {
-        if (c.state === 'unknown' || c.state === 'none') expect([c.bar, c.cumulative]).toEqual([0, null]);
+        if (c.state === 'none') expect([c.bar, c.cumulative]).toEqual([0, null]);
       }
     }
   });
 
   it('scales both sides to the largest cumulative in the window', () => {
     const m = book();
-    const all = ladderWindow(m, 97411, 11);
+    const all = ladderWindow(m, null, 6);
     expect(all.scale).toBe(7);
     const bar = (w: typeof all, p: number, side: 'bid' | 'ask') => w.rows.find(r => r.price === p)![side].bar;
     expect(bar(all, 97407, 'bid')).toBe(1);
     expect(bar(all, 97414, 'ask')).toBeCloseTo(6 / 7);
     expect(bar(all, 97411, 'ask')).toBeCloseTo(2 / 7);
     expect(bar(all, 97410, 'bid')).toBeCloseTo(1 / 7);
-    // A tighter window (97412..97408) shows less: its own largest is the
-    // bid cumulative 5 at 97409 (and the gap at 97408).
-    const tight = ladderWindow(m, 97410, 5);
+    // A tighter window (97413..97409) shows less: its own largest is the
+    // bid cumulative 5 at 97409 (the ask side reaches 5 at 97413 too).
+    const tight = ladderWindow(m, null, 4);
+    expect(tight.rows.map(r => r.price)).toEqual([97413, 97411, 97410, 97409]);
     expect(tight.scale).toBe(5);
     expect(bar(tight, 97409, 'bid')).toBe(1);
     expect(bar(tight, 97411, 'ask')).toBeCloseTo(2 / 5);
@@ -417,16 +422,21 @@ describe('own orders', () => {
 });
 
 describe('own orders outside the window', () => {
+  // Own orders rest at engine levels, so the book carries every one of them.
   const above1 = order({ side: 'ASK', price: 98000, originalQuantity: 0.1 });
   const above2 = order({ side: 'ASK', price: 98500 });
   const above3 = order({ side: 'ASK', price: 98000 }); // same price, newer than above1
   const inside = order({ side: 'BID', price: 97400 });
   const below1 = order({ side: 'BID', price: 97050, originalQuantity: 2 });
   const below2 = order({ side: 'BID', price: 96000 });
-  const m = model({ openOrders: [above2, above3, above1, inside, below2, below1] });
+  const m = model({
+    asks: [lvl(97401, 1), lvl(97402, 1), lvl(98000, 2), lvl(98500, 1)],
+    bids: [lvl(97400, 1), lvl(97399, 1), lvl(97050, 2), lvl(96000, 1)],
+    openOrders: [above2, above3, above1, inside, below2, below1],
+  });
 
   it('counts and the nearest each way (closest price, then oldest)', () => {
-    const w = ladderWindow(m, 97400, 21);
+    const w = ladderWindow(m, null, 4); // 97402..97399
     expect(w.above.count).toBe(3);
     expect(w.above.nearest!.order).toBe(above1);
     expect(w.below.count).toBe(2);
@@ -434,13 +444,13 @@ describe('own orders outside the window', () => {
   });
 
   it('none outside when the window covers everything', () => {
-    const w = ladderWindow(m, 97250, 2601);
+    const w = ladderWindow(m, null, 20);
     expect([w.above.count, w.below.count]).toEqual([0, 0]);
     expect([w.above.nearest, w.below.nearest]).toEqual([null, null]);
   });
 
-  it('an order on the edge rung is inside', () => {
-    const w = ladderWindow(m, 97500, 1001); // top 98000
+  it('an order on the edge row is inside', () => {
+    const w = ladderWindow(m, null, 6); // 98000..97050
     expect(w.top).toBe(98000);
     expect(w.above.count).toBe(1);
     expect(w.above.nearest!.order).toBe(above2);
@@ -461,11 +471,10 @@ describe('last-trade rung', () => {
     expect(m.lastTradeRung === null ? null : rungPrice(m.grid, g, m.lastTradeRung)).toBe(expected);
   });
 
-  it('flags exactly one row and drives the default centre', () => {
+  it('a last trade with no level draws no row of its own (the spread row carries it)', () => {
     const m = model({ lastPrice: 97412, bids: [lvl(97000, 1)], asks: [lvl(98000, 1)] });
-    expect(defaultCentre(m)).toBe(97412);
-    const w = ladderWindow(m, defaultCentre(m), 11);
-    expect(w.rows.filter(r => r.isLastTrade).map(r => r.price)).toEqual([97412]);
+    const w = ladderWindow(m, null, 10);
+    expect(w.rows.map(r => r.price)).toEqual([98000, 97000]);
   });
 
   it('is float-safe on DOGE', () => {
@@ -474,42 +483,69 @@ describe('last-trade rung', () => {
   });
 });
 
-describe('rung window', () => {
-  it.each([
-    [5, 97412, 97410],
-    [4, 97411, 97410],
-    [1, 97410, 97410],
-  ])('count %s centred on 97410 spans down from %s to %s', (count, top, bottom) => {
-    const w = ladderWindow(model(), 97410, count);
-    expect([w.top, w.bottom, w.rows.length]).toEqual([top, top - count + 1, count]);
-    expect(w.rows[0].price).toBe(top);
-    expect(w.rows.some(r => r.price === bottom)).toBe(true);
+describe('level window', () => {
+  // 10 asks 97411..97420, 10 bids 97410..97401.
+  const deep = () =>
+    model({
+      bids: Array.from({ length: 10 }, (_, i) => lvl(97410 - i, 1)),
+      asks: Array.from({ length: 10 }, (_, i) => lvl(97411 + i, 1)),
+    });
+
+  it('levelIndex finds a level, or where it would be', () => {
+    const m = deep();
+    expect(levelIndex(m, 97420)).toBe(0);
+    expect(levelIndex(m, 97410)).toBe(10);
+    expect(levelIndex(m, 99999)).toBe(0);
+    expect(levelIndex(m, 1)).toBe(20);
+    const sparse = model({ bids: [lvl(97400, 1)], asks: [lvl(97410, 1)] });
+    expect(levelIndex(sparse, 97405)).toBe(1); // the first level at or below
   });
 
-  it('zero rows is an empty window', () => {
-    expect(ladderWindow(model(), 97410, 0).rows).toEqual([]);
+  it('the centred window is half the slots either side of the marker', () => {
+    const m = deep();
+    expect(centredStart(m, 6)).toBe(7);
+    const w = ladderWindow(m, null, 6);
+    expect(w.rows.map(r => r.price)).toEqual([97413, 97412, 97411, 97410, 97409, 97408]);
+    expect([w.start, w.spreadAt, w.centred]).toEqual([7, 3, true]);
   });
 
-  it('stays inside the market range', () => {
-    const top = ladderWindow(model(), 149999, 10);
-    expect(top.top).toBe(150000);
-    const bottom = ladderWindow(model(), 50001, 10);
-    expect(bottom.bottom).toBe(50000);
-    expect([...top.rows, ...bottom.rows].every(r => r.inRange)).toBe(true);
+  it('a held position keeps its level in its slot as levels come and go', () => {
+    const m = deep();
+    const pos = { rung: 97415, slot: 0 };
+    expect(ladderWindow(m, pos, 4).rows.map(r => r.price)).toEqual([97415, 97414, 97413, 97412]);
+    expect(ladderWindow(m, pos, 4).centred).toBe(false);
+    // 97414 leaves the book: 97415 stays on top, the next level moves up.
+    const m2 = model({
+      bids: Array.from({ length: 10 }, (_, i) => lvl(97410 - i, 1)),
+      asks: Array.from({ length: 10 }, (_, i) => lvl(97411 + i, 1)).filter(l => l.price !== 97414),
+    });
+    expect(ladderWindow(m2, pos, 4).rows.map(r => r.price)).toEqual([97415, 97413, 97412, 97411]);
   });
 
-  it('a window taller than the whole range marks the extra rows out of range', () => {
-    // DOGE x100: 0.05..1 in 0.01 steps = 96 rungs.
-    const m = model({ market: DOGE, groupTicks: 100 });
-    const w = ladderWindow(m, defaultCentre(m), 100);
-    expect(w.rows[0].price).toBe(1);
-    expect(w.rows.filter(r => r.inRange).length).toBe(96);
-    expect(w.rows.filter(r => !r.inRange).length).toBe(4);
+  it('a held position never scrolls further past the ends than the centred window', () => {
+    const m = deep();
+    // Far above the top: clamped to the top level in the top slot.
+    expect(ladderWindow(m, { rung: 97420, slot: 5 }, 4).start).toBe(0);
+    // Far below the bottom: the last four levels.
+    expect(ladderWindow(m, { rung: 97401, slot: -10 }, 4).rows.map(r => r.price)).toEqual([97404, 97403, 97402, 97401]);
+    // A short book: the centred window itself (with empty slots) is the limit.
+    const thin = model({ bids: [lvl(97400, 1)], asks: [lvl(97401, 1)] });
+    expect(ladderWindow(thin, { rung: 97401, slot: 0 }, 6).start).toBe(-2);
+    expect(ladderWindow(thin, { rung: 97401, slot: 0 }, 6).centred).toBe(true);
+  });
+
+  it('zero slots is an empty window', () => {
+    expect(ladderWindow(deep(), null, 0).rows).toEqual([]);
   });
 
   it('rows are strictly descending in price, at the group step', () => {
-    const m = model({ market: ETH, groupTicks: 5 });
-    const w = ladderWindow(m, rungOf(m.grid, 5, 3642.5, 'BID'), 5);
+    const m = model({
+      market: ETH,
+      groupTicks: 5,
+      bids: [lvl(3642.5, 1), lvl(3640, 1), lvl(3637.5, 1)],
+      asks: [lvl(3645, 1), lvl(3647.5, 1)],
+    });
+    const w = ladderWindow(m, null, 6);
     expect(w.rows.map(r => r.price)).toEqual([3647.5, 3645, 3642.5, 3640, 3637.5]);
   });
 });

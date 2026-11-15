@@ -18,12 +18,14 @@ export interface MarketUi {
   defaultPresetIndex: number | null;
   /** Decimals used to show sizes for this market. */
   sizeDecimals: number;
-  /** Grouping selected when the market first opens. */
+  /** Grouping selected when the market first opens: one tick everywhere, so
+   *  every row is an engine price level (a user may still pick a coarser
+   *  grouping). */
   defaultGrouping: GroupingMultiplier;
 }
 
 const BY_SYMBOL: Record<string, MarketUi> = {
-  'BTC-USD': { sizePresets: [0.1, 0.25, 1], defaultPresetIndex: 1, sizeDecimals: 4, defaultGrouping: 5 },
+  'BTC-USD': { sizePresets: [0.1, 0.25, 1], defaultPresetIndex: 1, sizeDecimals: 4, defaultGrouping: 1 },
   'ETH-USD': { sizePresets: [0.5, 1, 5], defaultPresetIndex: 1, sizeDecimals: 4, defaultGrouping: 1 },
   'SOL-USD': { sizePresets: [5, 10, 50], defaultPresetIndex: 1, sizeDecimals: 2, defaultGrouping: 1 },
   'XRP-USD': { sizePresets: [100, 500, 2000], defaultPresetIndex: 1, sizeDecimals: 1, defaultGrouping: 1 },

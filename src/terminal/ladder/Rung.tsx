@@ -8,19 +8,22 @@
  *   same for both sides (ladderWindow). The cell prints the level quantity
  *   next to the price (--text-strong) and the cumulative on the outer side,
  *   smaller and in --text (--muted is not AA on a bar; on a cell with an own
- *   slice, --text-strong, since --text is not AA on the slice). A known rung with no
- *   level (a gap) carries the bar and the cumulative but no quantity.
+ *   slice, --text-strong, since --text is not AA on the slice). Every rung is
+ *   a book level on at least one side; the other side's cell is usually
+ *   'none' (an ask row's bid cell). Only a crossed book can put a known
+ *   price with no level (a gap: bar and cumulative, no quantity) or one
+ *   beyond the known depth on the other side of a level row.
  * - An own order shows three ways: a faint side-coloured row tint, its share
  *   of the level drawn as a slice anchored at the price edge, width own /
  *   the bar scale (a fill at --own-slice-alpha plus a 1px side-coloured
  *   outline; the numbers stay readable on top), and a Mine chip with filled
  *   / original (OwnOrderChip: a menu with Cancel and, for limit orders,
  *   Move).
- * - Cells beyond the known depth are dimmed and hatched, with no quantity,
+ * - Cells beyond the known depth (crossed books only, see above) are dimmed and hatched, with no quantity,
  *   no cumulative and no bar, never shown as empty liquidity (DESIGN.md rule
  *   9). The deepest known rung, when part of its group lies beyond the known
  *   depth, prints its quantity and cumulative as lower bounds.
- * - Every in-range rung offers both actions: the bid cell stages a buy at the
+ * - Every rung offers both actions: the bid cell stages a buy at the
  *   rung's price and the ask cell a sell, on either side of the spread (a
  *   buy above the best ask crosses, and the strip warns). The cells are
  *   buttons out of the tab order: the grid is one tab stop (DESIGN.md rule
@@ -40,7 +43,6 @@
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from 'react';
 import type { LadderRow, LadderSide, SideCell } from './ladderModel';
-import type { TickDirection } from '../../ui/useTickDirection';
 import type { Anchor } from '../../ui';
 import { formatCompactSize, formatFixed } from './format';
 import { OwnOrderChip } from './OwnOrderChip';
@@ -64,8 +66,6 @@ export interface RungProps {
   row: LadderRow;
   priceText: string;
   tone: PriceTone;
-  /** Direction of the last trade move, shown on the last-trade rung only. */
-  lastDir: TickDirection | null;
   flashBid: boolean;
   flashAsk: boolean;
   sizeDecimals: number;
@@ -183,11 +183,10 @@ function depthWords(cell: SideCell, sizeDecimals: number): string {
   return cell.state === 'unknown' ? 'unknown' : 'none';
 }
 
-/** The focused rung read as one line: "97,400, last trade, bids 1.0000,
+/** The focused rung read as one line: "97,400, bids 1.0000,
  *  asks none, your buy 0.50". */
 function rungLabel(row: LadderRow, priceText: string, sizeDecimals: number): string {
   const parts = [priceText];
-  if (row.isLastTrade) parts.push('last trade');
   parts.push(`bids ${depthWords(row.bid, sizeDecimals)}`, `asks ${depthWords(row.ask, sizeDecimals)}`);
   const own = (word: string, o: SideCell['own']) => {
     if (!o) return;
@@ -366,7 +365,6 @@ export function Rung({
   row,
   priceText,
   tone,
-  lastDir,
   flashBid,
   flashAsk,
   sizeDecimals,
@@ -392,10 +390,6 @@ export function Rung({
         : ownAsk
           ? 'var(--sell-faint)'
           : undefined;
-
-  if (!row.inRange) {
-    return <div role="row" aria-hidden data-rung-price="" className={`grid ${rowH} ${cols}`} />;
-  }
 
   const toneCls = tone === 'buy' ? 'text-buy' : tone === 'sell' ? 'text-sell' : 'text-muted';
 
@@ -434,27 +428,7 @@ export function Rung({
         aria-label={rungLabel(row, priceText, sizeDecimals)}
         className={`flex h-full items-center justify-center rounded ${phone ? 'text-[14px]' : 'text-[13px]'} outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent`}
       >
-        {row.isLastTrade ? (
-          <span
-            data-last-trade
-            aria-label={`${priceText}, last trade${lastDir ? (lastDir === 'up' ? ', up' : ', down') : ''}`}
-            className="inline-flex items-center gap-1 rounded-[5px] bg-mid px-2 py-px font-semibold leading-[18px] text-text-strong outline outline-1 outline-accent"
-          >
-            {priceText}
-            {/* Fixed-width slot: the arrow never appears or disappears and
-                shifts the price (DESIGN.md rule 3). */}
-            <span
-              aria-hidden
-              className={`w-[10px] text-center text-[10px] leading-none ${
-                lastDir ? (lastDir === 'up' ? 'text-buy' : 'text-sell') : 'opacity-0'
-              }`}
-            >
-              {lastDir === 'down' ? '▼' : '▲'}
-            </span>
-          </span>
-        ) : (
-          <span className={`font-medium ${toneCls}`}>{priceText}</span>
-        )}
+        <span className={`font-medium ${toneCls}`}>{priceText}</span>
       </span>
       <DepthCell
         side="ASK"

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * The order defaults bar above the staging strip: what a click on the ladder
- * stages. Size presets for the market, the size field, one Type · TIF picker
+ * stages. Size presets for the market, the size field, the Price field (what
+ * Buy limit / Sell limit place at; a rung click writes its price there; Up
+ * and Down step it one tick), one Type · TIF picker
  * and, at the far right, the one-click switch. One-click is off by default
  * and never persisted; it can be armed only while signed in and connected,
  * and armed it takes both side colours (DESIGN.md rule 10).
  */
-import type { FormEvent, WheelEvent } from 'react';
+import type { FormEvent, KeyboardEvent, WheelEvent } from 'react';
 import type { Market, OrderType, TimeInForce } from '../../types/market';
 import { marketUi } from '../../trading/marketUi';
 import { TIF_CHOICES, TYPE_CHOICES, parseSize, tifChoice, typeLabel } from '../../trading/staging';
@@ -25,12 +27,21 @@ export interface OrderDefaultsProps {
   oneClick?: { armed: boolean; available: boolean; onChange: (armed: boolean) => void };
   /** Opens the shortcut sheet; without it there is no button. */
   onShowShortcuts?: () => void;
+  /** The Price field (quote currency). Without it there is no field. */
+  price?: {
+    text: string;
+    /** Why the text is not a placeable price, or null (valid or empty). */
+    problem: string | null;
+    onChange: (text: string) => void;
+    /** Up / Down arrow: one tick up (1) or down (-1). */
+    onStep: (dir: 1 | -1) => void;
+  };
 }
 
 // Scrolling over a focused number field must never change an order size.
 const blurOnWheel = (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur();
 
-export function OrderDefaults({ market, value, onSize, onType, onTif, oneClick, onShowShortcuts }: OrderDefaultsProps) {
+export function OrderDefaults({ market, value, onSize, onType, onTif, oneClick, onShowShortcuts, price }: OrderDefaultsProps) {
   const ui = marketUi(market);
   const menu = useMenuTrigger();
   const size = parseSize(value.size);
@@ -76,6 +87,31 @@ export function OrderDefaults({ market, value, onSize, onType, onTif, oneClick, 
         />
         {market.baseAsset}
       </label>
+      {price && (
+        <label className="ml-1 flex flex-none items-center gap-1.5 text-[12px] text-muted">
+          Price
+          <input
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            spellCheck={false}
+            value={price.text}
+            onChange={e => price.onChange(e.target.value)}
+            onWheel={blurOnWheel}
+            onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+              if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+              e.preventDefault();
+              price.onStep(e.key === 'ArrowUp' ? 1 : -1);
+            }}
+            aria-label={`Price in ${market.quoteAsset}`}
+            aria-invalid={price.problem !== null ? true : undefined}
+            title={price.problem ?? `Price in ${market.quoteAsset} for Buy limit / Sell limit: Up and Down step one tick`}
+            className="h-[30px] w-[96px] rounded-md border border-ctl bg-surface-2 px-2 text-right text-[13px] text-text-strong focus:border-accent focus:outline-none"
+          />
+          {market.quoteAsset}
+        </label>
+      )}
       <span aria-hidden className="mx-2 h-[22px] w-px flex-none bg-hairline" />
       <button
         type="button"

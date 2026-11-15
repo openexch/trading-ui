@@ -40,14 +40,15 @@ class MockWebSocket {
   close() {}
 }
 
-/** Every observed element reports 220px: nine 22px rungs. */
+/** Every observed element reports 264px: ten 22px rungs and the spread row
+ *  (five levels each side of it). */
 class FixedResizeObserver {
   cb: ResizeObserverCallback;
   constructor(cb: ResizeObserverCallback) {
     this.cb = cb;
   }
   observe(el: Element) {
-    this.cb([{ contentRect: { height: 220 } } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+    this.cb([{ contentRect: { height: 264 } } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
     void el;
   }
   unobserve() {}
@@ -166,7 +167,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     const { container } = renderApp();
     await screen.findByRole('grid', { name: /price ladder/i });
     // Skeleton rungs until the first snapshot.
-    expect(container.querySelectorAll('[data-skeleton-rung]').length).toBe(9);
+    expect(container.querySelectorAll('[data-skeleton-rung]').length).toBe(10);
 
     const ws = MockWebSocket.instances.find(w => w.url.endsWith('/ws'))!;
     const bids = Array.from({ length: 20 }, (_, i) => ({ price: 97_400 - i * 5, quantity: 1, orderCount: 1 }));
@@ -177,7 +178,7 @@ describe('Ladder shell (?ui=ladder)', () => {
         data: JSON.stringify({ type: 'BOOK_SNAPSHOT', marketId: 1, market: 'BTC-USD', bids, asks, timestamp: 1 }),
       });
     });
-    await waitFor(() => expect(container.querySelectorAll('[data-rung-price]').length).toBe(9));
+    await waitFor(() => expect(container.querySelectorAll('[data-rung-price]').length).toBe(10));
     expect(container.querySelectorAll('[data-skeleton-rung]').length).toBe(0);
     expect(screen.getByText('Live')).toBeTruthy();
   });
@@ -205,7 +206,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     // The session is validated before the strip treats the user as signed in.
     await screen.findByRole('button', { name: /^dev$/i });
     pushBook();
-    // BTC opens at its default preset (0.25) and x5 grouping.
+    // BTC opens at its default preset (0.25) and x1 grouping (engine levels only).
     await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book, 1.0000 cumulative$/i });
     return utils;
   }
@@ -282,6 +283,98 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
     await waitFor(() => expect(posts()).toHaveLength(1));
     expect(JSON.parse(String(posts()[0].init!.body)).side).toBe('SELL');
+  });
+
+  // ---- the Price field and Buy / Sell limit ----------------------------------
+
+  const priceInput = () => screen.getByRole('textbox', { name: /^price in usd$/i }) as HTMLInputElement;
+  const limitBtn = (side: 'buy' | 'sell') =>
+    screen.getByRole('button', { name: new RegExp(`^${side} limit$`, 'i') }) as HTMLButtonElement;
+
+  it('a rung click writes its price into the Price field; Buy limit stages a limit there and Enter places it', async () => {
+    await ladderWithBook();
+    expect(priceInput().value).toBe('');
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,400/i }));
+    expect(priceInput().value).toBe('97400');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    // An ask click writes it too.
+    fireEvent.click(screen.getByRole('gridcell', { name: /^sell 0.25 btc at 97,410/i }));
+    expect(priceInput().value).toBe('97410');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    fireEvent.change(priceInput(), { target: { value: '97390' } });
+    fireEvent.click(limitBtn('buy'));
+    const strip = screen.getByRole('status', { name: /staged order/i });
+    expect(strip.textContent).toContain('Buy 0.25 BTC @ 97,390');
+    expect(strip.textContent).toContain('Limit · GTC');
+    expect(posts()).toHaveLength(0); // staged, not sent
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    const body = JSON.parse(String(posts()[0].init!.body));
+    expect(body.orderType).toBe('LIMIT');
+    expect(body.side).toBe('BUY');
+    expect(body.price).toBe('97390.00000000');
+    expect(body.quantity).toBe('0.25000000');
+    expect(body.timeInForce).toBe('GTC');
+  });
+
+  it('Buy / Sell limit are disabled until the Price field holds a price on the tick and in range', async () => {
+    await ladderWithBook();
+    const strip = screen.getByRole('status', { name: /staged order/i });
+    // Empty: disabled, and nothing to complain about in the strip.
+    expect(limitBtn('buy').disabled).toBe(true);
+    expect(limitBtn('sell').disabled).toBe(true);
+    expect(strip.querySelector('[data-result]')).toBeNull();
+
+    fireEvent.change(priceInput(), { target: { value: '97400.5' } });
+    expect(limitBtn('buy').disabled).toBe(true);
+    expect(priceInput().getAttribute('aria-invalid')).toBe('true');
+    expect(strip.querySelector('[data-result="info"]')!.textContent).toBe('Price must be on the 1 tick');
+
+    fireEvent.change(priceInput(), { target: { value: '49999' } });
+    expect(limitBtn('sell').disabled).toBe(true);
+    expect(strip.querySelector('[data-result="info"]')!.textContent).toBe('Price must be between 50,000 and 150,000');
+
+    fireEvent.change(priceInput(), { target: { value: 'abc' } });
+    expect(limitBtn('buy').disabled).toBe(true);
+    expect(strip.querySelector('[data-result="info"]')!.textContent).toBe('Price must be a number');
+
+    fireEvent.change(priceInput(), { target: { value: '97415' } });
+    expect(limitBtn('buy').disabled).toBe(false);
+    expect(limitBtn('sell').disabled).toBe(false);
+    expect(priceInput().getAttribute('aria-invalid')).toBeNull();
+    expect(strip.querySelector('[data-result]')).toBeNull();
+    fireEvent.click(limitBtn('sell'));
+    expect(strip.textContent).toContain('Sell 0.25 BTC @ 97,415');
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('Up and Down in the Price field step one tick', async () => {
+    await ladderWithBook();
+    fireEvent.change(priceInput(), { target: { value: '97400' } });
+    fireEvent.keyDown(priceInput(), { key: 'ArrowUp' });
+    expect(priceInput().value).toBe('97401');
+    fireEvent.keyDown(priceInput(), { key: 'ArrowDown' });
+    fireEvent.keyDown(priceInput(), { key: 'ArrowDown' });
+    expect(priceInput().value).toBe('97399');
+    // The ladder does not move focus or stage from the field.
+    expect(screen.getByRole('status', { name: /staged order/i }).textContent).not.toContain('Staged');
+  });
+
+  it('one-click armed: Sell limit at a price that does not cross places at once', async () => {
+    await ladderWithBook();
+    fireEvent.click(screen.getByRole('switch', { name: /one-click/i }));
+    fireEvent.change(priceInput(), { target: { value: '97420' } });
+    fireEvent.click(limitBtn('sell'));
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    const body = JSON.parse(String(posts()[0].init!.body));
+    expect([body.side, body.orderType, body.price]).toEqual(['SELL', 'LIMIT', '97420.00000000']);
+    // A crossing one still stages first.
+    fireEvent.change(priceInput(), { target: { value: '97400' } });
+    fireEvent.click(limitBtn('sell'));
+    await act(async () => {});
+    expect(posts()).toHaveLength(1);
+    expect(screen.getByRole('status', { name: /staged order/i }).textContent).toContain('Crosses the spread');
   });
 
   it('warns when a staged limit crosses the spread', async () => {
@@ -698,13 +791,16 @@ describe('Ladder shell (?ui=ladder)', () => {
   it('the ladder pins only for one-click, a staged order or an open menu; each end re-centres', async () => {
     const { container } = await ladderWithBook();
     const region = container.querySelector<HTMLElement>('[data-ladder-region]')!;
+    /** The row right below the spread marker (the best bid), null when the
+     *  marker is not in view. */
     const middle = () => {
-      const p = Array.from(container.querySelectorAll<HTMLElement>('[data-rung-price]')).map(e => Number(e.dataset.rungPrice));
-      return p[(p.length - 1) / 2];
+      const next = container.querySelector('[data-spread-row]')?.nextElementSibling as HTMLElement | null | undefined;
+      return next?.dataset.rungPrice ? Number(next.dataset.rungPrice) : null;
     };
+    const top = () => Number(container.querySelector<HTMLElement>('[data-rung-price]')!.dataset.rungPrice);
     let ts = 10;
-    /** The same book moved: best bid at `bid`, best ask 5 above. No trade
-     *  yet, so the centre is the middle of the touch (the bid rung at x5). */
+    /** The same book moved: best bid at `bid`, best ask 5 above. The spread
+     *  marker is the centre, the best bid right below it. */
     const bookAt = (bid: number) => {
       const ws = MockWebSocket.instances.find(w => w.url.endsWith('/ws'))!;
       const bids = Array.from({ length: 20 }, (_, i) => ({ price: bid - i * 5, quantity: 1, orderCount: 1 }));
@@ -724,10 +820,12 @@ describe('Ladder shell (?ui=ladder)', () => {
 
     // A staged order pins; clearing it re-centres.
     fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,415/i }));
+    let held = top();
     bookAt(97_450);
-    // The book moved (Re-centre appears) but the window held.
+    // The book moved (Re-centre appears) but the window held on its prices.
     expect(await recentreShown()).toBeTruthy();
-    expect(middle()).toBe(97_420);
+    expect(top()).toBe(held);
+    expect(middle()).toBeNull();
     expect(region.dataset.pinned).toBe('true');
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(middle()).toBe(97_450);
@@ -736,17 +834,19 @@ describe('Ladder shell (?ui=ladder)', () => {
     // One-click armed pins; disarming re-centres.
     fireEvent.click(oneClick());
     expect(oneClick().getAttribute('aria-checked')).toBe('true');
+    held = top();
     bookAt(97_500);
     expect(await recentreShown()).toBeTruthy();
-    expect(middle()).toBe(97_450);
+    expect(top()).toBe(held);
     fireEvent.click(oneClick());
     expect(middle()).toBe(97_500);
 
     // An open rung menu pins; closing it re-centres.
     const menu = openRungMenu(/^buy 0.25 btc at 97,495/i);
+    held = top();
     bookAt(97_550);
     expect(await recentreShown()).toBeTruthy();
-    expect(middle()).toBe(97_500);
+    expect(top()).toBe(held);
     fireEvent.keyDown(menu, { key: 'Escape' });
     expect(screen.queryByRole('menu', { name: /^orders at/i })).toBeNull();
     expect(middle()).toBe(97_550);
@@ -899,7 +999,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     await waitFor(() => expect(strip().textContent).toContain('Cancelled: Buy 0.5 BTC @ 97,390'));
   });
 
-  it('Alt+Up moves a limit order one group up (PUT); a stop is refused with a reason', async () => {
+  it('Alt+Up moves a limit order one rung up (one tick at the default grouping, PUT); a stop is refused with a reason', async () => {
     await ladderWithBook();
     pushOwn({ id: '9601', price: 97_390 });
     pushOwn({ id: '9602', type: 'STOP_LIMIT', side: 'SELL', price: 97_420 });
@@ -910,9 +1010,11 @@ describe('Ladder shell (?ui=ladder)', () => {
     key('ArrowUp', { altKey: true });
     await waitFor(() => expect(puts()).toHaveLength(1));
     expect(puts()[0].url).toMatch(/\/api\/v1\/orders\/9601$/);
-    expect(JSON.parse(String(puts()[0].init!.body))).toEqual({ price: '97395.00000000' });
-    expect(focusedRung()).toBe('97395'); // focus goes with the order
-    await waitFor(() => expect(strip().textContent).toContain('Moved to 97,395 (re-queued)'));
+    expect(JSON.parse(String(puts()[0].init!.body))).toEqual({ price: '97391.00000000' });
+    // Focus goes with the order; 97,391 has no level until the book shows the
+    // moved order, so the nearest row (97,390) holds the focus meanwhile.
+    expect(focusedRung()).toBe('97390');
+    await waitFor(() => expect(strip().textContent).toContain('Moved to 97,391 (re-queued)'));
 
     key('['); // previous in ladder order: the stop at 97,420
     expect(focusedRung()).toBe('97420');
@@ -1066,7 +1168,8 @@ describe('Ladder shell (?ui=ladder)', () => {
     // The ETH book arrives: the window pins to the order and focuses its rung.
     const market = MockWebSocket.instances.filter(w => w.url.endsWith('/ws'));
     const ws = market[market.length - 1];
-    const bids = Array.from({ length: 20 }, (_, i) => ({ price: 3_600 - i * 0.5, quantity: 1, orderCount: 1 }));
+    // Deep enough to hold the order's level (own orders rest at book levels).
+    const bids = Array.from({ length: 30 }, (_, i) => ({ price: 3_600 - i * 0.5, quantity: 1, orderCount: 1 }));
     const asks = Array.from({ length: 20 }, (_, i) => ({ price: 3_600.5 + i * 0.5, quantity: 1, orderCount: 1 }));
     act(() => {
       ws.onopen?.();

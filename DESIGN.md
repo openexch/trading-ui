@@ -73,22 +73,30 @@ Each fixed a reported problem or protects money; keep them.
    user-scoped OMS surfaces. Filtering that user-scoped feed by market is
    fine; filtering a shared feed by user is not.
 8. **The last price is always centred; the ladder pins only while the user
-   is committing to a price.** The last-trade rung is the middle row and the
+   is committing to a price.** The centre row sits between the best ask and
+   the best bid and carries the last trade price (with its tick direction)
+   and the spread; before the first trade it carries the spread only. The
    ladder re-centres on every change, also while the pointer is over it and
-   while it has focus (before the first trade it centres on the middle of
-   the best bid and best ask). It pins only while one-click is armed, while
-   an order is staged and while a menu or popover is open; when that ends it
+   while it has focus. It pins only while one-click is armed, while an order
+   is staged and while a menu or popover is open; when that ends it
    re-centres. An explicit scroll (wheel, finger drag, PageUp / PageDown, a
    jump marker) also moves away from the centre and holds until Re-centre,
-   C, Esc, or the end of the pin above. Re-centre shows whenever the ladder
-   is not centred. Keyboard focus follows a price, not a row: when the
-   ladder re-centres under a focused rung, focus stays on that price while
-   it is visible, otherwise on the nearest visible price. Because a click
-   only stages (rule 10), a rung that moved between aim and click shows its
-   real price in the strip before anything is placed; one-click, the one
-   path without that check, pins.
-9. **Rungs beyond known depth render as unknown** (dimmed, no quantity, no
-   cumulative, no depth bar), never as empty liquidity.
+   C, Esc, or the end of the pin above; a pinned window holds its prices
+   while levels come and go. Re-centre shows whenever the ladder is not
+   centred. Keyboard focus follows a price, not a row: when the ladder
+   re-centres under a focused row, focus stays on that price while it is
+   visible, otherwise on the nearest visible price. Because a click only
+   stages (rule 10), a row that moved between aim and click shows its real
+   price in the strip before anything is placed; one-click, the one path
+   without that check, pins.
+9. **Only engine prices.** A row is a price at which the engine's book has
+   a level, on either side; there are no rows for empty prices, prices
+   beyond the published depth or prices outside the market's range. Every
+   market groups by one tick by default, so a row's price is the level's
+   price; a coarser grouping is the user's choice and shows only groups
+   that hold a level. A price with no level is entered in the Price field
+   of the order bar (Buy limit / Sell limit); clicking a row also writes
+   its price there.
 10. **Click stages, Enter places.** One-click is off by default, never
     persisted, and disarms on Esc, market switch, sign-out and any connection
     state other than connected. Market orders and Cancel all always need a
@@ -120,8 +128,7 @@ use one scale, the largest cumulative visible in the window, so their volumes
 compare and the deepest visible rung on the heavier side fills its cell. A
 cell shows the level quantity next to the price (`--text-strong`) and the
 cumulative total, smaller and quieter, on the outer side (`--text`: `--muted`
-is not AA on a bar). A known price with no level (a gap) carries the bar and
-the cumulative but no quantity. The deepest known rung, when part of its
+is not AA on a bar). The deepest known rung, when part of its
 price group lies beyond the known depth, prints both numbers as lower
 bounds (≥). The hover preview of a click ("Buy 0.25") sits on the bar, so it
 is `--text-strong`; the side-coloured outline carries the side.
@@ -162,14 +169,14 @@ ladder.
 
 ## Signature element
 
-The **spread row**: a row of its own between the best ask rung and the best
-bid rung (12 px desktop, 20 px phone), a thin rule fading from buy to sell,
-labelled with the spread in the price column, plus the marked last-trade
-rung. It never overlaps a rung: its height is set aside before the rung
-count is taken (rule 1). With rungs inside the spread it sits in their
-middle; a locked or crossed book says so. It encodes the meeting point of
-the two sides. It carries no price: the header ticker is the only price
-hero.
+The **spread row**: a row of its own between the best ask row and the best
+bid row (24 px desktop, 32 px phone), a thin rule fading from buy to sell,
+with the last trade price (and its tick direction) and the spread in the
+price column. It never overlaps a row: its height is set aside before the
+row count is taken (rule 1), and it is always the vertical middle (rule 8).
+A one-sided book says "No bids" or "No asks"; a locked or crossed book says
+so. It encodes the meeting point of the two sides and the price they last
+met at. The last price shows only here, never as a marked row.
 
 ## Where things live
 

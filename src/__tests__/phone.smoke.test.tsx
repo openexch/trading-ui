@@ -152,10 +152,14 @@ describe('Phone shell (?ui=ladder at 768px and below)', () => {
     expect(container.querySelector('[data-terminal="phone"]')).toBeTruthy();
     expect(container.querySelector('[data-terminal="desktop"]')).toBeNull();
     expect(screen.getByRole('button', { name: /market btc-usd\. change market/i })).toBeTruthy();
-    // Nine 44px rungs from a 484px rung area once the 20px spread row is set
-    // aside (464 / 44 = 10, odd: 9), Bids | Price | Asks.
+    // Ten 44px rungs from a 484px rung area once the 20px spread row is set
+    // aside (464 / 44 = 10, even: five above the marker, five below), Bids |
+    // Price | Asks. Only engine levels: the book is every 5 ticks.
     const rows = container.querySelectorAll('[data-rung-price]');
-    expect(rows.length).toBe(9);
+    expect(rows.length).toBe(10);
+    expect(Array.from(rows).map(r => Number((r as HTMLElement).dataset.rungPrice))).toEqual([
+      97_425, 97_420, 97_415, 97_410, 97_405, 97_400, 97_395, 97_390, 97_385, 97_380,
+    ]);
     expect(container.querySelectorAll('[data-spread-row]')).toHaveLength(1);
     for (const r of Array.from(rows)) expect(r.className).toContain('h-[44px]');
     expect(screen.getByRole('button', { name: /^order settings: 0.25 btc, limit, good till cancelled$/i })).toBeTruthy();
