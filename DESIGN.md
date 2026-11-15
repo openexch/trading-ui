@@ -61,7 +61,9 @@ Each fixed a reported problem or protects money; keep them.
    ladder rungs and lists show skeletons; never re-show skeletons over data.
 3. **Tick arrows are persistent.** The header price and the last-trade rung
    show the direction of the last move in a fixed-width slot (an invisible
-   placeholder before the first tick). Only a colour flash may be transient.
+   placeholder before the first tick). Only a colour flash and the depth
+   bar's width change (150 ms ease-out, off under reduced motion) may be
+   transient.
 4. **Lists use stable keys and no per-row mount animation** (the tape, the
    orders list).
 5. **Number inputs blur on wheel.**
