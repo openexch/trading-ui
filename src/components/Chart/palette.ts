@@ -40,20 +40,20 @@ export const CHART_PALETTES: Record<ChartTheme, ChartPalette> = {
     accentArea1: 'rgba(91,140,255,0.02)',
   },
   light: {
-    background: '#ffffff', // --surface
-    textColor: '#5b6576', // --muted
-    gridLine: 'rgba(30,60,120,0.06)',
-    border: '#e1e6ed', // --hairline
-    crosshair: '#5b6576', // --muted
-    crosshairLabelBg: '#e9edf2', // --chip
+    background: '#fbfaf6', // --surface
+    textColor: '#5d6577', // --muted
+    gridLine: 'rgba(74,62,36,0.07)',
+    border: '#e6e1d3', // --hairline
+    crosshair: '#5d6577', // --muted
+    crosshairLabelBg: '#ebe7dc', // --chip
     up: '#17774f', // --buy
-    down: '#c23a27', // --sell
+    down: '#b03a26', // --sell
     upVol: 'rgba(23,119,79,0.20)',
-    downVol: 'rgba(194,58,39,0.20)',
-    volMa: '#5b6576', // --muted
-    accent: '#1f5bd6', // --accent
-    accentArea0: 'rgba(31,91,214,0.28)',
-    accentArea1: 'rgba(31,91,214,0.02)',
+    downVol: 'rgba(176,58,38,0.20)',
+    volMa: '#5d6577', // --muted
+    accent: '#1d3f9e', // --accent
+    accentArea0: 'rgba(29,63,158,0.28)',
+    accentArea1: 'rgba(29,63,158,0.02)',
   },
 };
 

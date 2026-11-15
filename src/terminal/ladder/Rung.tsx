@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * One ladder rung: Mine | Bids | Price | Asks | Mine (52 / 1fr / 112 / 1fr / 52).
+ * One ladder rung: Mine | Bids | Price | Asks | Mine (52 / 1fr / 112 / 1fr / 52),
+ * ruled as a ledger: a hairline under the rung and a double rule either side
+ * of the price column (RUNG_RULE, PRICE_RULES).
  *
  * - Depth is cumulative: the bar is the volume from the side's best price
  *   out to this rung, inset 3px top and bottom and growing out from the
@@ -52,6 +54,23 @@ export const LADDER_COLUMNS = 'grid-cols-[52px_minmax(0,1fr)_112px_minmax(0,1fr)
 
 /** Phone columns: Bids | Price | Asks. */
 export const PHONE_LADDER_COLUMNS = 'grid-cols-[minmax(0,1fr)_96px_minmax(0,1fr)]';
+
+/*
+ * Ledger rules (DESIGN.md "Identity: the ledger"): structure, drawn from the
+ * tokens without changing any measured height. Every rule is an inset box
+ * shadow or a horizontal border on a border-box grid item, so a rung stays
+ * 22px (44px phone), the spread row its own height and the depth bars 3px
+ * clear of the rung's top and bottom.
+ */
+/** The hairline under every rung (an inset shadow: no height). */
+export const RUNG_RULE = 'shadow-[inset_0_-1px_0_var(--hairline)]';
+/** The double rule either side of the price column, on the column header
+ *  and every rung (horizontal borders inside the fixed column width). */
+export const PRICE_RULES = 'border-x-[3px] border-double border-hairline-strong';
+/** The heavy rule under the column header. */
+export const HEADER_RULE = 'shadow-[inset_0_-2px_0_var(--rule-heavy)]';
+/** The heavy rules above and below the spread row. */
+export const SPREAD_RULES = 'shadow-[inset_0_2px_0_var(--rule-heavy),inset_0_-2px_0_var(--rule-heavy)]';
 
 export type RungDensity = 'desktop' | 'phone';
 
@@ -403,7 +422,7 @@ export function Rung({
     <div
       role="row"
       data-rung-price={row.price}
-      className={`grid ${rowH} ${cols} items-center ${phone ? 'rounded-md' : 'rounded'} has-[[data-focus-cell]:focus-visible]:ring-1 has-[[data-focus-cell]:focus-visible]:ring-inset has-[[data-focus-cell]:focus-visible]:ring-accent/50`}
+      className={`grid ${rowH} ${cols} items-center ${RUNG_RULE} has-[[data-focus-cell]:focus-visible]:ring-1 has-[[data-focus-cell]:focus-visible]:ring-inset has-[[data-focus-cell]:focus-visible]:ring-accent/50`}
       style={tint ? { background: tint } : undefined}
     >
       {!phone && (
@@ -432,7 +451,7 @@ export function Rung({
         tabIndex={focusable ? 0 : -1}
         data-focus-cell
         aria-label={rungLabel(row, priceText, sizeDecimals)}
-        className={`flex h-full items-center justify-center rounded ${phone ? 'text-[14px]' : 'text-[13px]'} outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent`}
+        className={`flex h-full items-center justify-center ${PRICE_RULES} ${phone ? 'text-[14px]' : 'text-[13px]'} outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-5px] focus-visible:outline-accent`}
       >
         {/* The cell's label reads the price as one number; the visual split
             is aria-hidden. Both parts share one weight, so the total width
@@ -482,13 +501,13 @@ export function SkeletonRung({ index, density = 'desktop' }: { index: number; de
     <div
       aria-hidden
       data-skeleton-rung
-      className={`grid ${phone ? `h-[44px] ${PHONE_LADDER_COLUMNS}` : `h-[22px] ${LADDER_COLUMNS}`} items-center animate-pulse`}
+      className={`grid ${phone ? `h-[44px] ${PHONE_LADDER_COLUMNS}` : `h-[22px] ${LADDER_COLUMNS}`} items-center ${RUNG_RULE} animate-pulse`}
     >
       {!phone && <span />}
       <span className="flex justify-end pr-3">
         <span className="h-3 rounded-sm bg-surface-2" style={{ width: w(0) }} />
       </span>
-      <span className="flex justify-center">
+      <span className={`flex h-full items-center justify-center ${PRICE_RULES}`}>
         <span className="h-3 w-14 rounded-sm bg-surface-2" />
       </span>
       <span className="flex justify-start pl-3">

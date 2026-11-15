@@ -46,7 +46,7 @@ import { buildLadder, ladderWindow } from './ladderModel';
 import type { LadderModel, LadderSide } from './ladderModel';
 import { PHONE_RUNG_PX, PHONE_SPREAD_ROW_PX, RUNG_PX, SPREAD_ROW_PX, useLadderWindow } from './useLadderWindow';
 import { LADDER_FRAME } from '../layoutColumns';
-import { LADDER_COLUMNS, PHONE_LADDER_COLUMNS, Rung, SkeletonRung } from './Rung';
+import { HEADER_RULE, LADDER_COLUMNS, PHONE_LADDER_COLUMNS, PRICE_RULES, Rung, SkeletonRung, SPREAD_RULES } from './Rung';
 import type { PriceTone, RungDensity } from './Rung';
 import { JumpMarker } from './JumpMarker';
 import type { OwnOrderActions } from './OwnOrderChip';
@@ -209,14 +209,15 @@ export function Ladder({
   // rows (its height is set aside in the row count), the rule fading from
   // buy to sell, with the last trade price (and its tick arrow) and the
   // spread in the middle. In a centred window it is the middle of the
-  // ladder, so the last price stays fixed there. Aria-hidden: the grid label
-  // carries the same words.
+  // ladder, so the last price stays fixed there. Heavy ledger rules above and
+  // below it (inset shadows, so its height is still spreadPx). Aria-hidden:
+  // the grid label carries the same words.
   const spreadRow = (
     <div
       key="spread"
       aria-hidden
       data-spread-row
-      className={`pointer-events-none grid flex-none ${columns} items-center`}
+      className={`pointer-events-none grid flex-none ${columns} items-center ${SPREAD_RULES}`}
       style={{ height: spreadPx }}
     >
       {!phone && <span />}
@@ -325,9 +326,9 @@ export function Ladder({
         data-pinned={win.pinned ? 'true' : 'false'}
         className="relative flex h-full min-h-0 w-full flex-col px-3"
       >
-        <div aria-hidden className={`grid h-7 flex-none ${columns} items-center text-[11px] text-muted`}>
+        <div aria-hidden className={`grid h-7 flex-none ${columns} items-center text-[11px] text-muted ${HEADER_RULE}`}>
           <span className="truncate pr-2.5 text-right">Bids · tap to buy</span>
-          <span className="text-center">Price</span>
+          <span className={`flex h-full items-center justify-center ${PRICE_RULES}`}>Price</span>
           <span className="truncate pl-2.5">Asks · tap to sell</span>
         </div>
         {rungGrid}
@@ -401,10 +402,10 @@ export function Ladder({
         {/* Column header: visual only, outside the grid (the grid's own
             header row is for assistive technology), so the grouping select
             is a tab stop of its own. */}
-        <div className={`grid h-7 flex-none ${LADDER_COLUMNS} items-center text-[11px] text-muted`}>
+        <div className={`grid h-7 flex-none ${LADDER_COLUMNS} items-center text-[11px] text-muted ${HEADER_RULE}`}>
           <span aria-hidden>Mine</span>
           <span aria-hidden className="pr-3 text-right">Bids</span>
-          <span className="flex justify-center">
+          <span className={`flex h-full items-center justify-center ${PRICE_RULES}`}>
             <select
               aria-label="Price grouping"
               value={groupTicks}

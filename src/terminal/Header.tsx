@@ -3,7 +3,8 @@
  * Terminal header, 52px, on the same grid as the body (SIDE_COLUMNS:
  * 340 | 1fr | 340 at 1440; left | 960 | right | far right in wide mode).
  *
- * - Left: logo and wordmark (Bricolage).
+ * - Left: logo and wordmark (Bricolage; ink blue on paper, --text-strong on
+ *   ink).
  * - Centre: the market symbol as a button that opens the market selector, so
  *   switching markets never depends on the panel layout; then the ticker
  *   hero, the only typographic hero on screen, with a persistent arrow.
@@ -67,7 +68,7 @@ export function Header(props: HeaderProps) {
         <LogoMark width={22} height={22} />
         <span
           title={STACK_VERSION}
-          className="whitespace-nowrap font-display text-[16px] font-bold leading-none text-text-strong"
+          className="whitespace-nowrap font-display text-[16px] font-bold leading-none text-accent dark:text-text-strong"
         >
           Open Exchange
         </span>
