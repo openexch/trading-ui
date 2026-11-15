@@ -18,8 +18,11 @@ No ornamental effects on the trading screen.
 - A **centre ladder**: the price column with bids on the left and asks on
   the right. The ladder IS order entry; there is no separate order form. It
   fills the centre column up to a 1200 px frame, centred, so the depth
-  columns never become absurdly wide on large screens (a 2522 px window gets
-  a 1200 px frame in its 1560 px centre). The defaults bar and the staging
+  columns never become absurdly wide. From 2140 px the screen switches to
+  wide mode: the ladder column is exactly a 960 px frame and three side
+  columns share the rest, so no gutter opens beside the ladder at any width
+  (2140 is where the 1200 px frame would stop filling a standard centre,
+  1202 / 0.56). The defaults bar and the staging
   strip share that frame: their content lines up with the ladder's edges,
   their background and hairline span the column. At 1440 the side columns
   stay 340 px and the ladder fills the 758 px between them.
@@ -28,7 +31,11 @@ No ornamental effects on the trading screen.
   rejected with the code) land in the same strip.
 - An **order defaults bar** above the strip: size presets and size input, one
   Type · Time-in-force picker, and the one-click switch at the far right.
-- **Four side slots** around the ladder (two per column, 340 px wide at 1440).
+- **Side slots** around the ladder, two per column: four below 2140 px (340
+  px wide at 1440), six in wide mode, where a far-right column shows all six
+  panels at once. Six slots are always stored; below 2140 the far-right
+  pair is hidden and keeps its panels, so crossing the breakpoint changes
+  nothing stored.
   Each slot's title is a picker: Markets, Trades, Chart, Open orders, Fills,
   Balances. A panel appears at most once; picking one that is open elsewhere
   swaps the two, so no slot is ever empty or doubled. Each column has a

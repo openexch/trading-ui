@@ -2,18 +2,23 @@
 /**
  * The side-slot layout as React state: read once from storage (validated),
  * written back on every change, and kept in step with other tabs through
- * the `storage` event. Writing never throws (persistence.ts).
+ * the `storage` event. Writing never throws (persistence.ts). The mode
+ * (standard or wide) only chooses which slots show; it never changes the
+ * stored layout.
  */
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { layoutReducer } from './layoutReducer';
-import type { Column, LayoutState, SlotIndex } from './layoutReducer';
+import type { Column, LayoutMode, LayoutState, SlotIndex } from './layoutReducer';
 import { LAYOUT_KEY, loadLayout, parseLayout, saveLayout } from './persistence';
 import { defaultLayout, presetLayout } from './presets';
 import type { PresetId } from './presets';
 import type { PanelId } from './registry';
+import { useLayoutMode } from './useLayoutMode';
 
 export interface LayoutApi {
   layout: LayoutState;
+  /** Which slots show (standard: four, wide: six); see layoutReducer. */
+  mode: LayoutMode;
   pick: (slot: SlotIndex, panel: PanelId) => void;
   setSplit: (column: Column, ratio: number) => void;
   applyPreset: (id: PresetId) => void;
@@ -22,6 +27,7 @@ export interface LayoutApi {
 
 export function useLayout(): LayoutApi {
   const [layout, dispatch] = useReducer(layoutReducer, undefined, loadLayout);
+  const mode = useLayoutMode();
 
   // Skip the first write: the state came from storage (or is Default).
   const first = useRef(true);
@@ -48,5 +54,5 @@ export function useLayout(): LayoutApi {
   const applyPreset = useCallback((id: PresetId) => dispatch({ type: 'apply', layout: presetLayout(id) }), []);
   const reset = useCallback(() => dispatch({ type: 'apply', layout: defaultLayout() }), []);
 
-  return { layout, pick, setSplit, applyPreset, reset };
+  return { layout, mode, pick, setSplit, applyPreset, reset };
 }

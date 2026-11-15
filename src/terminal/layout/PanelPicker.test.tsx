@@ -5,22 +5,26 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { PanelPicker, whereLabel } from './PanelPicker';
 import { useLayout } from './useLayout';
 import type { LayoutApi } from './useLayout';
-import type { SlotIndex } from './layoutReducer';
+import type { LayoutMode, SlotIndex } from './layoutReducer';
 import { LAYOUT_KEY } from './persistence';
 import { defaultLayout, presetLayout } from './presets';
 
 let api: LayoutApi;
 
-/** Four pickers over one layout, like the four slots. */
-function Slots() {
+/** Four pickers over one layout, like the four standard slots (six in
+ *  wide mode). */
+function Slots({ mode }: { mode?: LayoutMode }) {
   api = useLayout();
+  const m = mode ?? api.mode;
+  const slots = (m === 'wide' ? [0, 1, 2, 3, 4, 5] : [0, 1, 2, 3]) as SlotIndex[];
   return (
     <div>
-      {([0, 1, 2, 3] as SlotIndex[]).map(slot => (
+      {slots.map(slot => (
         <div key={slot} data-testid={`slot-${slot}`}>
           <PanelPicker
             slot={slot}
             layout={api.layout}
+            mode={m}
             onPick={api.pick}
             onPreset={api.applyPreset}
             onReset={api.reset}
@@ -40,10 +44,14 @@ describe('PanelPicker', () => {
 
   it('says where every panel lives', () => {
     const l = defaultLayout();
-    expect(whereLabel(l, 1, 'trades')).toBe('Here');
-    expect(whereLabel(l, 1, 'markets')).toBe('Left top');
-    expect(whereLabel(l, 1, 'orders')).toBe('Right bottom');
-    expect(whereLabel(l, 1, 'fills')).toBe('Hidden');
+    expect(whereLabel(l, 1, 'trades', 'standard')).toBe('Here');
+    expect(whereLabel(l, 1, 'markets', 'standard')).toBe('Left top');
+    expect(whereLabel(l, 1, 'orders', 'standard')).toBe('Right bottom');
+    expect(whereLabel(l, 1, 'fills', 'standard')).toBe('Hidden');
+    expect(whereLabel(l, 1, 'balances', 'standard')).toBe('Hidden');
+    expect(whereLabel(l, 1, 'fills', 'wide')).toBe('Far right top');
+    expect(whereLabel(l, 1, 'balances', 'wide')).toBe('Far right bottom');
+    expect(whereLabel(l, 5, 'balances', 'wide')).toBe('Here');
   });
 
   it('the title is the trigger; the icon variant keeps the accessible name', () => {
@@ -77,14 +85,22 @@ describe('PanelPicker', () => {
     fireEvent.click(trigger(1));
     fireEvent.click(screen.getByRole('menuitemradio', { name: /^chart/i }));
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(api.layout.slots).toEqual(['markets', 'chart', 'trades', 'orders']);
+    expect(api.layout.slots).toEqual(['markets', 'chart', 'trades', 'orders', 'fills', 'balances']);
     expect(document.activeElement).toBe(trigger(1));
 
     fireEvent.click(trigger(0));
     fireEvent.click(screen.getByRole('menuitemradio', { name: /^balances/i }));
-    expect(api.layout.slots).toEqual(['balances', 'chart', 'trades', 'orders']);
+    // Balances was hidden: Markets takes its hidden place.
+    expect(api.layout.slots).toEqual(['balances', 'chart', 'trades', 'orders', 'fills', 'markets']);
     // Remembered.
-    expect(JSON.parse(localStorage.getItem(LAYOUT_KEY)!).slots).toEqual(['balances', 'chart', 'trades', 'orders']);
+    expect(JSON.parse(localStorage.getItem(LAYOUT_KEY)!).slots).toEqual([
+      'balances',
+      'chart',
+      'trades',
+      'orders',
+      'fills',
+      'markets',
+    ]);
   });
 
   it('Layout presets… opens the preset menu; a preset applies; Reset returns to Default', () => {
@@ -117,12 +133,48 @@ describe('PanelPicker', () => {
     render(<Slots />);
     const next = presetLayout('scalper');
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: LAYOUT_KEY, newValue: JSON.stringify({ v: 1, ...next }) }));
+      window.dispatchEvent(new StorageEvent('storage', { key: LAYOUT_KEY, newValue: JSON.stringify({ v: 2, ...next }) }));
     });
     expect(api.layout).toEqual(next);
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: LAYOUT_KEY, newValue: '{"v":1,"slots":["x"]}' }));
+      window.dispatchEvent(new StorageEvent('storage', { key: LAYOUT_KEY, newValue: '{"v":2,"slots":["x"]}' }));
     });
     expect(api.layout).toEqual(next);
+  });
+
+  it('wide mode: six pickers, the far-right slots are named, picks swap across all six', () => {
+    render(<Slots mode="wide" />);
+    fireEvent.click(trigger(1));
+    const radios = within(screen.getByRole('menu', { name: 'Show in this panel' })).getAllByRole('menuitemradio');
+    expect(radios.map(r => r.textContent)).toEqual([
+      'MarketsLeft top',
+      'TradesHere',
+      'ChartRight top',
+      'Open ordersRight bottom',
+      'FillsFar right top',
+      'BalancesFar right bottom',
+    ]);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^balances/i }));
+    expect(api.layout.slots).toEqual(['markets', 'balances', 'chart', 'orders', 'fills', 'trades']);
+    expect(trigger(5).getAttribute('aria-label')).toBe('Panel: Trades. Change');
+  });
+
+  it('the preset menu marks a preset by what the mode shows', () => {
+    // Default with the hidden pair swapped: standard still shows Default.
+    localStorage.setItem(
+      LAYOUT_KEY,
+      JSON.stringify({ v: 2, ...defaultLayout(), slots: ['markets', 'trades', 'chart', 'orders', 'balances', 'fills'] }),
+    );
+    render(<Slots mode="standard" />);
+    fireEvent.click(trigger(0));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Layout presets…' }));
+    const items = within(screen.getByRole('menu', { name: 'Layout presets' })).getAllByRole('menuitemradio');
+    expect(items[0].getAttribute('aria-checked')).toBe('true');
+    cleanup();
+    render(<Slots mode="wide" />);
+    fireEvent.click(trigger(0));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Layout presets…' }));
+    const wide = within(screen.getByRole('menu', { name: 'Layout presets' })).getAllByRole('menuitemradio');
+    expect(wide.map(i => i.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false']);
   });
 });

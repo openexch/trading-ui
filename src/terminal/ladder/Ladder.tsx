@@ -9,7 +9,8 @@
  * (`onStage`); the staging strip above places it.
  *
  * Layout, top to bottom, filling the centre column up to a 1200px frame
- * (LADDER_FRAME, shared with the defaults bar and the strip):
+ * (960px in wide mode; LADDER_FRAME, shared with the defaults bar and the
+ * strip):
  *   jump-above slot (fixed height, Re-centre on the left)
  *   column header with the grouping select
  *   rung area (measured: its height, less the spread row, sets the even
