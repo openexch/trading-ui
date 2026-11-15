@@ -5,6 +5,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { useOrderBook } from './hooks/useOrderBook';
 import { useTrades } from './hooks/useTrades';
 import { useMarketStats } from './hooks/useMarketStats';
+import { useMarketTickers } from './hooks/useMarketTickers';
 import { useClusterState } from './hooks/useClusterState';
 import { useApi } from './hooks/useApi';
 import { useOrders } from './hooks/useOrders';
@@ -28,7 +29,7 @@ import { LogoMark } from './components/LogoMark';
 import { TerminalDesktop } from './terminal/TerminalDesktop';
 import { TerminalPhone } from './terminal/TerminalPhone';
 import { isLadderUiRequested } from './terminal/ladderFlag';
-import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
+import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, TickersMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { MARKETS } from './types/market';
 import { mergeLiveCandle } from './utils/candles';
 import { formatRejectReason } from './utils/rejectReasons';
@@ -89,6 +90,7 @@ function MarketPage() {
     useOrderBook(() => requestRefreshRef.current());
   const { trades, handleTradesBatch, resetTrades } = useTrades();
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
+  const { tickers, handleTickers, handleTickerStats, resetTickers } = useMarketTickers();
   const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
   const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
 
@@ -120,9 +122,12 @@ function MarketPage() {
     resetStats();
   }, [resetOrderBook, resetTrades, resetStats]);
 
+  // Other markets' tickers survive a market switch (no flicker) but not a
+  // reconnect: the new connection sends a fresh TICKERS frame.
   const handleReconnecting = useCallback(() => {
     resetAllState();
-  }, [resetAllState]);
+    resetTickers();
+  }, [resetAllState, resetTickers]);
 
   const handleReconnected = useCallback(() => {}, []);
 
@@ -153,7 +158,11 @@ function MarketPage() {
         case 'ERROR':
           console.error('Server error:', message.message);
           break;
+        case 'TICKERS':
+          handleTickers(message as TickersMessage);
+          break;
         case 'TICKER_STATS':
+          handleTickerStats(message as TickerStatsMessage);
           if ((message as TickerStatsMessage).marketId === selectedMarketIdRef.current) {
             const tickerMsg = message as TickerStatsMessage;
             setStats({
@@ -208,7 +217,8 @@ function MarketPage() {
       }
     },
     [handleBookSnapshot, handleBookDelta, handleTradesBatch, setStats,
-     handleBookUpdate, handleTrades, handleClusterStatus, handleClusterEvent]
+     handleBookUpdate, handleTrades, handleClusterStatus, handleClusterEvent,
+     handleTickers, handleTickerStats]
   );
 
   const { status, forceReconnect, requestRefresh } = useWebSocket({
@@ -361,6 +371,7 @@ function MarketPage() {
           markets={MARKETS}
           onSelectMarket={handleMarketChange}
           stats={stats}
+          tickers={tickers}
           orderBook={orderBook}
           levelChanges={levelChanges}
           openOrders={openOrders}

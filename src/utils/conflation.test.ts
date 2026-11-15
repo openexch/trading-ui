@@ -183,4 +183,20 @@ describe('MessageConflator', () => {
     const out = drainMessages(c);
     expect(out.map((m) => m.type)).toEqual(['PONG', 'TICKER_STATS', 'ERROR']);
   });
+
+  it('keeps only the latest TICKERS frame, in one slot', () => {
+    const c = new MessageConflator();
+    const frame = (ts: number): WebSocketMessage => ({
+      type: 'TICKERS',
+      tickers: [{ marketId: 2, market: 'ETH-USD', lastPrice: ts, priceChange: 0, priceChangePercent: 0,
+        high24h: 0, low24h: 0, volume24h: 0, timestamp: ts }],
+      timestamp: ts,
+    });
+    c.push(frame(1));
+    c.push(ticker(1, 5));
+    c.push(frame(2));
+    const out = drainMessages(c);
+    expect(out.map((m) => m.type)).toEqual(['TICKERS', 'TICKER_STATS']);
+    expect((out[0] as { timestamp: number }).timestamp).toBe(2);
+  });
 });

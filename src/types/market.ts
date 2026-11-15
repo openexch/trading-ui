@@ -116,6 +116,20 @@ export interface TickerStatsMessage {
   timestamp: number;
 }
 
+/** One market's entry in the all-market TICKERS frame: the TICKER_STATS
+ *  fields without `type`. */
+export type TickersEntry = Omit<TickerStatsMessage, 'type'>;
+
+/** Every market's ticker in one frame, sent to every market-data client
+ *  whatever market it subscribes to (at most once a second, only on change).
+ *  No top-level marketId. Markets without a price are absent. Older gateways
+ *  never send it; the UI then keeps its dashes. */
+export interface TickersMessage {
+  type: 'TICKERS';
+  tickers: TickersEntry[];
+  timestamp: number;
+}
+
 // Cluster status types - includes transitional states during rolling updates
 export type NodeStatus = 'LEADER' | 'FOLLOWER' | 'CANDIDATE' | 'OFFLINE' | 'STOPPING' | 'STARTING' | 'REJOINING' | 'ELECTION';
 
@@ -200,6 +214,7 @@ export type WebSocketMessage =
   | PongMessage
   | ErrorMessage
   | TickerStatsMessage
+  | TickersMessage
   | ClusterStatusMessage
   | ClusterEventMessage
   | CandleHistoryMessage

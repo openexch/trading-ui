@@ -19,7 +19,8 @@ import type {
  * per animation frame, so all resulting setStates batch into a single render.
  *
  * Conflation rules by type:
- * - TICKER_STATS (per market), CLUSTER_STATUS: keep-latest, replaced in place.
+ * - TICKER_STATS (per market), TICKERS (all markets, one slot),
+ *   CLUSTER_STATUS: keep-latest, replaced in place.
  * - CANDLE_UPDATE (per market+interval+bucket): keep-latest in place. Distinct
  *   buckets keep distinct slots so the new-bucket append still happens.
  * - CANDLE_HISTORY: supersedes queued candle messages for its market.
@@ -90,6 +91,10 @@ export class MessageConflator {
     switch (msg.type) {
       case 'TICKER_STATS':
         this.replaceInPlace(`T|${(msg as TickerStatsMessage).marketId}`, msg);
+        return;
+      case 'TICKERS':
+        // Each frame carries every priced market, so the latest supersedes.
+        this.replaceInPlace('TK', msg);
         return;
       case 'CLUSTER_STATUS':
         this.replaceInPlace('CS', msg);
