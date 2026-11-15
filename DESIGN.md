@@ -139,7 +139,11 @@ cell shows the level quantity next to the price (`--text-strong`) and the
 cumulative total, smaller and quieter, on the outer side (`--text`: `--muted`
 is not AA on a bar). The deepest known rung, when part of its
 price group lies beyond the known depth, prints both numbers as lower
-bounds (≥). The hover preview of a click ("Buy 0.25") sits on the bar, so it
+bounds (≥). In the price column the leading digits every visible rung
+shares (the big figure) print in `--muted` (AA on the column and on the
+own-order row tints) and the differing tail keeps the side colour, as FX
+ladders do; across a decade boundary nothing is quieted, the cell is read
+as one number, and the spread row's last price is never split. The hover preview of a click ("Buy 0.25") sits on the bar, so it
 is `--text-strong`; the side-coloured outline carries the side.
 
 ## Own orders on the ladder

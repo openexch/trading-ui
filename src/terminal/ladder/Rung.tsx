@@ -44,7 +44,7 @@ import { useEffect, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from 'react';
 import type { LadderRow, LadderSide, SideCell } from './ladderModel';
 import type { Anchor } from '../../ui';
-import { formatCompactSize, formatFixed } from './format';
+import { formatCompactSize, formatFixed, splitBigFigure } from './format';
 import { OwnOrderChip } from './OwnOrderChip';
 import type { OwnOrderActions } from './OwnOrderChip';
 
@@ -65,6 +65,10 @@ export type PriceTone = 'buy' | 'sell' | 'muted';
 export interface RungProps {
   row: LadderRow;
   priceText: string;
+  /** Leading characters of priceText that every visible rung shares (the
+   *  big figure, printed in --muted); the differing tail keeps the tone.
+   *  Computed once per window (sharedPrefixLength); 0 prints it whole. */
+  bigFigure?: number;
   tone: PriceTone;
   flashBid: boolean;
   flashAsk: boolean;
@@ -364,6 +368,7 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
 export function Rung({
   row,
   priceText,
+  bigFigure = 0,
   tone,
   flashBid,
   flashAsk,
@@ -392,6 +397,7 @@ export function Rung({
           : undefined;
 
   const toneCls = tone === 'buy' ? 'text-buy' : tone === 'sell' ? 'text-sell' : 'text-muted';
+  const { quiet, strong } = splitBigFigure(priceText, bigFigure);
 
   return (
     <div
@@ -428,7 +434,17 @@ export function Rung({
         aria-label={rungLabel(row, priceText, sizeDecimals)}
         className={`flex h-full items-center justify-center rounded ${phone ? 'text-[14px]' : 'text-[13px]'} outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent`}
       >
-        <span className={`font-medium ${toneCls}`}>{priceText}</span>
+        {/* The cell's label reads the price as one number; the visual split
+            is aria-hidden. Both parts share one weight, so the total width
+            is the same as an unsplit price (tabular figures). */}
+        <span aria-hidden data-price className={`font-medium ${toneCls}`}>
+          {quiet && (
+            <span data-big-figure className="text-muted">
+              {quiet}
+            </span>
+          )}
+          {strong}
+        </span>
       </span>
       <DepthCell
         side="ASK"

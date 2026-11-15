@@ -51,7 +51,7 @@ import type { PriceTone, RungDensity } from './Rung';
 import { JumpMarker } from './JumpMarker';
 import type { OwnOrderActions } from './OwnOrderChip';
 import type { Anchor } from '../../ui';
-import { formatFixed, formatSmall } from './format';
+import { formatFixed, formatSmall, sharedPrefixLength } from './format';
 import { useLadderKeys } from './useLadderKeys';
 import type { LadderHandle, LadderReveal, PassedCommand } from './useLadderKeys';
 
@@ -153,6 +153,10 @@ export function Ladder({
     !awaitingBook && win.rowCount > 0 ? ladderWindow(model, win.pos, win.rowCount) : null;
 
   const decimals = model.grid.decimals;
+  // The big figure: the leading characters every visible rung's price
+  // shares, once per window from the strings the column prints.
+  const priceTexts = view ? view.rows.map(r => formatFixed(r.price, decimals)) : [];
+  const bigFigure = sharedPrefixLength(priceTexts);
   const spread = model.spread;
   const spreadText = spread && spread.state === 'open' ? formatSmall(spread.groups) : null;
   const spreadLabel =
@@ -284,7 +288,8 @@ export function Ladder({
               <Rung
                 key={row.price}
                 row={row}
-                priceText={formatFixed(row.price, decimals)}
+                priceText={priceTexts[i]}
+                bigFigure={bigFigure}
                 tone={toneOf(model, row.rung)}
                 flashBid={flashed(row.bid.priceKeys)}
                 flashAsk={flashed(row.ask.priceKeys)}
