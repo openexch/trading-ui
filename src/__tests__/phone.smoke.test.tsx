@@ -127,7 +127,7 @@ async function phoneWithBook() {
   await screen.findByRole('grid', { name: /price ladder/i });
   await screen.findByRole('button', { name: /menu, signed in as dev/i });
   pushBook();
-  await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book, 1.00 cumulative$/i });
+  await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book, 1.0000 cumulative$/i });
   return utils;
 }
 

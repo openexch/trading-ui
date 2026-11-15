@@ -206,7 +206,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     await screen.findByRole('button', { name: /^dev$/i });
     pushBook();
     // BTC opens at its default preset (0.25) and x5 grouping.
-    await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book, 1.00 cumulative$/i });
+    await screen.findByRole('gridcell', { name: /^buy 0.25 btc at 97,400, 1.0000 on book, 1.0000 cumulative$/i });
     return utils;
   }
 

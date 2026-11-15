@@ -373,7 +373,7 @@ describe('Ladder depth', () => {
     expect(screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,004, depth unknown$/i })).toBeTruthy();
     expect(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 996, depth unknown$/i })).toBeTruthy();
     expect(
-      screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,002, 1.20000000 on book, 2.30 cumulative$/i }),
+      screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,002, 1.20000000 on book, 2.30000000 cumulative$/i }),
     ).toBeTruthy();
     // Beyond the known depth: no quantity, no cumulative, no bar.
     const cell = screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,004/i });
@@ -388,11 +388,11 @@ describe('Ladder depth', () => {
     const ask = container.querySelector('[data-rung-price="1003"]')!.querySelectorAll('button[role="gridcell"]')[1];
     // Ask cell: quantity first (next to the price), cumulative after it.
     const askSpans = Array.from(ask.querySelectorAll('[data-qty],[data-cum]')).map(e => e.textContent);
-    expect(askSpans).toEqual(['1.30000000', '3.60']);
+    expect(askSpans).toEqual(['1.30000000', '3.60000000']);
     const bid = container.querySelector('[data-rung-price="997"]')!.querySelectorAll('button[role="gridcell"]')[0];
     // Bid cell: cumulative first (outer side), quantity next to the price.
     const bidSpans = Array.from(bid.querySelectorAll('[data-cum],[data-qty]')).map(e => e.textContent);
-    expect(bidSpans).toEqual(['3.60', '1.30000000']);
+    expect(bidSpans).toEqual(['3.60000000', '1.30000000']);
   });
 
   it('cumulative bars share one scale: the largest cumulative in the window', () => {
@@ -542,7 +542,7 @@ describe('Ladder staging clicks', () => {
     const onStage = vi.fn();
     setup({ onStage });
     resize(220);
-    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 998, 1.20000000 on book, 2.30 cumulative$/i }));
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.5 tst at 998, 1.20000000 on book, 2.30000000 cumulative$/i }));
     expect(onStage).toHaveBeenLastCalledWith('BID', 998);
     fireEvent.click(screen.getByRole('gridcell', { name: /^sell 0.5 tst at 1,003/i }));
     expect(onStage).toHaveBeenLastCalledWith('ASK', 1003);

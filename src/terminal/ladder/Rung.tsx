@@ -233,7 +233,8 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
     depth = ', depth unknown';
   }
   if (cell.cumulative !== null && cell.cumulative > 0) {
-    const c = formatCompactSize(cell.cumulative, sizeDecimals);
+    // Fixed decimals, like the level quantity, so the column aligns.
+    const c = formatFixed(cell.cumulative, sizeDecimals);
     cumText = cell.partial ? `≥${c}` : c;
     depth += `, ${atLeast}${c} cumulative`;
   }
