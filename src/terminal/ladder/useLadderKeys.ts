@@ -4,17 +4,20 @@
  *
  * - Roving tabindex: the grid is one tab stop. The focused rung's price cell
  *   holds tabindex 0; every other cell is -1. Before any rung was focused,
- *   or once the focused rung has left the window, the tab stop is the
- *   centre row. With no rows yet (skeletons) the grid itself is the stop.
+ *   the tab stop is the row next to the spread marker (the best bid, else
+ *   the best ask); once the focused rung has left the window, the nearest
+ *   visible price. With no rows yet (skeletons) the grid itself is the stop.
  * - The focused rung is kept as its price, so focus follows the price, not
  *   the row, across live updates and re-centring (rows are keyed by price).
  *   Focus does not pin the ladder: when it re-centres under a focused rung,
  *   focus stays on that price while it is visible, else it lands on the
  *   nearest visible price.
- * - Arrow keys move focus one rung (Shift: ten). Past the window's edge the
+ * - Rows are book levels only, so keys move between levels, not ticks.
+ *   Arrow keys move focus one level (Shift: ten). Past the window's edge the
  *   window shifts with it and holds there until Re-centre or C.
- * - PageUp / PageDown scroll the window a page (rows - 1) and move focus by
- *   the same amount; the window holds there until Re-centre, C or Esc.
+ * - PageUp / PageDown scroll the window a page (slots - 1 levels) and move
+ *   focus by the same amount; the window holds there until Re-centre, C or
+ *   Esc.
  * - [ and ] step through own orders in ladder order (highest price first),
  *   wrapping; the window pins to the order's rung when it is outside.
  * - Del cancels and Alt+Up / Alt+Down move the selected own order (the one
@@ -35,7 +38,7 @@ import { canMove, stepPrice } from '../../trading/orderActions';
 import { formatPriceText, typeLabel } from '../../trading/staging';
 import { marketUi } from '../../trading/marketUi';
 import { formatCompactSize } from './format';
-import { defaultCentre, rungOf, rungPrice, toTicks } from './ladderModel';
+import { levelIndex, rungOf, rungPrice, toTicks } from './ladderModel';
 import type { LadderModel, LadderSide, LadderWindow, OwnPlacement } from './ladderModel';
 import type { OwnOrderActions } from './OwnOrderChip';
 import { inOverlay, isTypingTarget, ladderCommand } from './keymap';
@@ -64,8 +67,9 @@ export interface LadderKeysOptions {
   market: Market;
   model: LadderModel;
   view: LadderWindow | null;
-  centre: number | null;
   pinTo: (rung: number) => void;
+  /** Move the window by levels (positive: lower prices) and hold it. */
+  scrollBy: (levels: number) => void;
   recentre: () => void;
   ownActions?: OwnOrderActions;
   onStage?: (side: LadderSide, price: number, anchor?: HTMLElement) => void;
@@ -95,7 +99,7 @@ export function ownInLadderOrder(model: LadderModel): OwnPlacement[] {
 const FOCUS_CELL = '[data-focus-cell]';
 
 export function useLadderKeys(opts: LadderKeysOptions) {
-  const { market, model, view, centre, pinTo, recentre, ownActions, onStage, onCommand, onAnnounce } = opts;
+  const { market, model, view, pinTo, scrollBy, recentre, ownActions, onStage, onCommand, onAnnounce } = opts;
   const [focusRaw, setFocus] = useState<FocusState | null>(null);
   const focus = focusRaw && focusRaw.marketId === market.id ? focusRaw : null;
   const [gridEl, setGridEl] = useState<HTMLElement | null>(null);
@@ -114,22 +118,23 @@ export function useLadderKeys(opts: LadderKeysOptions) {
   );
   const priceOf = useCallback((rung: number) => rungPrice(grid, groupTicks, rung), [grid, groupTicks]);
 
-  const visible = (rung: number) =>
-    view !== null && rung <= view.top && rung >= view.bottom && rung >= model.minRung && rung <= model.maxRung;
+  const rows = view?.rows ?? [];
+  const visible = (rung: number) => rows.some(r => r.rung === rung);
   const focusRung = focus ? rungOfPrice(focus.price) : null;
   let tabStopRung: number | null = null;
   if (focusRung !== null && visible(focusRung)) tabStopRung = focusRung;
-  else if (view && view.rows.length > 0) {
-    const inRange = view.rows.filter(r => r.inRange);
-    if (focusRung !== null && inRange.length > 0) {
-      // The focused price left the window (a re-centre): the nearest
-      // visible price takes the focus.
-      const hi = inRange[0].rung;
-      const lo = inRange[inRange.length - 1].rung;
-      tabStopRung = Math.min(hi, Math.max(lo, focusRung));
+  else if (rows.length > 0) {
+    if (focusRung !== null) {
+      // The focused price left the window (a re-centre) or its level went:
+      // the nearest visible price takes the focus.
+      let best = rows[0].rung;
+      for (const r of rows) if (Math.abs(r.rung - focusRung) < Math.abs(best - focusRung)) best = r.rung;
+      tabStopRung = best;
     } else {
-      const mid = view.rows[(view.rows.length - 1) >> 1];
-      tabStopRung = mid.inRange ? mid.rung : (inRange[0]?.rung ?? null);
+      // The row next to the spread marker: the best bid, else the best ask.
+      const at = view!.spreadAt;
+      const i = at === null ? (rows.length - 1) >> 1 : at < rows.length ? at : rows.length - 1;
+      tabStopRung = rows[i].rung;
     }
   }
 
@@ -225,30 +230,37 @@ export function useLadderKeys(opts: LadderKeysOptions) {
 
     switch (cmd.kind) {
       case 'move': {
-        if (cur === null || !view || centre === null) return;
+        if (cur === null || !view || model.levels.length === 0) return;
         e.preventDefault();
-        const next = Math.min(model.maxRung, Math.max(model.minRung, cur + cmd.rungs));
-        if (next > view.top) pinTo(centre + (next - view.top));
-        else if (next < view.bottom) pinTo(centre - (view.bottom - next));
-        focusRungAt(next, null);
+        // Levels run highest first: up (a positive count) is a lower index.
+        const L = model.levels.length;
+        const next = Math.min(L - 1, Math.max(0, levelIndex(model, cur) - cmd.rungs));
+        const last = view.start + view.count - 1;
+        if (next < view.start) scrollBy(next - view.start);
+        else if (next > last) scrollBy(next - last);
+        focusRungAt(model.levels[next], null);
         return;
       }
       case 'page': {
-        if (!view || centre === null) return;
+        if (!view) return;
         e.preventDefault();
-        const step = Math.max(1, view.rows.length - 1) * cmd.dir;
-        const nextCentre = Math.min(model.maxRung, Math.max(model.minRung, centre + step));
-        pinTo(nextCentre);
-        if (cur !== null) focusRungAt(Math.min(model.maxRung, Math.max(model.minRung, cur + (nextCentre - centre))), null);
+        // PageUp (dir 1) shows higher prices: the window moves up the list.
+        const step = Math.max(1, view.count - 1) * cmd.dir;
+        scrollBy(-step);
+        if (cur !== null && model.levels.length > 0) {
+          const L = model.levels.length;
+          focusRungAt(model.levels[Math.min(L - 1, Math.max(0, levelIndex(model, cur) - step))], null);
+        }
         return;
       }
       case 'recentre': {
         e.preventDefault();
         recentre();
+        // Focus the row next to the marker: the last trade when it is a
+        // level, else the best bid, else the best ask.
+        const last = model.lastTradeRung;
         const anchor =
-          model.lastTradeRung === null && model.bestBidRung === null && model.bestAskRung === null
-            ? cur
-            : defaultCentre(model);
+          last !== null && model.levels.includes(last) ? last : (model.bestBidRung ?? model.bestAskRung ?? cur);
         if (anchor !== null) focusRungAt(anchor, null);
         return;
       }

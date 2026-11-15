@@ -15,6 +15,10 @@ describe('marketUi', () => {
     }
   });
 
+  it('every market opens at one-tick grouping, so each row is an engine price level', () => {
+    for (const m of MARKETS) expect(marketUi(m).defaultGrouping, m.symbol).toBe(1);
+  });
+
   it('BTC presets match the approved design', () => {
     const ui = marketUi(MARKETS[0]);
     expect(ui.sizePresets).toEqual([0.1, 0.25, 1]);

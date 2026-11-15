@@ -16,7 +16,7 @@
 export type LadderKeySide = 'BID' | 'ASK';
 
 export type LadderCommand =
-  /** Move the focused rung up (+) or down (-) by this many rungs. */
+  /** Move the focus up (+) or down (-) by this many rows (book levels). */
   | { kind: 'move'; rungs: number }
   /** Scroll the window a page up (+1) or down (-1) and hold it there. */
   | { kind: 'page'; dir: 1 | -1 }
@@ -66,7 +66,7 @@ export function ladderCommand(e: KeyLike): LadderCommand | null {
     return { kind: 'move', rungs: dir * (shift ? 10 : 1) };
   }
   if (alt) return null;
-  // A page of rungs: an explicit scroll, held until Re-centre.
+  // A page of rows: an explicit scroll, held until Re-centre.
   if (key === 'PageUp' || key === 'PageDown') return shift ? null : { kind: 'page', dir: key === 'PageUp' ? 1 : -1 };
 
   if (key === 'Delete' || key === 'Backspace') return shift ? null : { kind: 'cancelOwn' };

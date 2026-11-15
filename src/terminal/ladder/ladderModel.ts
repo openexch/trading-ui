@@ -15,6 +15,14 @@
  *              publishes a bounded depth), never shown as empty liquidity
  * - 'none':    the other side of the touch (a bid cell above the best bid)
  *
+ * Rows are only the rungs the engine's book has a level on, on either side
+ * (`levels`); a price with no level is never drawn. The window is index-based
+ * over that sparse list: the spread marker sits in the middle, the ask
+ * levels above it (best ask nearest) and the bid levels below it (best bid
+ * nearest), and scrolling moves by levels, not ticks. The 'gap', 'unknown'
+ * and 'none' cell states remain for the other side of a level row (an ask
+ * row's bid cell is 'none'; a crossed book can put a gap there).
+ *
  * Depth is cumulative (DESIGN.md, the depth ladder): each known cell carries
  * the volume from its side's best price out to and including that rung (best
  * ask upwards, best bid downwards). A window scales its bars to the largest
@@ -103,10 +111,6 @@ export interface SpreadInfo {
   ticks: number;
   /** The same spread in group units (the label the spread row carries). */
   groups: number;
-  /** The spread row sits between `lowerRung` and `lowerRung + 1`. Null when
-   *  the book is locked or crossed into one rung, so there is no gap to draw
-   *  the line in. */
-  lowerRung: number | null;
   state: 'open' | 'locked' | 'crossed';
 }
 
@@ -120,9 +124,12 @@ export interface LadderModel {
   grid: TickGrid;
   groupTicks: number;
   marketId: number;
-  /** Rung range covering [minPrice, maxPrice]. */
-  minRung: number;
-  maxRung: number;
+  /** Every rung with a book level on either side, highest price first: the
+   *  only rows the ladder draws. */
+  levels: number[];
+  /** Index into `levels` of the first row below the spread marker (the best
+   *  bid's row); `levels.length` when there are no bids. */
+  split: number;
   bestBidRung: number | null;
   bestAskRung: number | null;
   deepestBidRung: number | null;
@@ -281,25 +288,24 @@ export function buildLadder(input: LadderInput): LadderModel {
     const bestBidTicks = b.bestTicks;
     const bestAskTicks = a.bestTicks;
     const ticks = bestAskTicks - bestBidTicks;
-    let lowerRung: number | null = null;
-    if (a.best > b.best) {
-      const midGroup = (bestBidTicks + bestAskTicks) / 2 / groupTicks;
-      lowerRung = Math.min(a.best - 1, Math.max(b.best, Math.floor(midGroup)));
-    }
     spread = {
       ticks,
       groups: ticks / groupTicks,
-      lowerRung,
       state: ticks > 0 ? 'open' : ticks === 0 ? 'locked' : 'crossed',
     };
   }
+
+  const levels = [...new Set([...b.out.keys(), ...a.out.keys()])].sort((x, y) => y - x);
+  // Everything above the best bid sits above the marker (the asks, in an
+  // open book nothing else); with no bids every level is an ask.
+  const split = b.best === null ? levels.length : levels.filter(r => r > b.best!).length;
 
   return {
     grid,
     groupTicks,
     marketId: market.id,
-    minRung: Math.floor(toTicks(grid, market.minPrice) / groupTicks),
-    maxRung: Math.ceil(toTicks(grid, market.maxPrice) / groupTicks),
+    levels,
+    split,
     bestBidRung: b.best,
     bestAskRung: a.best,
     deepestBidRung: b.deepest,
@@ -377,13 +383,8 @@ export function sideCell(model: LadderModel, side: LadderSide, rung: number, sca
 export interface LadderRow {
   rung: number;
   price: number;
-  /** False for rungs outside the market's [minPrice, maxPrice]. */
-  inRange: boolean;
   bid: SideCell;
   ask: SideCell;
-  isLastTrade: boolean;
-  /** The spread row sits directly below this row. */
-  spreadBelow: boolean;
 }
 
 export interface OwnOutside {
@@ -392,50 +393,118 @@ export interface OwnOutside {
   nearest: OwnPlacement | null;
 }
 
+/**
+ * Where a held window sits: the level `rung` is shown in slot `slot` (0 is
+ * the top row). A price, not an index, so a held window stays on its prices
+ * while levels come and go around them. Null is the centred window.
+ */
+export interface WindowPos {
+  rung: number;
+  slot: number;
+}
+
 export interface LadderWindow {
-  /** Highest rung shown (first row). */
-  top: number;
-  /** Lowest rung shown (last row). */
-  bottom: number;
-  /** Rows from the highest price down. */
+  /** Index into `model.levels` shown in the top slot; negative when the
+   *  window reaches above the highest level (empty slots on top). */
+  start: number;
+  /** Slots in the window (the row count it was built for). */
+  count: number;
+  /** Empty slots above the first row and below the last (the book ran out
+   *  of levels on that side). Never drawn as rows. */
+  padTop: number;
+  padBottom: number;
+  /** Highest rung shown (first row); null without rows. */
+  top: number | null;
+  /** Lowest rung shown (last row); null without rows. */
+  bottom: number | null;
+  /** Rows from the highest price down: book levels only. */
   rows: LadderRow[];
+  /** The spread marker goes before `rows[spreadAt]` (`rows.length`: after
+   *  the last row); null when it is scrolled out of the window. */
+  spreadAt: number | null;
+  /** True while the window is the centred one (the marker in the middle). */
+  centred: boolean;
   /** The bar scale: the largest cumulative shown on either side. */
   scale: number;
   above: OwnOutside;
   below: OwnOutside;
 }
 
-/**
- * The `count` rungs around `centre`, highest price first. The window is kept
- * inside the market's rung range when it fits; when it is taller than the
- * whole range, the extra rows are marked out of range.
- */
-export function ladderWindow(model: LadderModel, centre: number, count: number): LadderWindow {
+/** The index in `levels` (highest first) where `rung` is, or where it would
+ *  be: the first level at or below it. */
+export function levelIndex(model: Pick<LadderModel, 'levels'>, rung: number): number {
+  const lv = model.levels;
+  let lo = 0;
+  let hi = lv.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (lv[mid] > rung) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** The centred window's start: half the slots above the marker. */
+export function centredStart(model: Pick<LadderModel, 'split'>, count: number): number {
+  return model.split - Math.floor(Math.max(0, count) / 2);
+}
+
+/** The range a window's start may take: never further past either end of
+ *  the levels than the centred window already is. */
+export function startBounds(model: Pick<LadderModel, 'levels' | 'split'>, count: number): { lo: number; hi: number } {
+  const c = centredStart(model, count);
+  return { lo: Math.min(0, c), hi: Math.max(model.levels.length - count, c) };
+}
+
+/** The start index a position resolves to, clamped. */
+export function windowStart(model: Pick<LadderModel, 'levels' | 'split'>, pos: WindowPos | null, count: number): number {
   const n = Math.max(0, Math.floor(count));
-  let top = Math.round(centre) + Math.floor((n - 1) / 2);
-  const span = model.maxRung - model.minRung + 1;
-  if (n >= span) {
-    top = model.maxRung;
-  } else {
-    if (top > model.maxRung) top = model.maxRung;
-    if (top - n + 1 < model.minRung) top = model.minRung + n - 1;
-  }
-  const bottom = top - n + 1;
-  const spreadLower = model.spread?.lowerRung ?? null;
-  const scale = windowScale(model, top, bottom);
-  const rows: LadderRow[] = [];
-  for (let rung = top; rung >= bottom; rung--) {
-    rows.push({
-      rung,
-      price: rungPrice(model.grid, model.groupTicks, rung),
-      inRange: rung >= model.minRung && rung <= model.maxRung,
-      bid: sideCell(model, 'BID', rung, scale),
-      ask: sideCell(model, 'ASK', rung, scale),
-      isLastTrade: model.lastTradeRung === rung,
-      spreadBelow: spreadLower !== null && rung === spreadLower + 1 && spreadLower >= bottom,
-    });
-  }
-  return { top, bottom, rows, scale, ...ownOutside(model, top, bottom) };
+  if (pos === null) return centredStart(model, n);
+  const { lo, hi } = startBounds(model, n);
+  return Math.min(hi, Math.max(lo, levelIndex(model, pos.rung) - pos.slot));
+}
+
+/**
+ * The window of `count` slots at `pos` (null: centred). Slots hold book
+ * levels only; where the book runs out the slots stay empty (`padTop`,
+ * `padBottom`), so the marker stays in the middle of a centred window.
+ */
+export function ladderWindow(model: LadderModel, pos: WindowPos | null, count: number): LadderWindow {
+  const n = Math.max(0, Math.floor(count));
+  const start = windowStart(model, pos, n);
+  const L = model.levels.length;
+  const first = Math.max(0, start);
+  const last = Math.min(L, start + n); // exclusive
+  const rungs = last > first ? model.levels.slice(first, last) : [];
+  const top = rungs.length > 0 ? rungs[0] : null;
+  const bottom = rungs.length > 0 ? rungs[rungs.length - 1] : null;
+  const scale = top !== null && bottom !== null ? windowScale(model, top, bottom) : 0;
+  const rows: LadderRow[] = rungs.map(rung => ({
+    rung,
+    price: rungPrice(model.grid, model.groupTicks, rung),
+    bid: sideCell(model, 'BID', rung, scale),
+    ask: sideCell(model, 'ASK', rung, scale),
+  }));
+  const padTop = first - start;
+  const marker = model.split - first;
+  const spreadAt = n > 0 && L > 0 && model.split >= start && model.split <= start + n ? marker : null;
+  const own =
+    top !== null && bottom !== null
+      ? ownOutside(model, top, bottom)
+      : { above: { count: 0, nearest: null }, below: { count: 0, nearest: null } };
+  return {
+    start,
+    count: n,
+    padTop,
+    padBottom: n - padTop - rows.length,
+    top,
+    bottom,
+    rows,
+    spreadAt,
+    centred: start === centredStart(model, n),
+    scale,
+    ...own,
+  };
 }
 
 /** The largest cumulative a window [bottom, top] shows on either side.
@@ -477,16 +546,4 @@ export function ownOutside(model: LadderModel, top: number, bottom: number): { a
     }
   }
   return { above, below };
-}
-
-/** Where a fresh ladder centres: the last trade, else the middle of the
- *  spread, else whichever side is known, else the middle of the price range. */
-export function defaultCentre(model: LadderModel): number {
-  if (model.lastTradeRung !== null) return model.lastTradeRung;
-  if (model.bestBidRung !== null && model.bestAskRung !== null) {
-    return Math.floor((model.bestBidRung + model.bestAskRung) / 2);
-  }
-  if (model.bestBidRung !== null) return model.bestBidRung;
-  if (model.bestAskRung !== null) return model.bestAskRung;
-  return Math.floor((model.minRung + model.maxRung) / 2);
 }

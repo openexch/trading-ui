@@ -2,8 +2,9 @@
 /**
  * The staging strip: the one live region of the trading screen (DESIGN.md
  * rule 12). It shows the staged order exactly as Enter will send it, a
- * warning when a limit would execute immediately, Place and Clear, and the
- * Buy market / Sell market buttons. Results land here too: Accepted is
+ * warning when a limit would execute immediately, Place and Clear, the Buy
+ * limit / Sell limit buttons (at the defaults bar's Price field, through the
+ * same path as a rung click) and the Buy market / Sell market buttons. Results land here too: Accepted is
  * polite, Rejected is an alert with the engine code as its title.
  *
  * - The type's second value (stop limit's limit price, a trail, an
@@ -70,6 +71,10 @@ export interface StagingStripProps {
   onPlace: () => void;
   onClear: () => void;
   onMarket: (side: OrderSide) => void;
+  /** Buy limit / Sell limit at the Price field. Without it there are no
+   *  buttons. `problem` disables them (why: the strip shows it, the buttons
+   *  carry it as their title). */
+  limit?: { onLimit: (side: OrderSide) => void; problem: string | null };
 }
 
 const BTN = 'h-[26px] flex-none rounded-md px-2.5 text-[12px] font-[inherit] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50';
@@ -84,6 +89,7 @@ export function StagingStrip({
   onPlace,
   onClear,
   onMarket,
+  limit,
 }: StagingStripProps) {
   const buy = staged?.side === 'BID';
   const sideText = buy ? 'text-buy' : 'text-sell';
@@ -205,6 +211,28 @@ export function StagingStrip({
         >
           {cancelAll.running ? 'Cancelling…' : `Cancel all · ${cancelAll.count}`}
         </button>
+      )}
+      {limit && (
+        <>
+          <button
+            type="button"
+            onClick={() => limit.onLimit('BID')}
+            disabled={limit.problem !== null}
+            title={limit.problem ?? undefined}
+            className={`${BTN} border border-buy bg-transparent font-semibold text-buy hover:bg-buy-faint`}
+          >
+            Buy limit
+          </button>
+          <button
+            type="button"
+            onClick={() => limit.onLimit('ASK')}
+            disabled={limit.problem !== null}
+            title={limit.problem ?? undefined}
+            className={`${BTN} border border-sell bg-transparent font-semibold text-sell hover:bg-sell-faint`}
+          >
+            Sell limit
+          </button>
+        </>
       )}
       <button
         type="button"

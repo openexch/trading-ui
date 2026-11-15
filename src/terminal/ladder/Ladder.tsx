@@ -1,24 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The depth ladder: the book as fixed 22px rungs with the last trade in the
- * middle row, own orders, cumulative depth, the spread row and the
- * last-trade rung. A click on a bid cell stages a buy at that rung's price,
- * on an ask cell a sell (`onStage`); the staging strip above places it.
+ * The depth ladder: the engine's book levels as fixed 22px rungs (only
+ * prices the book has a level at; never a gap or filler row), with the
+ * spread marker in the middle (it carries the last trade price, with its
+ * tick arrow, and the spread), the ask levels above it and the bid levels
+ * below, own orders and cumulative depth. A click on a
+ * bid cell stages a buy at that rung's price, on an ask cell a sell
+ * (`onStage`); the staging strip above places it.
  *
  * Layout, top to bottom, filling the centre column up to a 1200px frame
  * (LADDER_FRAME, shared with the defaults bar and the strip):
  *   jump-above slot (fixed height, Re-centre on the left)
  *   column header with the grouping select
- *   rung area (measured: its height, less the spread row, sets the odd row
- *   count)
+ *   rung area (measured: its height, less the spread row, sets the even
+ *   slot count; where the book runs out of levels the slots stay empty, so
+ *   the marker stays in the middle)
  *   jump-below slot (fixed height)
  * The marker slots are always reserved, so a marker appearing never resizes
  * the rung area or moves a rung. The spread row is a row of its own between
  * the best ask and the best bid rungs; its height is set aside before rungs
  * are counted, so it never overlaps a rung and the area never overflows.
  *
- * Re-centre shows whenever the middle row is not the last price (a pin
- * held it while the price moved, or the user scrolled away).
+ * Re-centre shows whenever the window is not the centred one (a pin held it
+ * while the book moved, or the user scrolled away).
  *
  * Phone (`density="phone"`): 44px rungs in Bids | Price | Asks, a vertical
  * finger drag moves the window (useLadderWindow `touchDrag`), and the
@@ -37,7 +41,7 @@ import type { Market, OrderBook, UserOrder } from '../../types/market';
 import type { LevelChange } from '../../hooks/useOrderBook';
 import { marketUi, groupingOptions } from '../../trading/marketUi';
 import { useTickDirection } from '../../ui/useTickDirection';
-import { buildLadder, defaultCentre, ladderWindow } from './ladderModel';
+import { buildLadder, ladderWindow } from './ladderModel';
 import type { LadderModel, LadderSide } from './ladderModel';
 import { PHONE_RUNG_PX, PHONE_SPREAD_ROW_PX, RUNG_PX, SPREAD_ROW_PX, useLadderWindow } from './useLadderWindow';
 import { LADDER_FRAME } from '../layoutColumns';
@@ -88,12 +92,6 @@ export interface LadderProps {
   reveal?: LadderReveal | null;
 }
 
-/** The rung the window follows, or null when the model has nothing yet. */
-function anchorOf(model: LadderModel): number | null {
-  if (model.lastTradeRung === null && model.bestBidRung === null && model.bestAskRung === null) return null;
-  return defaultCentre(model);
-}
-
 function toneOf(model: LadderModel, rung: number): PriceTone {
   if (model.bestAskRung !== null && rung >= model.bestAskRung) return 'sell';
   if (model.bestBidRung !== null && rung <= model.bestBidRung) return 'buy';
@@ -137,16 +135,13 @@ export function Ladder({
     () => buildLadder({ market, groupTicks, bids: orderBook.bids, asks: orderBook.asks, openOrders, lastPrice: live }),
     [market, groupTicks, orderBook.bids, orderBook.asks, openOrders, live],
   );
-  const anchor = anchorOf(model);
 
   const awaitingBook = orderBook.bids.length === 0 && orderBook.asks.length === 0;
   const win = useLadderWindow({
-    anchor,
+    model,
     hold,
     resetKey: market.id,
     groupTicks,
-    minRung: model.minRung,
-    maxRung: model.maxRung,
     rungPx,
     reservePx: spreadPx,
     touchDrag: phone,
@@ -154,22 +149,36 @@ export function Ladder({
   const { dir } = useTickDirection(live);
 
   const view =
-    !awaitingBook && win.centre !== null && win.rowCount > 0 ? ladderWindow(model, win.centre, win.rowCount) : null;
+    !awaitingBook && win.rowCount > 0 ? ladderWindow(model, win.pos, win.rowCount) : null;
 
   const decimals = model.grid.decimals;
   const spread = model.spread;
   const spreadText = spread && spread.state === 'open' ? formatSmall(spread.groups) : null;
-  const spreadLabel = spreadText !== null ? `Spread ${spreadText}` : spread?.state === 'locked' ? 'Locked' : 'Crossed';
+  const spreadLabel =
+    spreadText !== null
+      ? `Spread ${spreadText}`
+      : spread
+        ? spread.state === 'locked'
+          ? 'Locked'
+          : 'Crossed'
+        : model.bestBidRung === null
+          ? 'No bids'
+          : 'No asks';
+  // The last trade is an engine price even with no level at it: it lives in
+  // the centred spread row, never on a level row.
+  const lastText = live !== null ? formatFixed(live, decimals) : null;
+  const lastWords = lastText !== null ? `last ${lastText}${dir ? (dir === 'up' ? ', up' : ', down') : ''}` : null;
   const gridLabel =
     `Price ladder, grouped by ${groupLabel}` +
+    (lastWords !== null ? `, ${lastWords}` : '') +
     (spreadText !== null ? `, spread ${spreadText}` : spread ? `, book ${spread.state}` : '');
 
   const keys = useLadderKeys({
     market,
     model,
     view,
-    centre: win.centre,
     pinTo: win.pinTo,
+    scrollBy: win.scrollBy,
     recentre: win.recentre,
     ownActions,
     onStage,
@@ -192,8 +201,11 @@ export function Ladder({
   const flashed = (priceKeys: string[]) => priceKeys.some(k => levelChanges.has(k));
 
   // The spread row: a row of its own between the best ask and the best bid
-  // rungs (its height is set aside in the row count), the rule fading from
-  // buy to sell with the spread in the price column.
+  // rows (its height is set aside in the row count), the rule fading from
+  // buy to sell, with the last trade price (and its tick arrow) and the
+  // spread in the middle. In a centred window it is the middle of the
+  // ladder, so the last price stays fixed there. Aria-hidden: the grid label
+  // carries the same words.
   const spreadRow = (
     <div
       key="spread"
@@ -203,15 +215,38 @@ export function Ladder({
       style={{ height: spreadPx }}
     >
       {!phone && <span />}
-      <span className="h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--buy))' }} />
-      <span
-        className={`justify-self-center whitespace-nowrap px-1 font-medium uppercase tracking-[0.06em] text-muted ${
-          phone ? 'text-[11px] leading-[20px]' : 'text-[10px] leading-[12px]'
-        }`}
-      >
-        {spreadLabel}
+      <span className="col-span-3 flex min-w-0 items-center gap-2">
+        <span className="h-px min-w-3 flex-1" style={{ background: 'linear-gradient(90deg, transparent, var(--buy))' }} />
+        {lastText !== null && (
+          <span
+            data-last-trade
+            className={`inline-flex flex-none items-center gap-1 rounded-[5px] bg-mid px-2 py-px font-semibold text-text-strong outline outline-1 outline-accent ${
+              phone ? 'text-[14px] leading-[20px]' : 'text-[13px] leading-[18px]'
+            }`}
+          >
+            {lastText}
+            {/* Fixed-width slot: the arrow never appears or disappears and
+                shifts the price (DESIGN.md rule 3). */}
+            <span
+              data-last-dir
+              className={`w-[10px] text-center text-[10px] leading-none ${
+                dir ? (dir === 'up' ? 'text-buy' : 'text-sell') : 'opacity-0'
+              }`}
+            >
+              {dir === 'down' ? '▼' : '▲'}
+            </span>
+          </span>
+        )}
+        <span
+          data-spread-label
+          className={`flex-none whitespace-nowrap font-medium uppercase tracking-[0.06em] text-muted ${
+            phone ? 'text-[11px] leading-[20px]' : 'text-[10px] leading-[12px]'
+          }`}
+        >
+          {spreadLabel}
+        </span>
+        <span className="h-px min-w-3 flex-1" style={{ background: 'linear-gradient(90deg, var(--sell), transparent)' }} />
       </span>
-      <span className="h-px" style={{ background: 'linear-gradient(90deg, var(--sell), transparent)' }} />
       {!phone && <span />}
     </div>
   );
@@ -241,13 +276,15 @@ export function Ladder({
       <div role="rowgroup">
         {awaitingBook
           ? Array.from({ length: win.rowCount }, (_, i) => <SkeletonRung key={i} index={i} density={density} />)
-          : view?.rows.flatMap(row => [
+          : view && [
+              view.padTop > 0 && <div key="pad-top" aria-hidden data-ladder-pad style={{ height: view.padTop * rungPx }} />,
+              ...view.rows.flatMap((row, i) => [
+              ...(view.spreadAt === i ? [spreadRow] : []),
               <Rung
                 key={row.price}
                 row={row}
                 priceText={formatFixed(row.price, decimals)}
                 tone={toneOf(model, row.rung)}
-                lastDir={dir}
                 flashBid={flashed(row.bid.priceKeys)}
                 flashAsk={flashed(row.ask.priceKeys)}
                 sizeDecimals={ui.sizeDecimals}
@@ -260,8 +297,12 @@ export function Ladder({
                 focusable={row.rung === keys.tabStopRung}
                 density={density}
               />,
-              ...(row.spreadBelow ? [spreadRow] : []),
-            ])}
+              ]),
+              view.spreadAt === view.rows.length && spreadRow,
+              view.padBottom > 0 && (
+                <div key="pad-bottom" aria-hidden data-ladder-pad style={{ height: view.padBottom * rungPx }} />
+              ),
+            ]}
       </div>
     </div>
   );
@@ -284,7 +325,7 @@ export function Ladder({
           <span className="truncate pl-2.5">Asks · tap to sell</span>
         </div>
         {rungGrid}
-        {view && !win.centred && (
+        {view && !view.centred && (
           <button type="button" onClick={win.recentre} className={`${floatBtn} right-4 top-9`}>
             Re-centre
           </button>
@@ -326,7 +367,7 @@ export function Ladder({
     >
       {/* Above: Re-centre (while not centred) and the jump marker. */}
       <div className="flex h-[34px] flex-none items-end justify-between gap-2">
-        {view && !win.centred ? (
+        {view && !view.centred ? (
           <button
             type="button"
             onClick={win.recentre}
