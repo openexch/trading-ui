@@ -303,7 +303,7 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
         <span
           aria-hidden
           data-depth-bar
-          className={`absolute ${barInset} ${isBid ? 'bg-buy-soft' : 'bg-sell-soft'}`}
+          className={`absolute ${barInset} ${isBid ? 'bg-buy-soft' : 'bg-sell-soft'} transition-[width] duration-150 ease-out motion-reduce:transition-none`}
           style={{ ...edge, width: pct(cell.bar) }}
         />
       )}
@@ -312,12 +312,12 @@ function DepthCell({ side, cell, flash, price, priceText, sizeDecimals, baseAsse
           <span
             aria-hidden
             data-own-slice
-            className={`absolute ${barInset} ${isBid ? 'bg-buy' : 'bg-sell'}`}
+            className={`absolute ${barInset} ${isBid ? 'bg-buy' : 'bg-sell'} transition-[width] duration-150 ease-out motion-reduce:transition-none`}
             style={{ ...edge, width: sliceW, opacity: 'var(--own-slice-alpha)' }}
           />
           <span
             aria-hidden
-            className={`absolute ${barInset}`}
+            className={`absolute ${barInset} transition-[width] duration-150 ease-out motion-reduce:transition-none`}
             style={{ ...edge, width: sliceW, boxShadow: `inset 0 0 0 1px var(${isBid ? '--buy' : '--sell'})` }}
           />
         </>
