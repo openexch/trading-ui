@@ -120,8 +120,10 @@ Each fixed a reported problem or protects money; keep them.
     re-queues the order, and the label says so). Stops and icebergs offer
     Cancel only.
 14. **No invented values.** Where the backend does not yet supply a value
-    (other markets' live prices, portfolio total, live fills, GTD expiry),
+    (portfolio total, live fills, GTD expiry),
     the UI shows a dash or leaves the control out; it never fabricates one.
+    Other markets' prices come only from the gateway's all-market TICKERS
+    frame; a market with no entry there shows a dash.
 15. **A panel changes size only through its handle, a preset or Reset**,
     never because data arrived or a tab changed.
 16. **Layout persistence is versioned and validated on read**; anything

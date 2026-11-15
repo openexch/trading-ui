@@ -25,6 +25,7 @@ vi.mock('../../components/Chart/Chart', () => ({
 }));
 
 import { MarketsPanel } from './MarketsPanel';
+import { EMPTY_TICKERS, mergeTickers } from '../../utils/tickers';
 import { TradesPanel } from './TradesPanel';
 import { ChartPanel } from './ChartPanel';
 import { OrdersPanel } from './OrdersPanel';
@@ -97,7 +98,7 @@ afterEach(cleanup);
 // ---- Markets -------------------------------------------------------------------
 
 describe('MarketsPanel', () => {
-  it('lists every market; only the selected one has a live price, the rest a dash', () => {
+  it('without TICKERS (today\'s backend): only the selected market has a price, the rest a dash', () => {
     render(<MarketsPanel chrome={chrome()} markets={MARKETS} market={BTC} stats={stats} onSelectMarket={() => {}} />);
     const rows = screen.getAllByRole('button').filter(b => b.hasAttribute('data-market-row'));
     expect(rows.map(r => r.getAttribute('data-market-row'))).toEqual(MARKETS.map(m => m.symbol));
@@ -116,6 +117,45 @@ describe('MarketsPanel', () => {
     const btc = screen.getAllByRole('button').find(b => b.getAttribute('data-market-row') === 'BTC-USD')!;
     expect(btc.textContent).not.toContain('0.00');
     expect(btc.textContent!.match(/–/g)).toHaveLength(2);
+  });
+
+  const tick = (marketId: number, lastPrice: number, timestamp: number) => ({
+    marketId, market: '', lastPrice, priceChange: lastPrice / 100, priceChangePercent: 1.5,
+    high24h: lastPrice, low24h: lastPrice, volume24h: 1, timestamp,
+  });
+
+  it('with TICKERS entries, other markets show their price; markets without one keep the dash', () => {
+    const tickers = mergeTickers(EMPTY_TICKERS, [tick(ETH.id, 3412.5, 10)]);
+    render(<MarketsPanel chrome={chrome()} markets={MARKETS} market={BTC} stats={stats} tickers={tickers} onSelectMarket={() => {}} />);
+    const row = (sym: string) => screen.getAllByRole('button').find(b => b.getAttribute('data-market-row') === sym)!;
+    expect(row('ETH-USD').textContent).toContain('3,412.5');
+    expect(row('ETH-USD').textContent).toContain('+1.50%');
+    expect(row('SOL-USD').textContent!.match(/–/g)).toHaveLength(2);
+    expect(row('SOL-USD').textContent).not.toMatch(/\d%/);
+  });
+
+  it('the selected market keeps its own live ticker over a TICKERS entry', () => {
+    const tickers = mergeTickers(EMPTY_TICKERS, [tick(BTC.id, 50_000, 99_999_999_999)]);
+    render(<MarketsPanel chrome={chrome()} markets={MARKETS} market={BTC} stats={stats} tickers={tickers} onSelectMarket={() => {}} />);
+    const btc = screen.getAllByRole('button').find(b => b.getAttribute('data-market-row') === 'BTC-USD')!;
+    expect(btc.textContent).toContain('97,412');
+    expect(btc.textContent).not.toContain('50,000');
+  });
+
+  it('dash and value share one fixed-width tabular column (no shift on arrival)', () => {
+    const { rerender } = render(
+      <MarketsPanel chrome={chrome()} markets={MARKETS} market={BTC} stats={null} onSelectMarket={() => {}} />,
+    );
+    const col = () =>
+      screen.getAllByRole('button').find(b => b.getAttribute('data-market-row') === 'ETH-USD')!.lastElementChild!;
+    const before = col().className;
+    expect(before).toContain('tabular-nums');
+    expect(before).toMatch(/min-w-\[9ch\]/);
+    rerender(
+      <MarketsPanel chrome={chrome()} markets={MARKETS} market={BTC} stats={null}
+        tickers={mergeTickers(EMPTY_TICKERS, [tick(ETH.id, 3412.5, 10)])} onSelectMarket={() => {}} />,
+    );
+    expect(col().className).toBe(before);
   });
 
   it('a row click switches the market', () => {

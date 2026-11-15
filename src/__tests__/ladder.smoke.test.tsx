@@ -183,6 +183,42 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(screen.getByText('Live')).toBeTruthy();
   });
 
+  it('Markets panel: dashes until TICKERS arrives, then every market priced; a switch keeps the values', async () => {
+    window.history.replaceState({}, '', '/?ui=ladder');
+    const { container } = renderApp();
+    await screen.findByRole('grid', { name: /price ladder/i });
+    const row = (sym: string) => container.querySelector(`[data-market-row="${sym}"]`)!;
+    const ws = MockWebSocket.instances.find(w => w.url.endsWith('/ws'))!;
+    const entry = (marketId: number, market: string, lastPrice: number, timestamp: number) => ({
+      marketId, market, lastPrice, priceChange: 1, priceChangePercent: 0.25,
+      high24h: lastPrice, low24h: lastPrice, volume24h: 1, timestamp,
+    });
+    const send = (msg: unknown) => act(() => ws.onmessage?.({ data: JSON.stringify(msg) }));
+
+    act(() => ws.onopen?.());
+    send({ type: 'TICKER_STATS', ...entry(1, 'BTC-USD', 97_412, 5) });
+    await waitFor(() => expect(row('BTC-USD').textContent).toContain('97,412'));
+    // Today's backend: no TICKERS, so the other markets stay dashes.
+    expect(row('ETH-USD').textContent!.match(/–/g)).toHaveLength(2);
+
+    send({
+      type: 'TICKERS',
+      tickers: [entry(1, 'BTC-USD', 90_000, 4), entry(2, 'ETH-USD', 3412.5, 4)],
+      timestamp: 4,
+    });
+    await waitFor(() => expect(row('ETH-USD').textContent).toContain('3,412.5'));
+    // The selected market keeps its fresher live ticker.
+    expect(row('BTC-USD').textContent).toContain('97,412');
+    expect(row('SOL-USD').textContent!.match(/–/g)).toHaveLength(2);
+
+    // Switch to ETH: BTC keeps a value (its live tick refreshed the map), ETH
+    // shows its TICKERS entry until its own ticker lands. No dash flicker.
+    fireEvent.click(row('ETH-USD'));
+    await screen.findByRole('button', { name: /market eth-usd\. change market/i });
+    expect(row('BTC-USD').textContent).toContain('97,412');
+    expect(row('ETH-USD').textContent).toContain('3,412.5');
+  });
+
   // ---- staging and placing ------------------------------------------------
 
   function pushBook() {

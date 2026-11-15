@@ -33,6 +33,7 @@ import type { SlotChrome } from './layout/SideColumn';
 import { useLayout } from './layout/useLayout';
 import type { PanelId } from './layout/registry';
 import { MarketsPanel } from './panels/MarketsPanel';
+import type { TickerMap } from '../utils/tickers';
 import { TradesPanel } from './panels/TradesPanel';
 import { ChartPanel } from './panels/ChartPanel';
 import type { ChartData } from './panels/ChartPanel';
@@ -46,6 +47,9 @@ export interface TerminalDesktopProps {
   markets: Market[];
   onSelectMarket: (market: Market) => void;
   stats: MarketStats | null;
+  /** Other markets' tickers from the all-market TICKERS frame (empty until
+   *  the backend sends one: those markets then print a dash). */
+  tickers: TickerMap;
   orderBook: OrderBook;
   levelChanges: Map<string, LevelChange>;
   openOrders: UserOrder[];
@@ -136,6 +140,7 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
             markets={props.markets}
             market={market}
             stats={stats}
+            tickers={props.tickers}
             onSelectMarket={props.onSelectMarket}
           />
         );
