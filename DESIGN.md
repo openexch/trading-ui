@@ -13,6 +13,36 @@ think "this is a real exchange engine, running live" within seconds. Identity
 comes from materials (tokens, type, data presentation), never from decoration.
 No ornamental effects on the trading screen.
 
+## Identity: the ledger (approved 2026-11-16, being built)
+
+The engines' logs are the identity: the screen shows the system running, not
+only a market. Approved by the owner on 2026-11-16; it is built as the
+backend supplies each value, and until then rule 14 applies (a dash, never an
+invented number). It replaces the planned header engine rail.
+
+- **Log positions are visible.** The header carries the core and ME log
+  positions, the term and the node count. Each tape row carries the log
+  position of its trade.
+- **Motor panel** (a side-slot panel): for each cluster (core, ME), each
+  node's role, commit position and entries behind the leader; the last
+  snapshot with each node's state hash and whether they match; the last
+  election; the bridge's position; each component's version and build
+  commit, linked to its public repository. A diverged hash is shown and
+  names the node.
+- **Order trail**: an own order opens its path (gateway, core accept and
+  hold, forward, ME booked, ME matched, core settled), each step with its
+  time, delta and log position.
+- **Elections are ledger rows.** A leader change is written into the tape
+  (start and end rows) and the header counter switches to a warning state;
+  order entry says it is waiting and that nothing is lost.
+- **Balance ledger**: a balance opens its movements, each with its core log
+  position, above a per-asset conservation line.
+- **Materials**: the light theme becomes paper (a warm off-white ground,
+  ink-blue wordmark and log numbers); ledger rules (a row hairline, a double
+  rule either side of the price column, a heavy rule under headers and
+  around the spread row) are structure, not ornament. Dark keeps the brand
+  ink. Trade colours keep their AA pairs on the new ground.
+
 ## Layout (desktop)
 
 - A **centre ladder**: the price column with bids on the left and asks on
