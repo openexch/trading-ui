@@ -193,6 +193,18 @@ describe('contrast', () => {
     }
   });
 
+  // The ladder's big figure (the shared leading digits) prints in --muted in
+  // the price column, which has no depth bar: the plain surface, or an
+  // own-order row tint (one side, or both halves of a two-sided row).
+  it.each(themes)('%s: the big figure in --muted is AA on the price column', (theme) => {
+    const surface = token(theme, '--surface');
+    const muted = token(theme, '--muted');
+    expect(contrast(muted, surface), 'surface').toBeGreaterThanOrEqual(AA);
+    for (const side of sides) {
+      expect(contrast(muted, over(token(theme, `--${side}-faint`), surface)), `${side} row tint`).toBeGreaterThanOrEqual(AA);
+    }
+  });
+
   // Side-coloured marks on a bar (the hover and staged outlines, the phone
   // own-order dot) are non-text: 3:1.
   it.each(themes)('%s: side-coloured marks on a depth bar reach 3:1', (theme) => {

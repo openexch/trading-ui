@@ -539,6 +539,38 @@ describe('Ladder depth', () => {
     expect(cells(999)[0].querySelector('[data-cum]')!.className).toContain('text-text-strong');
   });
 
+  it('prints the big figure quiet: the prefix every visible rung shares, once per window', () => {
+    const { container } = setup({ book: bookAround(5050), last: 5050 });
+    resize(220); // 5046 .. 5054 without 5050: "5,04x" / "5,05x"
+    const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-rung-price]'));
+    expect(rows.length).toBe(8);
+    for (const row of rows) {
+      const price = row.querySelector<HTMLElement>('[data-price]')!;
+      const quiet = price.querySelector<HTMLElement>('[data-big-figure]')!;
+      // One prefix for the whole window, in --muted (AA on the price column,
+      // tokens.test.ts); the tail keeps the side tone.
+      expect(quiet.textContent).toBe('5,0');
+      expect(quiet.className).toContain('text-muted');
+      expect(price.className).toMatch(/text-(buy|sell)\b/);
+      // The same total string as an unsplit price.
+      const text = Number(row.dataset.rungPrice).toLocaleString('en-US');
+      expect(price.textContent).toBe(text);
+      // Screen readers get the whole number from the cell's label; the
+      // visual split is hidden from them.
+      expect(price.getAttribute('aria-hidden')).toBe('true');
+      const cell = row.querySelector<HTMLElement>('[data-focus-cell]')!;
+      expect(cell.getAttribute('aria-label')!.startsWith(`${text},`)).toBe(true);
+    }
+  });
+
+  it('prints no big figure when the window crosses a decade boundary', () => {
+    const { container } = setup();
+    resize(220); // 996 .. 1,004
+    expect(container.querySelector('[data-big-figure]')).toBeNull();
+    // The last price in the spread row is never split.
+    expect(container.querySelector('[data-last-trade] [data-big-figure]')).toBeNull();
+  });
+
   it('gives the spread its own row between the best ask and the best bid rows', () => {
     const { container } = setup();
     resize(220);
