@@ -22,6 +22,7 @@ jobs:
       - run: npm run build
         env:
           VITE_ORDER_API_URL: ${{ vars.VITE_ORDER_API_URL }}
+          VITE_STREAM_WS_URL: ${{ vars.VITE_STREAM_WS_URL }}
           VITE_MARKET_WS_URL: ${{ vars.VITE_MARKET_WS_URL }}
           # PostHog's project key is write-only and ships in the client bundle
           # by design, so it is a build-time variable. Unset (a fork, a local

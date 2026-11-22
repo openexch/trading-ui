@@ -62,7 +62,7 @@ import type {
   TimeInForce,
   UserOrder,
 } from '../../types/market';
-import { MARKETS } from '../../types/market';
+import { findMarket } from '../../markets/marketStore';
 import type { LevelChange } from '../../hooks/useOrderBook';
 import { useBalances } from '../../hooks/useBalances';
 import { EV, track } from '../../analytics';
@@ -451,7 +451,7 @@ export function TradingLadder(props: TradingLadderProps) {
   const orderText = useCallback(
     (o: UserOrder) => {
       // Orders from the all-orders dialog may be on another market.
-      const m = o.marketId === market.id ? market : (MARKETS.find(x => x.id === o.marketId) ?? market);
+      const m = o.marketId === market.id ? market : (findMarket(o.marketId) ?? market);
       // A stop awaiting its trigger has no price the UI can show (the order
       // model carries no trigger price): name it instead of printing one.
       return o.status === 'PENDING_TRIGGER'

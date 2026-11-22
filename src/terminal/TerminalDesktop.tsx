@@ -11,7 +11,6 @@
  */
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import type {
-  ClusterState,
   ExtendedConnectionStatus,
   Market,
   MarketStats,
@@ -59,7 +58,6 @@ export interface TerminalDesktopProps {
   trades: TapeTrade[];
   chart: ChartData;
   status: ExtendedConnectionStatus;
-  clusterState?: ClusterState;
   onReconnect: () => void;
   theme: Theme;
   onToggleTheme: () => void;
@@ -176,7 +174,6 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
         stats={stats}
         bestBid={orderBook.bids[0]?.price ?? null}
         status={props.status}
-        clusterState={props.clusterState}
         onReconnect={props.onReconnect}
         theme={props.theme}
         onToggleTheme={props.onToggleTheme}

@@ -69,7 +69,6 @@ function order(side: 'BID' | 'ASK', price: number, qty = 1, filled = 0): UserOrd
     omsOrderId: String(1000 + id),
     marketId: TEST.id,
     market: TEST.symbol,
-    userId: 1,
     side,
     type: 'LIMIT',
     price,

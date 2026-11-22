@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { MarketStats } from './MarketStats';
-import { MARKETS } from '../../types/market';
+import { TEST_MARKETS as MARKETS } from '../../test/markets';
 import type { OrderBook } from '../../types/market';
 
 const emptyBook: OrderBook = { bids: [], asks: [], lastUpdate: 0 };

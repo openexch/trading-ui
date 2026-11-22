@@ -36,7 +36,7 @@ vi.mock('../../hooks/useExecutions', () => ({
 }));
 
 import { OrderHistory } from './OrderHistory';
-import { MARKETS } from '../../types/market';
+import { TEST_MARKETS as MARKETS } from '../../test/markets';
 
 describe('OrderHistory reject reason', () => {
   afterEach(() => {

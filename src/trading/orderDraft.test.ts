@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, it, expect } from 'vitest';
-import { MARKETS } from '../types/market';
+import { TEST_MARKETS as MARKETS } from '../test/markets';
 import type { OrderSide, OrderType } from '../types/market';
 import {
   sizeForPercent,

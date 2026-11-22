@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { API_BASE, getAuthHeaders } from '../config';
+import { apiRequest } from '../api/gateway';
+import { parseDecimal } from '../api/decimal';
 import { useAuth } from '../auth/AuthContext';
 
 export interface AssetBalance {
   asset: string;
-  assetId: number;
+  /** API form, a decimal string. */
+  assetId: string;
   available: number;
   locked: number;
   total: number;
@@ -23,48 +25,51 @@ const BalancesContext = createContext<BalancesContextValue | null>(null);
 
 const POLL_MS = 5000;
 
+/** Map GET /api/v2/balances to UI state. Exported for tests. */
+export function mapBalances(raw: unknown): AssetBalance[] | null {
+  const assets = (raw as { assets?: unknown } | null)?.assets;
+  if (!Array.isArray(assets)) return null;
+  return assets.map((a: Record<string, unknown>) => ({
+    asset: String(a.asset),
+    assetId: String(a.assetId),
+    available: parseDecimal(a.available, 'available'),
+    locked: parseDecimal(a.locked, 'locked'),
+    total: parseDecimal(a.total, 'total'),
+  }));
+}
+
 /**
- * App-wide account balances (GET /api/v1/accounts/{userId}, oms#72 scoped
- * read). Polls every 5s while a session exists; consumers are the order
- * form (Avbl + % sizing) and the account drawer. Identity is enforced from
- * the bearer token — the path segment is display-plumbing only.
+ * App-wide account balances (GET /api/v2/balances, every asset of the core
+ * config, zero balances included). Polls every 5s while a session exists;
+ * consumers are the order form (Avbl + % sizing) and the account drawer.
+ * The caller is the credential's user; no id is sent.
  */
 export function BalancesProvider({ children }: { children: ReactNode }) {
-  const userId = useAuth().session?.userId ?? null;
+  const token = useAuth().session?.token ?? null;
   const [assets, setAssets] = useState<AssetBalance[]>([]);
 
   const refresh = useCallback(async () => {
-    if (userId === null) return; // signed out: nothing to fetch
+    if (token === null) return; // signed out: nothing to fetch
     try {
-      const res = await fetch(`${API_BASE}/api/v1/accounts/${userId}`, { headers: getAuthHeaders() });
+      const res = await apiRequest('/balances', { token });
       if (res.ok) {
-        const data = await res.json();
-        // Balances cross as exact decimal strings (oms#39)
-        if (Array.isArray(data?.assets)) {
-          setAssets(
-            data.assets.map((a: Record<string, unknown>) => ({
-              ...a,
-              available: Number(a.available),
-              locked: Number(a.locked),
-              total: Number(a.total),
-            }) as AssetBalance)
-          );
-        }
+        const mapped = mapBalances(res.body);
+        if (mapped) setAssets(mapped);
       }
     } catch (e) {
       console.error('Failed to fetch balances:', e);
     }
-  }, [userId]);
+  }, [token]);
 
   useEffect(() => {
-    if (userId === null) {
+    if (token === null) {
       setAssets([]);
       return;
     }
     refresh();
     const interval = setInterval(refresh, POLL_MS);
     return () => clearInterval(interval);
-  }, [refresh, userId]);
+  }, [refresh, token]);
 
   return (
     <BalancesContext.Provider value={{ assets, refresh }}>

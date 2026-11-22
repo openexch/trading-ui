@@ -27,7 +27,9 @@ Web-based trading interface for the Open Exchange ultra-low-latency matching eng
 ### Prerequisites
 
 - Node.js 22+
-- Running backend services (matching engine, OMS, market gateway)
+- Running backend services: the REST gateway (`oe-gateway`, `/api/v2`), the user
+  stream (`oe-stream`, `/ws/v2`) and the market-data service (`oe-marketdata`,
+  `/ws` and `/api/candles`)
 
 ### Install & Run
 
@@ -41,10 +43,11 @@ if you cannot bind privileged ports) with proxies configured for:
 
 | Path | Target |
 |------|--------|
-| `/ws` | `ws://localhost:8081` (market data) |
-| `/api/v1` | `http://localhost:8080` (order API) |
+| `/ws/v2` | `ws://localhost:8084` (user stream, `oe-stream`) |
+| `/ws` | `ws://localhost:8081` (market data, `oe-marketdata`) |
+| `/api/v2` | `http://localhost:8080` (REST gateway, `oe-gateway`) |
 | `/api/admin` | `http://localhost:8082` (admin gateway) |
-| `/api/candles` | `http://localhost:8081` (candles) |
+| `/api/candles` | `http://localhost:8081` (candles, `oe-marketdata`) |
 
 ### Build
 
@@ -52,6 +55,18 @@ if you cannot bind privileged ports) with proxies configured for:
 npm run build
 npm run preview
 ```
+
+Build variables (unset means same origin, through the proxies above):
+
+| Variable | Value |
+|---|---|
+| `VITE_ORDER_API_URL` | origin of the REST gateway (serves `/api/v2`) |
+| `VITE_STREAM_WS_URL` | the full `/ws/v2` URL of the user stream; never derived from the REST origin |
+| `VITE_MARKET_WS_URL` | origin of the market-data service (`/ws`); the `/api/candles` base is derived from it |
+
+The gateway and the market-data service must list the UI's origin in
+`GATEWAY_CORS_ORIGINS` and `MD_CORS_ORIGINS`. The market list (symbols, assets,
+ticks, price ranges) comes from `GET /api/v2/markets`.
 
 ## Project Structure
 

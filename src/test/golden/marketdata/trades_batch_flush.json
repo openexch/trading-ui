@@ -1,0 +1,1 @@
+{"type":"TRADES_BATCH","marketId":3,"trades":[{"tradeId":"105","price":"15002","quantity":"0.05","tradeCount":1,"side":"BUY","timestamp":1700000140000},{"tradeId":"106","price":"15003","quantity":"0.075","tradeCount":1,"side":"SELL","timestamp":1700000165000}],"timestamp":1700000190020}

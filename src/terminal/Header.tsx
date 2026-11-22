@@ -15,7 +15,7 @@
  * Stats are nullable: during a market switch every value prints a dash,
  * never $0.00 (DESIGN.md rule 2).
  */
-import type { ClusterState, ExtendedConnectionStatus, Market, MarketStats } from '../types/market';
+import type { ExtendedConnectionStatus, Market, MarketStats } from '../types/market';
 import type { Theme } from '../hooks/useTheme';
 import { STACK_VERSION } from '../config';
 import { LogoMark } from '../components/LogoMark';
@@ -39,7 +39,6 @@ export interface HeaderProps {
   /** Best bid, used for the hero when the ticker has no last price yet. */
   bestBid: number | null;
   status: ExtendedConnectionStatus;
-  clusterState?: ClusterState;
   onReconnect: () => void;
   theme: Theme;
   onToggleTheme: () => void;
@@ -123,7 +122,7 @@ export function Header(props: HeaderProps) {
       </div>
 
       <div className={`flex ${AFTER_CENTRE} items-center justify-end gap-2.5 px-[18px]`}>
-        <LivePill status={props.status} clusterState={props.clusterState} onReconnect={props.onReconnect} />
+        <LivePill status={props.status} onReconnect={props.onReconnect} />
         {props.username ? (
           <button
             type="button"

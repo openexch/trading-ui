@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 import { EV, track } from '../analytics';
 import type { ReactNode } from 'react';
-import { API_BASE } from '../config';
+import { apiErrorText, apiRequest } from '../api/gateway';
 import { getSession, isDevToken, loadSession, setSession, subscribeSession } from './session';
 import type { Session } from './session';
 
@@ -18,30 +18,40 @@ interface AuthContextValue {
   ready: boolean;
   login: (username: string, password: string) => Promise<AuthResult>;
   register: (username: string, password: string) => Promise<AuthResult>;
-  logout: () => void;
+  /** Revokes the token (POST /api/v2/auth/logout), then clears the local
+   *  session. A failed call still clears locally. */
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** POST /api/v1/auth/{login,register} (oms#72). Success stores the session;
- *  the token ROTATES on login (single active session per user). */
+/** The userId of an auth answer: a decimal id string in v2. */
+function userIdOf(raw: unknown): number | null {
+  if (typeof raw !== 'string' || !/^[1-9][0-9]{0,15}$/.test(raw)) return null;
+  return Number(raw);
+}
+
+/** POST /api/v2/auth/{login,register}. Success stores the session; the token
+ *  rotates on login (one token per user). */
 async function authCall(path: 'login' | 'register', username: string, password: string): Promise<AuthResult> {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/auth/${path}`, {
+    const res = await apiRequest<Record<string, unknown>>(`/auth/${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      auth: false,
+      body: { username, password },
     });
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (res.ok && typeof data.token === 'string') {
-      setSession({
-        token: data.token,
-        userId: typeof data.userId === 'number' ? data.userId : Number(data.userId),
-        username: typeof data.username === 'string' ? data.username : username,
-      });
-      return { ok: true };
+    if (!res.ok) return { ok: false, error: apiErrorText(res.error, res.status) };
+    const data = res.body ?? {};
+    const userId = userIdOf(data.userId);
+    if (typeof data.token !== 'string' || userId === null) {
+      return { ok: false, error: `Error ${res.status}: unexpected answer` };
     }
-    return { ok: false, error: typeof data.error === 'string' ? data.error : `Error ${res.status}` };
+    setSession({
+      token: data.token,
+      userId,
+      username: typeof data.username === 'string' ? data.username : username,
+    });
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
   }
@@ -51,9 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const session = useSyncExternalStore(subscribeSession, getSession);
   const [ready, setReady] = useState(false);
 
-  // Validate the stored session once on mount. Dev tokens skip /me; a network
-  // error keeps the session (the OMS may just be briefly down); only a
-  // definitive 401 drops it.
+  // Validate the stored session once on mount (GET /api/v2/auth/me). Dev
+  // tokens skip it; a network error or a 503 keeps the session (the gateway
+  // may be briefly down); only a definitive 401 drops it.
   useEffect(() => {
     const stored = loadSession();
     if (!stored || isDevToken(stored.token)) {
@@ -63,9 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
-          headers: { Authorization: `Bearer ${stored.token}` },
-        });
+        const res = await apiRequest('/auth/me', { token: stored.token });
         if (!cancelled && res.status === 401) setSession(null);
       } catch {
         /* network error: keep the session */
@@ -85,8 +93,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (username: string, password: string) => authCall('register', username, password),
     []
   );
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     track(EV.sign_out, {});
+    const token = getSession()?.token;
+    if (token) {
+      try {
+        // 204 revokes the token. A refusal (a dev token is 404
+        // FEATURE_DISABLED) or a network error changes nothing here: the
+        // local session is cleared either way.
+        const res = await apiRequest('/auth/logout', { method: 'POST', token });
+        if (!res.ok) console.warn('[auth] logout refused:', res.status, res.error.code);
+      } catch (e) {
+        console.warn('[auth] logout failed:', e);
+      }
+    }
     setSession(null);
   }, []);
 

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { ExtendedConnectionStatus, ClusterState } from '../../types/market';
+import type { ExtendedConnectionStatus } from '../../types/market';
 
 interface ConnectionStatusProps {
   status: ExtendedConnectionStatus;
-  clusterState?: ClusterState;
   onReconnect: () => void;
   /** Drop the status word and keep the dot. The mobile header cannot afford
    *  ~65px of prose; the colour already carries the state, and Reconnect
@@ -11,7 +10,7 @@ interface ConnectionStatusProps {
   compact?: boolean;
 }
 
-export function ConnectionStatus({ status, clusterState, onReconnect, compact = false }: ConnectionStatusProps) {
+export function ConnectionStatus({ status, onReconnect, compact = false }: ConnectionStatusProps) {
   const statusText: Record<ExtendedConnectionStatus, string> = {
     connecting: 'Connecting...',
     connected: 'Connected',
@@ -49,9 +48,6 @@ export function ConnectionStatus({ status, clusterState, onReconnect, compact = 
   // Show reconnect button for disconnected/error states
   const showReconnect = status === 'disconnected' || status === 'error';
 
-  // Show leader info when connected and cluster state is available
-  const showLeader = status === 'connected' && clusterState && clusterState.leaderId >= 0;
-
   return (
     <div
       className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-full border bg-transparent font-sans text-[11px] font-medium transition-colors ${pillBorder} ${compact ? 'px-2.5' : 'px-3'}`}
@@ -63,14 +59,6 @@ export function ConnectionStatus({ status, clusterState, onReconnect, compact = 
       {!compact && (
         <span className={`whitespace-nowrap text-[11px] ${isTransition ? 'text-warn' : 'text-muted'}`}>
           {statusText[status]}
-        </span>
-      )}
-      {showLeader && (
-        <span
-          title="Current cluster leader"
-          className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[9px] font-medium tabular-nums text-muted"
-        >
-          L{clusterState.leaderId}
         </span>
       )}
       {showReconnect && (

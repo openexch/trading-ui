@@ -19,8 +19,8 @@ import type {
  * per animation frame, so all resulting setStates batch into a single render.
  *
  * Conflation rules by type:
- * - TICKER_STATS (per market), TICKERS (all markets, one slot),
- *   CLUSTER_STATUS: keep-latest, replaced in place.
+ * - TICKER_STATS (per market), TICKERS (all markets, one slot): keep-latest,
+ *   replaced in place.
  * - CANDLE_UPDATE (per market+interval+bucket): keep-latest in place. Distinct
  *   buckets keep distinct slots so the new-bucket append still happens.
  * - CANDLE_HISTORY: supersedes queued candle messages for its market.
@@ -36,9 +36,9 @@ import type {
  *   snapshot ({action:'refresh'}), which is exactly "skip to current state".
  * - TRADES_BATCH (per market): merged in place (concat + cap; the UI renders
  *   the newest 50).
- * - Everything else (CLUSTER_EVENT, ERROR, ...): passed through in arrival
- *   order. (User order events no longer cross this socket — they come from
- *   the user-scoped OMS /ws/v1 stream, see useOmsSocket.)
+ * - Everything else (ERROR, ...): passed through in arrival order. (User
+ *   order events do not cross this socket: they come from the user stream
+ *   /ws/v2, see useUserStream.)
  */
 
 const MAX_PENDING_BOOK_DELTAS = 3000;
@@ -95,9 +95,6 @@ export class MessageConflator {
       case 'TICKERS':
         // Each frame carries every priced market, so the latest supersedes.
         this.replaceInPlace('TK', msg);
-        return;
-      case 'CLUSTER_STATUS':
-        this.replaceInPlace('CS', msg);
         return;
       case 'CANDLE_UPDATE': {
         const m = msg as CandleUpdateMessage;

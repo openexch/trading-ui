@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Fills: the user's executions (GET /api/v1/executions, latest 100). There
+ * Fills: the user's executions (GET /api/v2/fills, latest 100). There
  * is no fills stream yet, so the list refreshes on mount (useExecutions),
  * whenever the total filled quantity across the user's orders changes or an
  * order leaves the list, and from the refresh button. Signed out, the hook
@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef } from 'react';
 import type { UserOrder } from '../../types/market';
-import { MARKETS } from '../../types/market';
+import { findMarket } from '../../markets/marketStore';
 import { useExecutions } from '../../hooks/useExecutions';
 import type { ExecutionEntry } from '../../hooks/useExecutions';
 import { marketUi } from '../../trading/marketUi';
@@ -46,7 +46,7 @@ export function useFillsRefresh(orders: readonly UserOrder[], refresh: () => voi
 }
 
 function FillRow({ e }: { e: ExecutionEntry }) {
-  const market = MARKETS.find(m => m.id === e.marketId);
+  const market = findMarket(e.marketId);
   const buy = e.side === 'BUY';
   const price = market ? formatFixed(e.price, tickDecimals(market.tickSize)) : String(e.price);
   const size = market ? formatFixed(e.quantity, marketUi(market).sizeDecimals) : String(e.quantity);

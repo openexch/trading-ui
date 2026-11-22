@@ -21,7 +21,7 @@ vi.mock('../../hooks/useBalances', () => ({
 }));
 
 import { OrderForm } from './OrderForm';
-import { MARKETS } from '../../types/market';
+import { TEST_MARKETS as MARKETS } from '../../test/markets';
 
 const noop = async () => ({ success: true, message: '' });
 

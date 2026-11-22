@@ -17,6 +17,8 @@ vi.mock('../components/Chart/Chart', () => ({
 import App from '../App';
 import { AuthProvider } from '../auth/AuthContext';
 import { BalancesProvider } from '../hooks/useBalances';
+import { apiError, apiOrder, asResponse, bookSnapshotFrame, gatewayReply, orderFrame, tickerEntry } from '../test/wire';
+import type { Reply } from '../test/wire';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -70,37 +72,32 @@ function stubMatchMedia() {
 
 type Call = { url: string; init?: RequestInit };
 let calls: Call[] = [];
-/** What POST /api/v1/orders answers; tests swap it for a reject. */
-let postReply: unknown = { accepted: true, omsOrderId: '331911111111111111', status: 'PENDING_NEW' };
+/** What POST /api/v2/orders answers (default: the gateway's 201); tests
+ *  swap it for a refusal. */
+let postReply: Reply | null = null;
 
-/** DELETE answers by omsOrderId (default: accepted), and optional gates a
- *  test resolves to hold a DELETE in flight. */
-let deleteReplies: Record<string, unknown> = {};
+/** DELETE answers by orderId (default: the gateway's 200 PENDING_CANCEL), and
+ *  optional gates a test resolves to hold a DELETE in flight. */
+let deleteReplies: Record<string, Reply> = {};
 let deleteGates: Record<string, Promise<void>> = {};
-let putReply: unknown = { accepted: true };
 
 function stubFetch() {
   calls = [];
   deleteReplies = {};
   deleteGates = {};
-  putReply = { accepted: true };
-  postReply = { accepted: true, omsOrderId: '331911111111111111', status: 'PENDING_NEW' };
+  postReply = null;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
-    let body: unknown = {};
-    if (url.includes('/api/v1/orders/') && init?.method === 'DELETE') {
+    if (url.includes('/api/v2/orders/') && init?.method === 'DELETE') {
       const id = url.split('/').pop()!;
       const gate = deleteGates[id];
       if (gate) await gate;
-      body = deleteReplies[id] ?? { accepted: true, message: 'Order cancelled' };
-    } else if (url.includes('/api/v1/orders/') && init?.method === 'PUT') body = putReply;
-    else if (url.includes('/api/v1/orders') && init?.method === 'POST') body = postReply;
-    else if (url.includes('/api/v1/auth/me')) body = { userId: 1, username: 'dev' };
-    else if (url.includes('/api/v1/orders') || url.includes('/api/v1/executions')) body = [];
-    else if (url.includes('/api/v1/accounts')) body = { userId: 1, assets: [] };
-    else if (url.includes('/api/candles')) body = { candles: [] };
-    return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as Response;
+      if (deleteReplies[id]) return asResponse(deleteReplies[id]);
+    } else if (url.endsWith('/api/v2/orders') && init?.method === 'POST' && postReply) {
+      return asResponse(postReply);
+    }
+    return asResponse(gatewayReply(url, init?.method));
   }) as unknown as typeof fetch;
 }
 
@@ -175,7 +172,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     act(() => {
       ws.onopen?.();
       ws.onmessage?.({
-        data: JSON.stringify({ type: 'BOOK_SNAPSHOT', marketId: 1, market: 'BTC-USD', bids, asks, timestamp: 1 }),
+        data: bookSnapshotFrame(1, bids, asks, 1),
       });
     });
     await waitFor(() => expect(container.querySelectorAll('[data-rung-price]').length).toBe(10));
@@ -189,8 +186,8 @@ describe('Ladder shell (?ui=ladder)', () => {
     await screen.findByRole('grid', { name: /price ladder/i });
     const row = (sym: string) => container.querySelector(`[data-market-row="${sym}"]`)!;
     const ws = MockWebSocket.instances.find(w => w.url.endsWith('/ws'))!;
-    const entry = (marketId: number, market: string, lastPrice: number, timestamp: number) => ({
-      marketId, market, lastPrice, priceChange: 1, priceChangePercent: 0.25,
+    const entry = (marketId: number, _market: string, lastPrice: number, timestamp: number) => tickerEntry({
+      marketId, lastPrice, priceChange: 1, priceChangePercent: 0.25,
       high24h: lastPrice, low24h: lastPrice, volume24h: 1, timestamp,
     });
     const send = (msg: unknown) => act(() => ws.onmessage?.({ data: JSON.stringify(msg) }));
@@ -228,12 +225,12 @@ describe('Ladder shell (?ui=ladder)', () => {
     act(() => {
       ws.onopen?.();
       ws.onmessage?.({
-        data: JSON.stringify({ type: 'BOOK_SNAPSHOT', marketId: 1, market: 'BTC-USD', bids, asks, timestamp: 1 }),
+        data: bookSnapshotFrame(1, bids, asks, 1),
       });
     });
   }
 
-  const posts = () => calls.filter(c => c.url.includes('/api/v1/orders') && c.init?.method === 'POST');
+  const posts = () => calls.filter(c => c.url.endsWith('/api/v2/orders') && c.init?.method === 'POST');
 
   async function ladderWithBook() {
     window.history.replaceState({}, '', '/?ui=ladder');
@@ -264,9 +261,9 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(body.price).toBe('97400.00000000');
     expect(body.quantity).toBe('0.25000000');
     expect(body.side).toBe('BUY');
-    expect(body.orderType).toBe('LIMIT');
+    expect(body.type).toBe('LIMIT');
     expect(body.timeInForce).toBe('GTC');
-    expect(body.marketId).toBe(1);
+    expect(body.marketId).toBe('1');
     expect(body.userId).toBeUndefined();
     const headers = post.init!.headers as Record<string, string>;
     expect(headers.Authorization).toMatch(/^Bearer /);
@@ -304,7 +301,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.keyDown(document.body, { key: 'Enter' });
     await waitFor(() => expect(posts()).toHaveLength(1));
     const body = JSON.parse(String(posts()[0].init!.body));
-    expect(body.orderType).toBe('MARKET');
+    expect(body.type).toBe('MARKET');
     expect(body.side).toBe('BUY');
     expect(body.quantity).toBe('0.25000000');
     expect(body.userId).toBeUndefined();
@@ -347,7 +344,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.keyDown(document.body, { key: 'Enter' });
     await waitFor(() => expect(posts()).toHaveLength(1));
     const body = JSON.parse(String(posts()[0].init!.body));
-    expect(body.orderType).toBe('LIMIT');
+    expect(body.type).toBe('LIMIT');
     expect(body.side).toBe('BUY');
     expect(body.price).toBe('97390.00000000');
     expect(body.quantity).toBe('0.25000000');
@@ -404,7 +401,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.click(limitBtn('sell'));
     await waitFor(() => expect(posts()).toHaveLength(1));
     const body = JSON.parse(String(posts()[0].init!.body));
-    expect([body.side, body.orderType, body.price]).toEqual(['SELL', 'LIMIT', '97420.00000000']);
+    expect([body.side, body.type, body.price]).toEqual(['SELL', 'LIMIT', '97420.00000000']);
     // A crossing one still stages first.
     fireEvent.change(priceInput(), { target: { value: '97400' } });
     fireEvent.click(limitBtn('sell'));
@@ -425,7 +422,7 @@ describe('Ladder shell (?ui=ladder)', () => {
 
   it('a rejected order shows an alert in the strip and stays staged', async () => {
     await ladderWithBook();
-    postReply = { accepted: false, rejectReason: 'INSUFFICIENT_BALANCE' };
+    postReply = { status: 422, body: apiError('REJECTED', 'rejected by the core', 'INSUFFICIENT_FUNDS') };
     const cell = screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,400/i });
     fireEvent.click(cell);
     fireEvent.keyDown(cell, { key: 'Enter' });
@@ -437,28 +434,23 @@ describe('Ladder shell (?ui=ladder)', () => {
 
   it('an async engine reject surfaces as an alert with the code as its title', async () => {
     await ladderWithBook();
-    const oms = MockWebSocket.instances.find(w => w.url.endsWith('/ws/v1'))!;
+    const oms = MockWebSocket.instances.find(w => w.url.endsWith('/ws/v2'))!;
     act(() => {
       oms.onopen?.();
       oms.onmessage?.({
-        data: JSON.stringify({
-          omsOrderId: '42',
-          clusterOrderId: '0',
-          userId: 1,
-          marketId: 1,
-          side: 'BUY',
-          orderType: 'LIMIT',
-          timeInForce: 'GTC',
-          price: '97400',
-          quantity: '0.25',
-          filledQty: '0',
-          remainingQty: '0.25',
-          stopPrice: null,
-          status: 'REJECTED',
-          rejectReason: 'PRICE_OUT_OF_RANGE',
-          createdAtMs: 1,
-          updatedAtMs: 1,
-        }),
+        data: orderFrame(
+          apiOrder({
+            orderId: '42',
+            meOrderId: null,
+            price: '97400',
+            quantity: '0.25',
+            remainingQuantity: '0.25',
+            status: 'REJECTED',
+            reason: 'PRICE_OUT_OF_RANGE',
+          }),
+          11,
+          'REJECTED',
+        ),
       });
     });
     const alert = await screen.findByRole('alert');
@@ -490,11 +482,20 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,395/i }));
     const strip = screen.getByRole('status', { name: /staged order/i });
     expect(strip.textContent).toContain('Post only · IOC');
+    // The core takes GTC and GTD only on a post-only order: refused before sending.
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('this time in force is not available for this order type');
+    expect(posts()).toHaveLength(0);
+    // Post only · GTC goes out as LIMIT_MAKER GTC.
+    fireEvent.click(screen.getByRole('button', { name: /order type and time in force: post only/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^gtc/i }));
+    fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,395/i }));
     fireEvent.keyDown(document.body, { key: 'Enter' });
     await waitFor(() => expect(posts()).toHaveLength(1));
     const body = JSON.parse(String(posts()[0].init!.body));
-    expect(body.orderType).toBe('LIMIT_MAKER');
-    expect(body.timeInForce).toBe('IOC');
+    expect(body.type).toBe('LIMIT_MAKER');
+    expect(body.timeInForce).toBe('GTC');
   });
 
   it('presets and the size field set the staged size', async () => {
@@ -511,8 +512,8 @@ describe('Ladder shell (?ui=ladder)', () => {
   // ---- rung menu, order popovers, own-order actions, one-click ------------
 
   const strip = () => screen.getByRole('status', { name: /staged order/i });
-  const deletes = () => calls.filter(c => c.url.includes('/api/v1/orders/') && c.init?.method === 'DELETE');
-  const puts = () => calls.filter(c => c.url.includes('/api/v1/orders/') && c.init?.method === 'PUT');
+  const deletes = () => calls.filter(c => c.url.includes('/api/v2/orders/') && c.init?.method === 'DELETE');
+  const puts = () => calls.filter(c => c.url.includes('/api/v2/orders/') && c.init?.method === 'PUT');
 
   /** Push an own order through the OMS socket (the user-scoped feed). */
   function pushOwn(o: {
@@ -524,29 +525,28 @@ describe('Ladder shell (?ui=ladder)', () => {
     status?: string;
     marketId?: number;
   }) {
-    const oms = MockWebSocket.instances.find(w => w.url.endsWith('/ws/v1'))!;
+    const oms = MockWebSocket.instances.find(w => w.url.endsWith('/ws/v2'))!;
     const q = (o.qty ?? 0.5).toFixed(8);
     act(() => {
       oms.onopen?.();
       oms.onmessage?.({
-        data: JSON.stringify({
-          omsOrderId: o.id,
-          clusterOrderId: '7',
-          userId: 1,
-          marketId: o.marketId ?? 1,
-          side: o.side ?? 'BUY',
-          orderType: o.type ?? 'LIMIT',
-          timeInForce: 'GTC',
-          price: o.price.toFixed(8),
-          quantity: q,
-          filledQty: '0',
-          remainingQty: q,
-          stopPrice: null,
-          status: o.status ?? 'NEW',
-          rejectReason: null,
-          createdAtMs: Number(o.id),
-          updatedAtMs: Number(o.id),
-        }),
+        data: orderFrame(
+          apiOrder({
+            orderId: o.id,
+            meOrderId: '7',
+            marketId: String(o.marketId ?? 1),
+            side: o.side ?? 'BUY',
+            type: o.type ?? 'LIMIT',
+            price: o.price.toFixed(8),
+            quantity: q,
+            filledQuantity: '0',
+            remainingQuantity: q,
+            status: o.status ?? 'NEW',
+            createdAt: Number(o.id),
+            updatedAt: Number(o.id),
+          }),
+          Number(o.id),
+        ),
       });
     });
   }
@@ -608,7 +608,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.keyDown(document.body, { key: 'Enter' });
     await waitFor(() => expect(posts()).toHaveLength(1));
     const body = JSON.parse(String(posts()[0].init!.body));
-    expect(body.orderType).toBe('STOP_LIMIT');
+    expect(body.type).toBe('STOP_LIMIT');
     expect(body.side).toBe('SELL');
     expect(body.stopPrice).toBe('97390.00000000');
     expect(body.price).toBe('97384.00000000');
@@ -638,7 +638,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.keyDown(document.body, { key: 'Enter' });
     await waitFor(() => expect(posts()).toHaveLength(1));
     const body = JSON.parse(String(posts()[0].init!.body));
-    expect(body.orderType).toBe('ICEBERG');
+    expect(body.type).toBe('ICEBERG');
     expect(body.price).toBe('97395.00000000');
     expect(body.displayQuantity).toBe('0.05000000');
   });
@@ -654,7 +654,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     fireEvent.change(input, { target: { value: '97395.4' } });
     fireEvent.click(screen.getByRole('button', { name: /^move$/i }));
     await waitFor(() => expect(puts()).toHaveLength(1));
-    expect(puts()[0].url).toMatch(/\/api\/v1\/orders\/9001$/);
+    expect(puts()[0].url).toMatch(/\/api\/v2\/orders\/9001$/);
     const body = JSON.parse(String(puts()[0].init!.body));
     expect(body).toEqual({ price: '97395.00000000' });
     await waitFor(() => expect(strip().textContent).toContain('Moved to 97,395 (re-queued)'));
@@ -699,7 +699,8 @@ describe('Ladder shell (?ui=ladder)', () => {
     await ladderWithBook();
     pushOwn({ id: '9301', price: 97_390 });
     pushOwn({ id: '9302', price: 97_380 });
-    deleteReplies['9302'] = { accepted: false, message: 'ORDER_NOT_FOUND' };
+    // 409 AMEND_PENDING: refused, and the order is still open.
+    deleteReplies['9302'] = { status: 409, body: apiError('CONFLICT', 'conflict', 'AMEND_PENDING') };
     fireEvent.click(await screen.findByRole('button', { name: /^cancel all · 2$/i }));
     expect(strip().textContent).toContain('Cancel all 2 open BTC-USD orders?');
     expect(deletes()).toHaveLength(0);
@@ -708,7 +709,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     const alert = await screen.findByRole('alert');
     expect(deletes()).toHaveLength(2);
     expect(alert.textContent).toContain('1 cancelled, 1 failed');
-    expect(alert.textContent).toContain('ORDER_NOT_FOUND');
+    expect(alert.textContent).toContain('an amend of this order is still on its way');
     expect(alert.getAttribute('title')).toContain('97,380');
     expect(screen.queryByRole('button', { name: /your buy order at 97,390/i })).toBeNull();
     expect(screen.getByRole('button', { name: /your buy order at 97,380/i })).toBeTruthy();
@@ -780,7 +781,7 @@ describe('Ladder shell (?ui=ladder)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel Sell 0.50 stop loss, awaiting trigger' }));
     await waitFor(() => expect(deletes()).toHaveLength(2));
-    expect(deletes()[1].url).toMatch(/\/api\/v1\/orders\/9602$/);
+    expect(deletes()[1].url).toMatch(/\/api\/v2\/orders\/9602$/);
     await waitFor(() => expect(strip().textContent).toContain('Cancelled: Sell 0.5 BTC stop, awaiting trigger'));
   });
 
@@ -843,7 +844,7 @@ describe('Ladder shell (?ui=ladder)', () => {
       const asks = Array.from({ length: 20 }, (_, i) => ({ price: bid + 5 + i * 5, quantity: 1, orderCount: 1 }));
       act(() => {
         ws.onmessage?.({
-          data: JSON.stringify({ type: 'BOOK_SNAPSHOT', marketId: 1, market: 'BTC-USD', bids, asks, timestamp: ts++ }),
+          data: bookSnapshotFrame(1, bids, asks, ts++),
         });
       });
     };
@@ -980,7 +981,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(body.side).toBe('BUY');
     expect(body.price).toBe('97395.00000000');
     expect(body.quantity).toBe('0.25000000');
-    expect(body.orderType).toBe('LIMIT');
+    expect(body.type).toBe('LIMIT');
     expect(body.userId).toBeUndefined();
     // Focus stayed on the ladder.
     expect(focusedRung()).toBe('97395');
@@ -997,7 +998,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(strip().textContent).toContain('press Enter again');
     key('Enter');
     await waitFor(() => expect(posts()).toHaveLength(1));
-    expect(JSON.parse(String(posts()[0].init!.body)).orderType).toBe('MARKET');
+    expect(JSON.parse(String(posts()[0].init!.body)).type).toBe('MARKET');
   });
 
   it('size, type, TIF and one-click keys change the defaults and say so in the strip', async () => {
@@ -1031,7 +1032,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(focusedRung()).toBe('97390');
     key('Delete');
     await waitFor(() => expect(deletes()).toHaveLength(1));
-    expect(deletes()[0].url).toMatch(/\/api\/v1\/orders\/9501$/);
+    expect(deletes()[0].url).toMatch(/\/api\/v2\/orders\/9501$/);
     await waitFor(() => expect(strip().textContent).toContain('Cancelled: Buy 0.5 BTC @ 97,390'));
   });
 
@@ -1045,7 +1046,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(focusedRung()).toBe('97390');
     key('ArrowUp', { altKey: true });
     await waitFor(() => expect(puts()).toHaveLength(1));
-    expect(puts()[0].url).toMatch(/\/api\/v1\/orders\/9601$/);
+    expect(puts()[0].url).toMatch(/\/api\/v2\/orders\/9601$/);
     expect(JSON.parse(String(puts()[0].init!.body))).toEqual({ price: '97391.00000000' });
     // Focus goes with the order; 97,391 has no level until the book shows the
     // moved order, so the nearest row (97,390) holds the focus meanwhile.
@@ -1190,7 +1191,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     expect(ordersPanel().querySelector('[data-order-row="9811"]')!.getAttribute('data-pending')).toBe('cancel');
     release();
     await waitFor(() => expect(dlg.querySelector('[data-cancel-notice]')?.textContent).toBe('Cancelled: Buy 0.50 BTC-USD at 97,390'));
-    expect(deletes()[0].url).toMatch(/\/api\/v1\/orders\/9811$/);
+    expect(deletes()[0].url).toMatch(/\/api\/v2\/orders\/9811$/);
   });
 
   it('View all: Show on ladder switches market, closes the dialog and focuses the order rung', async () => {
@@ -1210,7 +1211,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     act(() => {
       ws.onopen?.();
       ws.onmessage?.({
-        data: JSON.stringify({ type: 'BOOK_SNAPSHOT', marketId: 2, market: 'ETH-USD', bids, asks, timestamp: 2 }),
+        data: bookSnapshotFrame(2, bids, asks, 2),
       });
     });
     await waitFor(() => expect(focusedRung()).toBe('3590'));
@@ -1230,7 +1231,7 @@ describe('Ladder shell (?ui=ladder)', () => {
     await waitFor(() => expect(allDialog().textContent).toContain('Your completed orders will appear here'));
     // Orders only: the fills have their own tab.
     expect(screen.queryByRole('button', { name: /^trades$/i })).toBeNull();
-    await waitFor(() => expect(calls.some(c => c.url.includes('/api/v1/orders/history'))).toBe(true));
+    await waitFor(() => expect(calls.some(c => c.url.includes('/api/v2/orders/history'))).toBe(true));
     fireEvent.click(within(allDialog()).getByRole('tab', { name: 'Fills' }));
     await waitFor(() => expect(allDialog().textContent).toContain('No fills yet'));
   });

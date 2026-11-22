@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Routes, Route } from 'react-router';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useOrderBook } from './hooks/useOrderBook';
 import { useTrades } from './hooks/useTrades';
 import { useMarketStats } from './hooks/useMarketStats';
 import { useMarketTickers } from './hooks/useMarketTickers';
-import { useClusterState } from './hooks/useClusterState';
 import { useApi } from './hooks/useApi';
 import { useOrders } from './hooks/useOrders';
-import { useOmsSocket } from './hooks/useOmsSocket';
+import { useUserStream } from './hooks/useUserStream';
 import { useTheme } from './hooks/useTheme';
 import { useAuth } from './auth/AuthContext';
 import { STACK_VERSION } from './config';
@@ -29,8 +28,9 @@ import { LogoMark } from './components/LogoMark';
 import { TerminalDesktop } from './terminal/TerminalDesktop';
 import { TerminalPhone } from './terminal/TerminalPhone';
 import { isLadderUiRequested } from './terminal/ladderFlag';
-import type { WebSocketMessage, Market, OrderRequest, UserOrder, OmsOrderEvent, ClusterStatusMessage, ClusterEventMessage, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, TickersMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
-import { MARKETS } from './types/market';
+import type { WebSocketMessage, Market, OrderRequest, UserOrder, ApiOrder, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, TickersMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
+import { loadMarkets, useMarketList } from './markets/marketStore';
+import { decodeCandlesBody } from './api/marketFrames';
 import { mergeLiveCandle } from './utils/candles';
 import { formatRejectReason } from './utils/rejectReasons';
 import { EV, track, updateContext } from './analytics';
@@ -52,13 +52,13 @@ function useIsMobile(breakpoint = 768) {
 // wider intervals comes from REST, so the WS-fed array never needs more.
 const MAX_LIVE_CANDLES = 1440;
 
-function MarketPage() {
+function MarketPage({ markets }: { markets: Market[] }) {
   const isMobile = useIsMobile();
   const { theme, toggle: toggleTheme } = useTheme();
   const { session } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAccountDrawer, setShowAccountDrawer] = useState(false);
-  const [selectedMarket, setSelectedMarket] = useState<Market>(MARKETS[0]);
+  const [selectedMarket, setSelectedMarket] = useState<Market>(markets[0]);
   const selectedMarketIdRef = useRef(selectedMarket.id);
 
   // Mobile-specific state
@@ -91,29 +91,26 @@ function MarketPage() {
   const { trades, handleTradesBatch, resetTrades } = useTrades();
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
   const { tickers, handleTickers, handleTickerStats, resetTickers } = useMarketTickers();
-  const { clusterState, handleClusterStatus, handleClusterEvent } = useClusterState();
   const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
 
-  // Async engine/OMS rejections (off-tick/out-of-range price, full book,
-  // risk checks, ...) arrive as REJECTED events on the user's order stream —
-  // surface them, never let an accepted order silently vanish. rejectReason
-  // is populated on every reject path now (engine rejects since match#75;
-  // OMS risk rejects always carried one) and rendered as friendly text; the
-  // raw code stays available via the notice's title attribute.
+  // Rejections after the core accepted an order (the matching engine's
+  // decision) arrive as REJECTED order events on the user stream: surface
+  // them, never let an accepted order silently vanish. `reason` is rendered
+  // as friendly text; the raw code stays available via the notice's title.
   const [rejectNotice, setRejectNotice] = useState<{ text: string; code: string | null } | null>(null);
   const rejectTimerRef = useRef<number | null>(null);
-  const handleOrderRejected = useCallback((event: OmsOrderEvent) => {
+  const handleOrderRejected = useCallback((order: ApiOrder) => {
     setRejectNotice({
-      text: `Order rejected: ${formatRejectReason(event.rejectReason)}`,
-      code: event.rejectReason,
+      text: `Order rejected: ${formatRejectReason(order.reason)}`,
+      code: order.reason,
     });
     if (rejectTimerRef.current) window.clearTimeout(rejectTimerRef.current);
     rejectTimerRef.current = window.setTimeout(() => setRejectNotice(null), 8000);
   }, []);
-  const { orders, openOrders, handleOrderEvent, seedOpenOrders, resetOrders, removeOrder } = useOrders(handleOrderRejected);
+  const { orders, openOrders, handleOrderEvent, applySnapshot, seedOpenOrders, resetOrders, removeOrder } = useOrders(handleOrderRejected);
 
   // Market-plane reset (reconnect / market switch). User orders live on the
-  // OMS plane now and are reset on session change instead. Candles are NOT
+  // user stream and are reset on session change instead. Candles are NOT
   // reset here — they stay mounted under the chart's loading overlay and are
   // replaced wholesale when the next CANDLE_HISTORY arrives.
   const resetAllState = useCallback(() => {
@@ -156,7 +153,10 @@ function MarketPage() {
         case 'PONG':
           break;
         case 'ERROR':
-          console.error('Server error:', message.message);
+          // HISTORY_UNAVAILABLE names the parts of the initial state that are
+          // missing (tape, candles, ticker); the service never sends an empty
+          // series in their place.
+          console.error('Server error:', message.code, message.message, message.parts ?? '');
           break;
         case 'TICKERS':
           handleTickers(message as TickersMessage);
@@ -208,17 +208,10 @@ function MarketPage() {
           }
           break;
         }
-        case 'CLUSTER_STATUS':
-          handleClusterStatus(message as ClusterStatusMessage);
-          break;
-        case 'CLUSTER_EVENT':
-          handleClusterEvent(message as ClusterEventMessage);
-          break;
       }
     },
     [handleBookSnapshot, handleBookDelta, handleTradesBatch, setStats,
-     handleBookUpdate, handleTrades, handleClusterStatus, handleClusterEvent,
-     handleTickers, handleTickerStats]
+     handleBookUpdate, handleTrades, handleTickers, handleTickerStats]
   );
 
   const { status, forceReconnect, requestRefresh } = useWebSocket({
@@ -229,12 +222,14 @@ function MarketPage() {
   });
   requestRefreshRef.current = requestRefresh;
 
-  // User-scoped OMS socket (oms#72): connects only while signed in; each
-  // (re)connect re-seeds open orders from REST (the WS stream then wins).
+  // The user stream (/ws/v2): connects only while signed in; each
+  // (re)connect re-seeds open orders from REST (the stream then wins), and
+  // its orders snapshot replaces the list.
   const sessionToken = session?.token ?? null;
-  useOmsSocket({
+  useUserStream({
     token: sessionToken,
     onOrderEvent: handleOrderEvent,
+    onSnapshot: applySnapshot,
     onConnected: seedOpenOrders,
   });
 
@@ -259,7 +254,9 @@ function MarketPage() {
     return () => window.clearTimeout(t);
   }, [status, bidDepth, askDepth, requestRefresh]);
 
-  // Fetch candles from REST API for non-1m intervals
+  // Fetch candles from the market-data service's REST route (cross-origin;
+  // marketId, interval and limit are all required). Its base is derived
+  // from VITE_MARKET_WS_URL.
   const fetchCandles = useCallback(async (marketId: number, interval: string, limit: number = 200) => {
     setChartLoading(true);
     try {
@@ -268,8 +265,8 @@ function MarketPage() {
         : '';
       const res = await fetch(`${apiBase}/api/candles?marketId=${marketId}&interval=${interval}&limit=${limit}`);
       if (res.ok) {
-        const data = await res.json();
-        if (data.candles && data.marketId === selectedMarketIdRef.current) {
+        const data = decodeCandlesBody(await res.json());
+        if (data.marketId === selectedMarketIdRef.current) {
           setCandles(data.candles);
           setCurrentCandle(null);
           candlesMarketRef.current = data.marketId;
@@ -298,12 +295,9 @@ function MarketPage() {
     }
   }, [fetchCandles]);
 
-  const effectiveStatus: ExtendedConnectionStatus = useMemo(() => {
-    if (status !== 'connected') return status;
-    if (clusterState.isElecting) return 'cluster-electing';
-    if (clusterState.isRollingUpdate) return 'cluster-updating';
-    return status;
-  }, [status, clusterState.isElecting, clusterState.isRollingUpdate]);
+  // The market feed carries no cluster state, so the cluster states of the
+  // pill never set here.
+  const effectiveStatus: ExtendedConnectionStatus = status;
 
   const handleMarketChange = useCallback((market: Market) => {
     track(EV.market_switch, { to: market.symbol });
@@ -327,7 +321,7 @@ function MarketPage() {
     return await submitOrder(order);
   }, [submitOrder]);
 
-  // OMS REST keys on omsOrderId, NOT the engine orderId the WS feed uses (#25)
+  // REST keys on the gateway's order id (omsOrderId), never the engine's
   const handleCancelOrder = useCallback(async (order: UserOrder) => {
     if (!order.omsOrderId) return { success: false, message: 'Order is not OMS-managed' }; // nothing we can cancel
     track(EV.order_cancel_submit, { market: order.market, side: order.side, order_type: order.type });
@@ -338,7 +332,8 @@ function MarketPage() {
       ok: result.success,
       round_trip_ms: Date.now() - startedAt,
     });
-    if (result.success) {
+    // Accepted, or no longer open (404 / 409 NOT_OPEN): the row goes.
+    if (result.success || result.gone) {
       removeOrder(order.omsOrderId);
     }
     return result;
@@ -368,7 +363,7 @@ function MarketPage() {
       <>
         <Shell
           market={selectedMarket}
-          markets={MARKETS}
+          markets={markets}
           onSelectMarket={handleMarketChange}
           stats={stats}
           tickers={tickers}
@@ -385,7 +380,6 @@ function MarketPage() {
             loading: chartLoading,
           }}
           status={effectiveStatus}
-          clusterState={clusterState}
           onReconnect={handleReconnect}
           theme={theme}
           onToggleTheme={toggleTheme}
@@ -442,7 +436,7 @@ function MarketPage() {
             </button>
           ) : (
             <MarketSelector
-              markets={MARKETS}
+              markets={markets}
               selectedMarket={selectedMarket}
               onSelectMarket={handleMarketChange}
             />
@@ -472,7 +466,7 @@ function MarketPage() {
             </button>
           )}
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
-          <ConnectionStatus status={effectiveStatus} clusterState={clusterState} onReconnect={handleReconnect} compact={isMobile} />
+          <ConnectionStatus status={effectiveStatus} onReconnect={handleReconnect} compact={isMobile} />
         </div>
       </header>
 
@@ -609,7 +603,7 @@ function MarketPage() {
       {/* Mobile Market Selector overlay */}
       {isMobile && showMarketSelector && (
         <MarketSelector
-          markets={MARKETS}
+          markets={markets}
           selectedMarket={selectedMarket}
           onSelectMarket={handleMarketChange}
           isOverlay
@@ -709,6 +703,31 @@ function SignInPrompt({ what, onSignIn }: { what: string; onSignIn: () => void }
   );
 }
 
+const MARKETS_RETRY_MS = 3000;
+
+/** The trading page needs the market list (GET /api/v2/markets) before its
+ *  first render: every panel is keyed to a market. Until the gateway answers
+ *  only the page background shows; a refusal or a network error retries. */
+function MarketsGate() {
+  const { markets } = useMarketList();
+  useEffect(() => {
+    if (markets.length > 0) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const attempt = async () => {
+      const ok = await loadMarkets();
+      if (!cancelled && !ok) timer = window.setTimeout(attempt, MARKETS_RETRY_MS);
+    };
+    void attempt();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [markets.length]);
+  if (markets.length === 0) return null;
+  return <MarketPage markets={markets} />;
+}
+
 function App() {
   return (
     <>
@@ -716,7 +735,7 @@ function App() {
           shows through the chrome/gutters. Decorative. */}
       <div aria-hidden className="bg-dotgrid pointer-events-none fixed inset-0 -z-10" />
       <Routes>
-        <Route path="/" element={<MarketPage />} />
+        <Route path="/" element={<MarketsGate />} />
       </Routes>
     </>
   );

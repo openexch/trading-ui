@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, it, expect } from 'vitest';
-import { MARKETS } from '../../types/market';
+import { TEST_MARKETS as MARKETS } from '../../test/markets';
 import type { BookLevel, Market, OrderStatus, UserOrder } from '../../types/market';
 import { priceKey } from '../../hooks/useOrderBook';
 import {
@@ -32,7 +32,6 @@ function order(over: Partial<UserOrder> & Pick<UserOrder, 'side' | 'price'>): Us
     omsOrderId: String(id),
     marketId: 1,
     market: 'BTC-USD',
-    userId: 7,
     type: 'LIMIT',
     originalQuantity: original,
     filledQuantity: filled,

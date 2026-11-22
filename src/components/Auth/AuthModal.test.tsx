@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
 /**
- * AuthModal against the OMS demo auth endpoints (oms#72): a successful login
+ * AuthModal against the gateway demo auth routes (/api/v2/auth): a successful login
  * stores the session (localStorage 'oe.session') and closes the modal; a
  * register validation error is rendered inline and keeps the modal open.
  */
@@ -58,9 +58,9 @@ describe('AuthModal', () => {
 
   it('logs in, stores the session, and closes', async () => {
     const { calls } = stubFetch({
-      '/api/v1/auth/login': {
+      '/api/v2/auth/login': {
         status: 200,
-        body: { userId: 7, username: 'alice', token: 'tok-rotated-abc' },
+        body: { userId: '7', username: 'alice', token: 'tok-rotated-abc' },
       },
     });
     const onClose = vi.fn();
@@ -75,16 +75,22 @@ describe('AuthModal', () => {
     expect(stored).toEqual({ token: 'tok-rotated-abc', userId: 7, username: 'alice' });
 
     // Credentials went to the login endpoint as JSON
-    const login = calls.find((c) => c.url.includes('/api/v1/auth/login'))!;
+    const login = calls.find((c) => c.url.includes('/api/v2/auth/login'))!;
     expect(login).toBeTruthy();
     expect(JSON.parse(String(login.init!.body))).toEqual({ username: 'alice', password: 'hunter22' });
   });
 
   it('shows the server error inline on a register validation failure', async () => {
     stubFetch({
-      '/api/v1/auth/register': {
+      '/api/v2/auth/register': {
         status: 400,
-        body: { error: 'Password must be at least 8 characters', code: 'ERR_VALIDATION' },
+        body: {
+          error: 'invalid password',
+          code: 'VALIDATION',
+          reason: null,
+          detail: 'password must be a string of 6 or more characters',
+          keyFinal: false,
+        },
       },
     });
     const onClose = vi.fn();
@@ -93,16 +99,17 @@ describe('AuthModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Register' }));
     fillAndSubmit(container, 'bob', 'short');
 
-    expect(await screen.findByText('Password must be at least 8 characters')).toBeTruthy();
+    // The gateway's detail is the most specific text
+    expect(await screen.findByText('password must be a string of 6 or more characters')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
     expect(localStorage.getItem('oe.session')).toBeNull();
   });
 
   it('surfaces a 409 username-taken error from register', async () => {
     stubFetch({
-      '/api/v1/auth/register': {
+      '/api/v2/auth/register': {
         status: 409,
-        body: { error: 'Username is already taken', code: 'ERR_CONFLICT' },
+        body: { error: 'username taken', code: 'CONFLICT', reason: null, detail: null, keyFinal: false },
       },
     });
     const onClose = vi.fn();
@@ -111,7 +118,7 @@ describe('AuthModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Register' }));
     fillAndSubmit(container, 'alice', 'longenough1');
 
-    expect(await screen.findByText('Username is already taken')).toBeTruthy();
+    expect(await screen.findByText('username taken')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 });

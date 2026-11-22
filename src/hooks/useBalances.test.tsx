@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
 /**
- * BalancesProvider: fetches GET /api/v1/accounts/{userId} only while a
- * session exists, polls on a 5s cadence, parses the exact decimal strings
- * (oms#39) to numbers, and re-fetches on refresh().
+ * BalancesProvider: fetches GET /api/v2/balances only while a session
+ * exists (no user id in the path: the credential decides), polls on a 5s
+ * cadence, parses the decimal strings to numbers, and re-fetches on
+ * refresh().
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
@@ -17,25 +18,23 @@ function stubFetch() {
     const url = String(input);
     calls.push({ url, init });
     let body: unknown = {};
-    if (url.includes('/api/v1/accounts/')) {
+    if (url.endsWith('/api/v2/balances')) {
+      // The gateway's shape: ids and money as decimal strings
       body = {
-        userId: 1,
-        // Balances cross as exact decimal strings (oms#39)
-        assets: [
-          { asset: 'USD', assetId: 1, available: '99904.20000000', locked: '95.80000000', total: '100000.00000000' },
-        ],
+        asOf: { logPosition: 51234816 },
+        assets: [{ assetId: '2', asset: 'USD', available: '99904.2', locked: '95.8', total: '100000' }],
       };
-    } else if (url.includes('/api/v1/auth/me')) {
-      body = { userId: 1, username: 'dev' };
+    } else if (url.endsWith('/api/v2/auth/me')) {
+      body = { userId: '1', username: 'dev' };
     }
-    return { ok: true, status: 200, json: async () => body } as Response;
+    return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as Response;
   });
   globalThis.fetch = mock as unknown as typeof fetch;
   return { mock, calls };
 }
 
 const accountCalls = (calls: { url: string; init?: RequestInit }[]) =>
-  calls.filter((c) => c.url.includes('/api/v1/accounts/'));
+  calls.filter((c) => c.url.endsWith('/api/v2/balances'));
 
 function wrapper({ children }: { children: ReactNode }) {
   return (
@@ -78,13 +77,13 @@ describe('useBalances', () => {
 
     const initial = accountCalls(fetchStub.calls);
     expect(initial).toHaveLength(1);
-    expect(initial[0].url).toContain('/api/v1/accounts/1');
+    expect(initial[0].url).toBe('/api/v2/balances');
     const headers = initial[0].init?.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer dev:1');
 
     // Wire strings became numbers
     expect(result.current.assets).toEqual([
-      { asset: 'USD', assetId: 1, available: 99904.2, locked: 95.8, total: 100000 },
+      { asset: 'USD', assetId: '2', available: 99904.2, locked: 95.8, total: 100000 },
     ]);
 
     // 5s poll cadence

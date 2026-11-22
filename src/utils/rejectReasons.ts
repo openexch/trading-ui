@@ -13,6 +13,7 @@
  * Sources of truth for the codes covered below:
  * - Engine: match-cluster OrderRejectReason.java (order-book admission)
  * - OMS risk: order-management oms-common RiskRejectReason.java
+ * - Core: the reject table of the gateway's API document (section 4.3)
  */
 
 const REASON_TEXT: Record<string, string> = {
@@ -43,6 +44,27 @@ const REASON_TEXT: Record<string, string> = {
   CLUSTER_REJECT: 'the matching engine rejected this order',
   INVALID_ORDER: 'order failed validation',
   MARKET_HALTED: 'trading is halted for this market',
+
+  // --- Core reject reasons, as the v2 gateway names them (`reason`) ---
+  INSUFFICIENT_FUNDS: 'insufficient balance for this order',
+  SIZE_TOO_SMALL: 'order quantity is below the market minimum',
+  SIZE_TOO_LARGE: 'order quantity is above the market maximum',
+  PRICE_COLLAR: "price is too far from the market's current price",
+  PRICE_OUT_OF_BAND: "price is outside the market's allowed range",
+  QTY_OFF_LOT: 'quantity is not a multiple of the market lot size',
+  POSITION_LIMIT: 'this order would exceed a position limit',
+  NO_REFERENCE_PRICE: 'the market has no reference price yet',
+  STOP_WOULD_TRIGGER_IMMEDIATELY: 'the stop price would trigger at once',
+  RATE_LIMIT: 'too many orders submitted too quickly',
+  TOO_MANY_PENDING_REQUESTS: 'too many requests in flight; retry shortly',
+  GATE_CLOSED: 'order entry is closed',
+  CIRCUIT_BREAKER: 'order submission is temporarily paused',
+  UNKNOWN_MARKET: 'this market does not exist',
+  NOT_OPEN: 'the order is no longer open',
+  AMEND_PENDING: 'an amend of this order is still on its way',
+  EXPIRED: 'the order has expired',
+  INVALID: 'order failed validation',
+  UNSUPPORTED_TIF: 'this time in force is not available for this order type',
 };
 
 /**
