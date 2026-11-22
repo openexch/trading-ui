@@ -111,17 +111,21 @@ export interface TradingLadderProps {
   openOrders: UserOrder[];
   lastPrice: number | null;
   signedIn: boolean;
-  onSubmitOrder: (order: OrderRequest) => Promise<{ success: boolean; message: string }>;
+  onSubmitOrder: (order: OrderRequest) => Promise<OrderAnswer>;
   onRequestSignIn: () => void;
+  /** An engine election is open (the user stream's election frames): the
+   *  strip says order entry is waiting and nothing is lost, and one-click
+   *  disarms. Null when none. */
+  engineWait?: string | null;
   /** Async reject of an accepted order, from the user's order stream. */
   rejectNotice: { text: string; code: string | null } | null;
   /** Market-data connection state: one-click is armed only while connected. */
   status?: ExtendedConnectionStatus;
   /** The page's cancel handler (keyed on omsOrderId); resolves with the
    *  OMS answer. */
-  onCancelOrder?: (order: UserOrder) => Promise<{ success: boolean; message: string }>;
+  onCancelOrder?: (order: UserOrder) => Promise<OrderAnswer>;
   /** The page's replace handler; Move sends the price only. */
-  onReplaceOrder?: (order: UserOrder, price?: number, quantity?: number) => Promise<{ success: boolean; message: string }>;
+  onReplaceOrder?: (order: UserOrder, price?: number, quantity?: number) => Promise<OrderAnswer>;
   /** Hands the own-order actions to the side panels (the Orders panel), so
    *  a cancel there goes through the same pending state, Cancel all
    *  question and strip results as one made on the ladder. Null while there
@@ -139,6 +143,37 @@ export interface TradingLadderProps {
   /** An own order to bring into view and focus (Show on ladder). Acted on
    *  once per `seq`, when it is on this market and the book has arrived. */
   reveal?: LadderReveal | null;
+}
+
+/** The gateway's answer to an order request, as the page's handlers give it
+ *  (useApi). A 504 OUTCOME_UNKNOWN may have been applied; a 503
+ *  CORE_UNAVAILABLE was not sent. */
+export interface OrderAnswer {
+  success: boolean;
+  message: string;
+  outcomeUnknown?: boolean;
+  coreUnavailable?: boolean;
+}
+
+/** The strip line for an answer that is neither applied nor refused:
+ *  never presented as safe to retry (outcome unknown), or as waiting
+ *  (nothing was sent). Null for every other answer. */
+export function undecidedResult(what: string, res: OrderAnswer): StripResult | null {
+  if (res.outcomeUnknown) {
+    return {
+      kind: 'unknown',
+      text: `Outcome unknown: ${what}. The core did not answer in time and it may have been applied: check your orders before trying again`,
+      code: 'OUTCOME_UNKNOWN',
+    };
+  }
+  if (res.coreUnavailable) {
+    return {
+      kind: 'waiting',
+      text: `Waiting for the core: ${what} was not sent. Nothing is lost; try again when order entry reopens`,
+      code: 'CORE_UNAVAILABLE',
+    };
+  }
+  return null;
 }
 
 /** The ladder's own-order actions, as the side panels use them. */
@@ -162,6 +197,8 @@ export interface LadderOrderActions {
 /** How long a result stays in the strip. */
 const ACCEPTED_MS = 6000;
 const REJECTED_MS = 8000;
+/** An unknown outcome stays long enough to be read and acted on. */
+const UNKNOWN_MS = 30000;
 
 function defaultSize(market: Market): string {
   const ui = marketUi(market);
@@ -207,7 +244,8 @@ export function TradingLadder(props: TradingLadderProps) {
   // then clears it for good (switching back does not re-arm).
   const [armedOn, setArmedOn] = useState<number | null>(null);
   // Never on touch: a tap always stages (DESIGN.md rule 10).
-  const oneClickAvailable = !phone && signedIn && status === 'connected';
+  const engineWait = props.engineWait ?? null;
+  const oneClickAvailable = !phone && signedIn && status === 'connected' && engineWait === null;
   const armed = armedOn !== null && armedOn === market.id && oneClickAvailable;
   useEffect(() => {
     setArmedOn(null);
@@ -255,7 +293,8 @@ export function TradingLadder(props: TradingLadderProps) {
     if (resultTimer.current) window.clearTimeout(resultTimer.current);
     setResult(r);
     if (r) {
-      resultTimer.current = window.setTimeout(() => setResult(null), r.kind === 'accepted' ? ACCEPTED_MS : REJECTED_MS);
+      const ms = r.kind === 'accepted' ? ACCEPTED_MS : r.kind === 'unknown' ? UNKNOWN_MS : REJECTED_MS;
+      resultTimer.current = window.setTimeout(() => setResult(null), ms);
     }
   }, []);
   useEffect(() => () => {
@@ -290,7 +329,7 @@ export function TradingLadder(props: TradingLadderProps) {
       track(EV.order_submit, submitProps);
       const startedAt = Date.now();
       setPlacing(true);
-      let res: { success: boolean; message: string };
+      let res: OrderAnswer;
       try {
         res = await onSubmitOrder(b.order);
       } finally {
@@ -298,7 +337,17 @@ export function TradingLadder(props: TradingLadderProps) {
       }
       const roundTripMs = Date.now() - startedAt;
       setConfirming(false);
-      if (res.success) {
+      const undecided = undecidedResult(text, res);
+      if (undecided) {
+        track(EV.order_rejected, { ...submitProps, round_trip_ms: roundTripMs, reason: res.message.slice(0, 120) });
+        // Outcome unknown: the order may be on the book, so it is not kept
+        // staged for another Enter. Nothing sent: it stays staged to place
+        // again (a one-click order is staged for the same reason).
+        if (res.outcomeUnknown) setStaged(null);
+        else if (oneClick) setStaged(s);
+        showResult(undecided);
+        if (res.outcomeUnknown) refreshBalances();
+      } else if (res.success) {
         track(EV.order_accepted, { ...submitProps, round_trip_ms: roundTripMs });
         showResult({ kind: 'accepted', text: `Accepted: ${text}` });
         if (!oneClick) setStaged(null);
@@ -465,7 +514,7 @@ export function TradingLadder(props: TradingLadderProps) {
     async (o: UserOrder): Promise<CancelResult | null> => {
       if (!onCancelOrder || !o.omsOrderId) return null;
       setPendingFor([o.omsOrderId], 'cancel');
-      let res: { success: boolean; message: string };
+      let res: OrderAnswer;
       try {
         res = await onCancelOrder(o);
       } catch (err) {
@@ -474,9 +523,10 @@ export function TradingLadder(props: TradingLadderProps) {
         setPendingFor([o.omsOrderId], null);
       }
       showResult(
-        res.success
-          ? { kind: 'accepted', text: `Cancelled: ${orderText(o)}` }
-          : { kind: 'rejected', text: `Cancel failed: ${orderText(o)}: ${res.message}` },
+        undecidedResult(`cancel ${orderText(o)}`, res) ??
+          (res.success
+            ? { kind: 'accepted', text: `Cancelled: ${orderText(o)}` }
+            : { kind: 'rejected', text: `Cancel failed: ${orderText(o)}: ${res.message}` }),
       );
       return { order: o, success: res.success, message: res.message };
     },
@@ -487,7 +537,7 @@ export function TradingLadder(props: TradingLadderProps) {
     async (o: UserOrder, price: number) => {
       if (!onReplaceOrder || !o.omsOrderId) return;
       setPendingFor([o.omsOrderId], 'move');
-      let res: { success: boolean; message: string };
+      let res: OrderAnswer;
       try {
         // Price only: the quantity stays as it is (DESIGN.md rule 13).
         res = await onReplaceOrder(o, price);
@@ -498,9 +548,10 @@ export function TradingLadder(props: TradingLadderProps) {
       }
       const to = formatPriceText(market, price);
       showResult(
-        res.success
-          ? { kind: 'accepted', text: `Moved to ${to} (re-queued): ${orderText(o)}` }
-          : { kind: 'rejected', text: `Move failed: ${orderText(o)} to ${to}: ${res.message}` },
+        undecidedResult(`move ${orderText(o)} to ${to}`, res) ??
+          (res.success
+            ? { kind: 'accepted', text: `Moved to ${to} (re-queued): ${orderText(o)}` }
+            : { kind: 'rejected', text: `Move failed: ${orderText(o)} to ${to}: ${res.message}` }),
       );
     },
     [onReplaceOrder, setPendingFor, showResult, orderText, market],
@@ -515,14 +566,16 @@ export function TradingLadder(props: TradingLadderProps) {
       // One at a time: there is no bulk endpoint, and a sequential loop keeps
       // the OMS from seeing a burst.
       for (const o of targets) {
-        let res: { success: boolean; message: string };
+        let res: OrderAnswer;
         try {
           res = await onCancelOrder(o);
         } catch (err) {
           res = { success: false, message: err instanceof Error ? err.message : 'Network error' };
         }
         setPendingFor([o.omsOrderId], null);
-        results.push({ order: o, success: res.success, message: res.message });
+        // An unknown outcome is a failure to report, never a success.
+        const message = res.outcomeUnknown ? `outcome unknown, it may have been cancelled: ${res.message}` : res.message;
+        results.push({ order: o, success: res.success, message });
       }
       const sum = cancelAllSummary(results, label);
       const failedDetail = results
@@ -772,7 +825,12 @@ export function TradingLadder(props: TradingLadderProps) {
   const priceProblem = priceField.ok ? null : priceField.error;
   const shown: StripResult | null = rejectNotice
     ? { kind: 'rejected', text: rejectNotice.text, code: rejectNotice.code }
-    : (result ?? (!phone && priceProblem !== null ? { kind: 'info', text: priceProblem } : null));
+    : (result ??
+      (engineWait !== null
+        ? { kind: 'waiting', text: engineWait }
+        : !phone && priceProblem !== null
+          ? { kind: 'info', text: priceProblem }
+          : null));
 
   const sizeOk = parseSize(size) !== null;
   const reference = menuReference(props.lastPrice, bestBid, bestAsk);

@@ -16,6 +16,7 @@
  * - Cancel all, asked from the Orders tab, is answered here, on any tab.
  */
 import type { Ref } from 'react';
+import { ResultText } from '../ladder/StagingStrip';
 import type { CancelAllView, StagedView, StripResult } from '../ladder/StagingStrip';
 
 export interface PhoneSheetProps {
@@ -77,19 +78,7 @@ export function PhoneSheet({
     >
       {result && (
         <div className="pointer-events-auto mx-3 mb-2 rounded-xl border border-ctl bg-surface px-4 py-2.5 text-[13px] shadow-[var(--shadow-pop)]">
-          {result.kind === 'rejected' ? (
-            <span role="alert" data-result="rejected" title={result.code ?? undefined} className="font-medium text-sell">
-              {result.text}
-            </span>
-          ) : result.kind === 'info' ? (
-            <span data-result="info" className="text-text">
-              {result.text}
-            </span>
-          ) : (
-            <span data-result="accepted" className="font-medium text-buy">
-              {result.text}
-            </span>
-          )}
+          <ResultText result={result} />
         </div>
       )}
 

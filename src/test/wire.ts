@@ -16,6 +16,8 @@ export function dec(n: number): string {
 export interface Reply {
   status: number;
   body?: unknown;
+  /** Response headers (Retry-After), by name as the gateway sends them. */
+  headers?: Record<string, string>;
 }
 
 export function asResponse(reply: Reply): Response {
@@ -25,7 +27,14 @@ export function asResponse(reply: Reply): Response {
     status: reply.status,
     json: async () => (text ? JSON.parse(text) : null),
     text: async () => text,
-  } as Response;
+    headers: {
+      get: (name: string) => {
+        const h = reply.headers ?? {};
+        const key = Object.keys(h).find(k => k.toLowerCase() === name.toLowerCase());
+        return key === undefined ? null : h[key];
+      },
+    },
+  } as unknown as Response;
 }
 
 /** The error body of every gateway refusal. */
@@ -58,7 +67,12 @@ export function gatewayReply(url: string, method = 'GET'): Reply {
       },
     };
   }
+  if (/^\/api\/v2\/orders\/[0-9]+\/trail/.test(path)) return { status: 200, body: { orderId: '1042', ...HISTORY_EMPTY } };
   if (path.startsWith('/api/v2/orders')) return { status: 200, body: { asOf: { logPosition: 1 }, orders: [] } };
+  // The balance ledger route is not configured by default (its 503).
+  if (path.startsWith('/api/v2/balances/movements')) {
+    return { status: 503, body: apiError('HISTORY_UNAVAILABLE', 'the balance ledger is not available'), headers: { 'Retry-After': '60' } };
+  }
   if (path === '/api/v2/balances') return { status: 200, body: { asOf: { logPosition: 1 }, assets: [] } };
   const transfer = /^\/api\/v2\/balances\/(deposit|withdraw)$/.exec(path);
   if (transfer) return { status: 200, body: { assetId: '0', amount: '1', available: '1', duplicate: false } };

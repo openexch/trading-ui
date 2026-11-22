@@ -70,6 +70,9 @@ export interface TradeWire {
   tradeCount: number;
   side: 'BUY' | 'SELL';
   timestamp: number;
+  /** The matching engine's journal sequence of the trade (optional: a
+   *  service that does not send it yet leaves the tape's column a dash). */
+  journalSeq?: number;
 }
 
 export interface TradesBatchWire {
@@ -185,6 +188,7 @@ const TRADE = {
   tradeCount: 'num',
   side: { enum: ['BUY', 'SELL'] },
   timestamp: 'num',
+  'journalSeq?': 'num',
 } as const satisfies SchemaOf<TradeWire>;
 const TICKER_ENTRY = {
   marketId: 'num',
@@ -409,6 +413,7 @@ export function decodeMarketFrame(raw: unknown): WebSocketMessage {
           tradeCount: t.tradeCount,
           side: t.side,
           timestamp: t.timestamp,
+          journalSeq: Number.isInteger(t.journalSeq) ? t.journalSeq! : null,
         })),
         timestamp: f.timestamp,
       };

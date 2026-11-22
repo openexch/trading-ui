@@ -59,7 +59,9 @@ export function isStoredLayoutV1(value: unknown): value is StoredLayoutV1 {
 
 /** A version 1 layout in six-slot form (see the header). */
 export function migrateV1(v1: StoredLayoutV1): LayoutState {
-  const hidden = PANEL_IDS.filter(id => !v1.slots.includes(id));
+  // Version 1 knew six panels; the first two it hid (registry order) fill
+  // the far-right column.
+  const hidden = PANEL_IDS.filter(id => !v1.slots.includes(id)).slice(0, 2);
   const slots = [...v1.slots, ...hidden];
   const fallback = defaultLayout();
   if (!slotsValid(slots)) return fallback;

@@ -74,6 +74,7 @@ describe('PanelPicker', () => {
       'Open ordersRight bottom',
       'FillsHidden',
       'BalancesHidden',
+      'EnginesClosed',
     ]);
     expect(radios.filter(r => r.getAttribute('aria-checked') === 'true').map(r => r.textContent)).toEqual(['TradesHere']);
     expect(within(menu).getAllByRole('menuitem').map(i => i.textContent)).toEqual(['Layout presets…', 'Reset layout']);
@@ -153,6 +154,7 @@ describe('PanelPicker', () => {
       'Open ordersRight bottom',
       'FillsFar right top',
       'BalancesFar right bottom',
+      'EnginesClosed',
     ]);
     fireEvent.click(screen.getByRole('menuitemradio', { name: /^balances/i }));
     expect(api.layout.slots).toEqual(['markets', 'balances', 'chart', 'orders', 'fills', 'trades']);

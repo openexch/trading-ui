@@ -8,6 +8,7 @@ import { marketIdToApi } from '../api/marketId';
 import { findMarketBySymbol } from '../markets/marketStore';
 import { toWireMoney } from '../utils/money';
 import { formatRejectReason } from '../utils/rejectReasons';
+import { recordSubmit } from '../ledger/orderEvents';
 
 interface ApiState {
   loading: boolean;
@@ -20,6 +21,27 @@ export interface ApiResponse {
   /** Cancel only: the order is no longer open (404, or 409 NOT_OPEN, or a
    *  re-offered NOT_OPEN), so the row can go. */
   gone?: boolean;
+  /** HTTP status of a refusal (absent on success and on a network error). */
+  status?: number;
+  /** The gateway's machine code of a refusal (CORE_UNAVAILABLE, ...). */
+  code?: string | null;
+  /** 504 OUTCOME_UNKNOWN: the command reached the core and no answer came.
+   *  It may have been applied: never present this as safe to retry. */
+  outcomeUnknown?: boolean;
+  /** 503 CORE_UNAVAILABLE: no core session, nothing was sent. */
+  coreUnavailable?: boolean;
+  /** Submit only: the gateway's orderId of an accepted order. */
+  orderId?: string;
+}
+
+/** The answer fields every refusal carries. Exported for tests. */
+export function refusalFields(status: number, error: ApiErrorBody): Pick<ApiResponse, 'status' | 'code' | 'outcomeUnknown' | 'coreUnavailable'> {
+  return {
+    status,
+    code: error.code,
+    outcomeUnknown: status === 504 || error.code === 'OUTCOME_UNKNOWN',
+    coreUnavailable: status === 503 && error.code === 'CORE_UNAVAILABLE',
+  };
 }
 
 const SIDE_MAP: Record<string, string> = { BID: 'BUY', ASK: 'SELL' };
@@ -107,18 +129,23 @@ export function useApi() {
     try {
       // 201 = the core accepted the order with its hold (PENDING_NEW); the
       // matching engine's decision arrives later on the user stream.
+      const body = toOrderBody(order);
+      const sentAt = Date.now();
       const res = await apiRequest<{ orderId?: string }>('/orders', {
         method: 'POST',
         idempotencyKey: newIdempotencyKey(),
-        body: toOrderBody(order),
+        body,
       });
       if (res.ok) {
         setState({ loading: false, error: null });
-        return { success: true, message: `Order accepted (${res.body?.orderId ?? ''})` };
+        const orderId = typeof res.body?.orderId === 'string' ? res.body.orderId : undefined;
+        // The trail's gateway step: this browser's own record of the submit.
+        if (orderId) recordSubmit(orderId, { sentAt, roundTripMs: Date.now() - sentAt });
+        return { success: true, message: `Order accepted (${orderId ?? ''})`, orderId };
       }
       const error = refusal(res.status, res.error);
       setState({ loading: false, error });
-      return { success: false, message: error };
+      return { success: false, message: error, ...refusalFields(res.status, res.error) };
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Network error';
       // A thrown fetch is the gateway being unreachable, which is different
@@ -152,7 +179,7 @@ export function useApi() {
       }
       const error = refusal(res.status, res.error);
       setState({ loading: false, error });
-      return { success: false, message: error };
+      return { success: false, message: error, ...refusalFields(res.status, res.error) };
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Network error';
       track(EV.api_error, { operation: 'replace_order', reason: error.slice(0, 120) });
@@ -180,7 +207,7 @@ export function useApi() {
       const gone = res.status === 404 || (res.status === 409 && res.error.reason === 'NOT_OPEN');
       const error = gone ? 'Order is no longer open' : refusal(res.status, res.error);
       setState({ loading: false, error });
-      return { success: false, message: error, gone };
+      return { success: false, message: error, gone, ...refusalFields(res.status, res.error) };
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Network error';
       track(EV.api_error, { operation: 'cancel_order', reason: error.slice(0, 120) });

@@ -35,6 +35,9 @@ export interface AggregatedTrade {
   /** Taker side. The tape keeps a tick-test fallback for a missing side. */
   side?: 'BUY' | 'SELL' | null;
   timestamp: number;
+  /** The matching engine's journal sequence of the trade (not a log
+   *  position); null or absent when the service does not send it. */
+  journalSeq?: number | null;
 }
 
 export interface TradesBatchMessage {

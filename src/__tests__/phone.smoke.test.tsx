@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
 /**
- * Phone shell smoke test: the real <App/> under ?ui=ladder with matchMedia
+ * Phone shell smoke test: the real <App/> with matchMedia
  * reporting a phone (max-width 768px) and the network mocked. A tap stages
  * into the bottom sheet and Place sends the same wire request as the
  * desktop; the rung menu opens by long-press and by the visible "More order
@@ -118,7 +118,6 @@ const sheet = () => screen.getByRole('status', { name: /staged order/i });
 const bodyOf = (c: Call) => JSON.parse(String(c.init!.body));
 
 async function phoneWithBook() {
-  window.history.replaceState({}, '', '/?ui=ladder');
   const utils = renderApp();
   await screen.findByRole('grid', { name: /price ladder/i });
   await screen.findByRole('button', { name: /menu, signed in as dev/i });
@@ -127,7 +126,7 @@ async function phoneWithBook() {
   return utils;
 }
 
-describe('Phone shell (?ui=ladder at 768px and below)', () => {
+describe('Phone shell (768px and below)', () => {
   beforeEach(() => {
     cleanup();
     MockWebSocket.instances = [];
@@ -353,5 +352,13 @@ describe('Phone shell (?ui=ladder at 768px and below)', () => {
     } finally {
       meta.remove();
     }
+  });
+  it('the menu opens the Engines view; signed in without a frame it is all dashes', async () => {
+    await phoneWithBook();
+    fireEvent.click(screen.getByRole('button', { name: /menu, signed in as dev/i }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Engines' }));
+    const panel = await screen.findByRole('region', { name: 'Engines' });
+    expect(panel.querySelectorAll('[data-engine-node]')).toHaveLength(0);
+    expect(panel.querySelector('[data-engine-bridge]')!.textContent).not.toMatch(/[0-9]/);
   });
 });

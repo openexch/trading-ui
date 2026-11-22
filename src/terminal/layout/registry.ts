@@ -2,11 +2,12 @@
 /**
  * The panels a side slot can show. Data only: the title the picker and the
  * slot header print, and the smallest height (px, header included) the
- * panel stays usable at. Rendering lives with the panels themselves, so this
+ * panel stays usable at. There are more panels than slots: a panel in no
+ * slot is closed until it is picked. Rendering lives with the panels themselves, so this
  * file has no component imports and the layout logic stays pure.
  */
 
-export const PANEL_IDS = ['markets', 'trades', 'chart', 'orders', 'fills', 'balances'] as const;
+export const PANEL_IDS = ['markets', 'trades', 'chart', 'orders', 'fills', 'balances', 'engines'] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
 
 export interface PanelDef {
@@ -23,6 +24,7 @@ export const PANELS: Readonly<Record<PanelId, PanelDef>> = {
   orders: { id: 'orders', title: 'Open orders', minHeight: 160 },
   fills: { id: 'fills', title: 'Fills', minHeight: 140 },
   balances: { id: 'balances', title: 'Balances', minHeight: 120 },
+  engines: { id: 'engines', title: 'Engines', minHeight: 160 },
 };
 
 export function isPanelId(value: unknown): value is PanelId {

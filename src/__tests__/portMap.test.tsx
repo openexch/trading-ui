@@ -133,6 +133,24 @@ function stubFetch() {
   }) as unknown as typeof fetch;
 }
 
+/** Every observed element reports 264px: ten 22px ladder rungs and the
+ *  spread row, so the book's best levels are on screen. */
+class FixedResizeObserver {
+  cb: ResizeObserverCallback;
+  constructor(cb: ResizeObserverCallback) {
+    this.cb = cb;
+  }
+  observe() {
+    this.cb([{ contentRect: { height: 264 } } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+  }
+  unobserve() {}
+  disconnect() {}
+}
+
+/** The ladder's price cells as their accessible labels. */
+const rungLabels = (root: HTMLElement) =>
+  [...root.querySelectorAll('[data-focus-cell]')].map(e => e.getAttribute('aria-label'));
+
 const callsTo = (method: string, path: string | RegExp) =>
   calls.filter(c => c.method === method && (typeof path === 'string' ? c.url === path : path.test(c.url)));
 
@@ -171,7 +189,7 @@ function renderApp() {
 /** The app on screen, its market socket open and subscribed. */
 async function appWithMarketSocket() {
   const view = renderApp();
-  await screen.findByRole('button', { name: 'Bitcoin' });
+  await screen.findByRole('button', { name: /market btc-usd\. change market/i });
   const ws = sockets('/ws').slice(-1)[0];
   ws.open();
   return { view, ws };
@@ -180,7 +198,7 @@ async function appWithMarketSocket() {
 /** Switch the desktop app to SOL-USD (market 3, the golden frames' market). */
 async function onSolana() {
   const { view, ws } = await appWithMarketSocket();
-  fireEvent.click(screen.getByRole('button', { name: 'Solana' }));
+  fireEvent.click(document.querySelector('[data-market-row="SOL-USD"]')!);
   await waitFor(() => expect(ws.frames().slice(-1)[0]).toEqual({ action: 'subscribe', marketId: 3 }));
   return { view, ws };
 }
@@ -301,7 +319,7 @@ async function checkChainBreakRefresh(dropRefresh: boolean): Promise<void> {
       };
     }
     ws.receive(golden('book_snapshot_base')); // bookVersion 2199023255553
-    await waitFor(() => expect(view.container.textContent).toContain('$13.99'));
+    await waitFor(() => expect(rungLabels(view.container)).toContain('14.00, bids 10.00, asks none'));
     const before = ws.sent.length;
     const delta = JSON.parse(golden('book_delta_80'));
     delta.fromVersion = 2199023255999; // not the held version
@@ -469,7 +487,7 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
         market: 'BTC-USD', orderType: 'LIMIT', orderSide: 'BID', price: 65000.5, quantity: 0.01, timestamp: 0,
       });
     });
-    expect(r).toEqual({ success: true, message: 'Order accepted (1042)' });
+    expect(r).toEqual({ success: true, message: 'Order accepted (1042)', orderId: '1042' });
     const [call] = callsTo('POST', '/api/v2/orders');
     expect(call.body).toEqual({
       marketId: '1', side: 'BUY', type: 'LIMIT', timeInForce: 'GTC', price: '65000.50000000', quantity: '0.01000000',
@@ -486,7 +504,9 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
         market: 'BTC-USD', orderType: 'MARKET', orderSide: 'ASK', price: 0, quantity: 1, timestamp: 0,
       });
     });
-    expect(r).toEqual({ success: false, message: 'insufficient balance for this order' });
+    expect(r).toMatchObject({
+      success: false, message: 'insufficient balance for this order', status: 422, code: 'REJECTED', outcomeUnknown: false,
+    });
     // A MARKET order carries no price and is IOC.
     expect(callsTo('POST', '/api/v2/orders')[1].body).toEqual({
       marketId: '1', side: 'SELL', type: 'MARKET', timeInForce: 'IOC', quantity: '1.00000000',
@@ -500,6 +520,17 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
     });
     expect(r).toEqual({ success: false, message: 'this time in force is not available for this order type' });
     expect(callsTo('POST', '/api/v2/orders')).toHaveLength(2);
+    // 504 OUTCOME_UNKNOWN is never a plain refusal: it may have been applied.
+    routes.unshift({
+      match: c => c.url === '/api/v2/orders' && c.method === 'POST',
+      reply: { status: 504, body: apiError('OUTCOME_UNKNOWN', 'the core did not answer in time') },
+    });
+    await act(async () => {
+      r = await result.current.submitOrder({
+        market: 'BTC-USD', orderType: 'LIMIT', orderSide: 'BID', price: 65000.5, quantity: 0.01, timestamp: 0,
+      });
+    });
+    expect(r).toMatchObject({ success: false, outcomeUnknown: true, coreUnavailable: false });
   },
 
   async amend() {
@@ -540,9 +571,9 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
       { match: c => c.url.endsWith('/orders/409'), reply: { status: 409, body: apiError('CONFLICT', 'conflict', 'NOT_OPEN') } },
       { match: c => c.url.endsWith('/orders/419'), reply: { status: 409, body: apiError('CONFLICT', 'conflict', 'AMEND_PENDING') } },
     );
-    expect(await cancel('404')).toEqual({ success: false, message: 'Order is no longer open', gone: true });
-    expect(await cancel('409')).toEqual({ success: false, message: 'Order is no longer open', gone: true });
-    expect(await cancel('419')).toEqual({ success: false, message: 'an amend of this order is still on its way', gone: false });
+    expect(await cancel('404')).toMatchObject({ success: false, message: 'Order is no longer open', gone: true });
+    expect(await cancel('409')).toMatchObject({ success: false, message: 'Order is no longer open', gone: true });
+    expect(await cancel('419')).toMatchObject({ success: false, message: 'an amend of this order is still on its way', gone: false });
   },
 
   async 'open-orders-seed'() {
@@ -564,7 +595,8 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
     await waitFor(() => expect(sockets('/ws/v2')).toHaveLength(2), { timeout: 3000 });
     sockets('/ws/v2')[1].open();
     await waitFor(() => expect(seeds()).toBe(before + 1));
-    await waitFor(() => expect(screen.getByRole('button', { name: /open orders \(1\)/i })).toBeTruthy());
+    // The seeded order is on ETH-USD; the Orders panel (on BTC-USD) counts it.
+    await waitFor(() => expect(document.querySelector('[data-orders-elsewhere]')?.textContent).toBe('+1 on other markets'));
   },
 
   async history() {
@@ -643,7 +675,7 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
   async 'market-switch'() {
     const { ws } = await appWithMarketSocket();
     expect(ws.frames()[0]).toEqual({ action: 'subscribe', marketId: 1 });
-    fireEvent.click(screen.getByRole('button', { name: 'Ethereum' }));
+    fireEvent.click(document.querySelector('[data-market-row="ETH-USD"]')!);
     await waitFor(() => expect(ws.frames()).toHaveLength(2));
     // One connection; the new subscribe replaces the market.
     expect(sockets('/ws')).toHaveLength(1);
@@ -655,8 +687,10 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
     const { ws, view } = await onSolana();
     ws.receive(golden('subscription_confirmed'));
     ws.receive(golden('book_snapshot_base'));
-    await waitFor(() => expect(view.container.textContent).toContain('$13.99'));
-    expect(view.container.textContent).toContain('$15.80');
+    // SOL groups by its 0.05 tick: the decoded levels reach the ladder as
+    // grouped rungs (13.99 + 13.98 at 14.00; the best ask at 15.80).
+    await waitFor(() => expect(rungLabels(view.container)).toContain('14.00, bids 10.00, asks none'));
+    expect(rungLabels(view.container)).toContain('15.80, bids none, asks 21.00');
     view.unmount();
     await checkChainBreakRefresh(false);
   },
@@ -665,8 +699,8 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
     const { ws, view } = await onSolana();
     ws.receive(golden('trades_batch_initial'));
     ws.receive(golden('trades_batch_flush'));
-    await waitFor(() => expect(view.container.textContent).toContain('$15,003.00'));
-    for (const p of ['$15,001.00', '$14,999.00', '$15,000.50', '$15,002.00']) expect(view.container.textContent).toContain(p);
+    await waitFor(() => expect(view.container.textContent).toContain('15,003.00'));
+    for (const p of ['15,001.00', '14,999.00', '15,000.50', '15,002.00']) expect(view.container.textContent).toContain(p);
   },
 
   async 'candles-1m'() {
@@ -699,9 +733,9 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
     const { ws, view } = await onSolana();
     ws.receive(golden('tickers_handshake'));
     ws.receive(golden('ticker_stats_initial'));
-    await waitFor(() => expect(view.container.textContent).toContain('$15,000.50'));
+    await waitFor(() => expect(view.container.textContent).toContain('15,000.50'));
     ws.receive(golden('ticker_stats_flush'));
-    await waitFor(() => expect(view.container.textContent).toContain('$15,003.00'));
+    await waitFor(() => expect(view.container.textContent).toContain('15,003.00'));
     // The all-market TICKERS frame moves the market list's map.
     const { result } = renderHook(() => useMarketTickers());
     act(() => result.current.handleTickers(decodeMarketFrame(JSON.parse(golden('tickers_handshake'))) as TickersMessage));
@@ -734,11 +768,11 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
     });
     routes.push({ match: c => c.url === '/api/v2/markets', reply: { status: 200, body: withAda } });
     renderApp();
-    await screen.findByRole('button', { name: 'Bitcoin' }, { timeout: 5000 });
+    await screen.findByRole('button', { name: /market btc-usd\. change market/i }, { timeout: 5000 });
     expect(callsTo('GET', '/api/v2/markets')).toHaveLength(2);
     expect(callsTo('GET', '/api/v2/markets')[0].headers.Authorization).toBeUndefined();
     // Names, ticks and ranges are the gateway's: a market the UI never knew is listed.
-    expect(screen.getByRole('button', { name: 'ADA' })).toBeTruthy();
+    expect(document.querySelector('[data-market-row="ADA-USD"]')).toBeTruthy();
   },
 };
 
@@ -749,11 +783,7 @@ describe('port map: every v1 call has its v2 target', () => {
     setSession(null);
     MockWebSocket.instances = [];
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
-    globalThis.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver;
+    globalThis.ResizeObserver = FixedResizeObserver as unknown as typeof ResizeObserver;
     stubMatchMedia();
     stubFetch();
     chart.props = null;
@@ -786,11 +816,7 @@ describe('port map: controls', () => {
     setSession(null);
     MockWebSocket.instances = [];
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
-    globalThis.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver;
+    globalThis.ResizeObserver = FixedResizeObserver as unknown as typeof ResizeObserver;
     stubMatchMedia();
     stubFetch();
     const { TEST_MARKET_LIST } = await import('../test/markets');

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
 /**
- * App smoke test (trading-ui#20): render the real <App/> with the network
- * mocked (WS never connects, fetch returns the v2 gateway's shapes),
- * assert it mounts, and drive the order form through a submit, pinning
- * that the request goes out with money as exact decimal strings, an
- * Idempotency-Key, and no userId in the body.
+ * App smoke test: render the real <App/> with the network mocked (WS
+ * never connects, fetch returns the v2 gateway's shapes), assert the ladder
+ * shell mounts with both sockets, and place an order through the Price
+ * field, pinning that the request goes out with money as exact decimal
+ * strings, an Idempotency-Key, and no userId in the body.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 
 // lightweight-charts needs a real canvas; the chart is not what a smoke
@@ -105,14 +105,17 @@ describe('App smoke', () => {
       </MemoryRouter>
     );
 
-    // Order form is always up in the right rail for the default market (BTC-USD)
-    expect(await screen.findByRole('button', { name: /buy btc/i })).toBeTruthy();
-    // Bottom strip is reduced to Open Orders | History (Order/Trades/Account
-    // tabs are gone — the form lives in the rail, account in the drawer)
-    expect(screen.getByRole('button', { name: /open orders/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^history$/i })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^order$/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^account$/i })).toBeNull();
+    // The ladder is the trading screen: header symbol, the price ladder,
+    // the defaults bar and the staging strip; no order form, no old book.
+    expect(await screen.findByRole('button', { name: /market btc-usd\. change market/i })).toBeTruthy();
+    expect(screen.getByRole('grid', { name: /price ladder/i })).toBeTruthy();
+    expect(screen.getByRole('form', { name: /order defaults/i })).toBeTruthy();
+    expect(screen.getByRole('status', { name: /staged order/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /buy btc/i })).toBeNull();
+    // The ledger line is in the header, all dashes before an engine frame.
+    const line = document.querySelector('[data-engine-line-root]')!;
+    expect(line).toBeTruthy();
+    expect(line.querySelector('[data-engine-line="core"] [data-engine-position]')!.textContent).toBe('–');
     // Markets came from the gateway
     expect(fetchStub.calls.some((c) => c.url.endsWith('/api/v2/markets'))).toBe(true);
     // Market-data WS was opened, plus the user stream
@@ -153,17 +156,16 @@ describe('App smoke', () => {
       </MemoryRouter>
     );
 
-    const buyButton = await screen.findByRole('button', { name: /buy btc/i });
-    const form = buyButton.closest('form')!;
-    expect(form).toBeTruthy();
-
-    // LIMIT is the default order type: first number input = price, second = quantity
-    const inputs = form.querySelectorAll<HTMLInputElement>('input[type="number"]');
-    expect(inputs.length).toBeGreaterThanOrEqual(2);
-    fireEvent.change(inputs[0], { target: { value: '100000' } });
-    fireEvent.change(inputs[1], { target: { value: '0.5' } });
-
-    fireEvent.click(buyButton);
+    await screen.findByRole('grid', { name: /price ladder/i });
+    // The session is validated before the strip treats the user as signed in.
+    await screen.findByRole('button', { name: /^dev$/i });
+    // A price that is on the tick, typed into the defaults bar's Price
+    // field; size 0.5; Buy limit stages it, Enter (the Place button) sends it.
+    const bar = screen.getByRole('form', { name: /order defaults/i });
+    fireEvent.change(within(bar).getByRole('textbox', { name: /^price in/i }), { target: { value: '100000' } });
+    fireEvent.change(within(bar).getByLabelText(/^order size in/i), { target: { value: '0.5' } });
+    fireEvent.click(screen.getByRole('button', { name: /^buy limit$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^place/i }));
 
     await waitFor(() => {
       const post = fetchStub.calls.find(
@@ -189,7 +191,7 @@ describe('App smoke', () => {
     expect(headers.Authorization).toMatch(/^Bearer /);
     expect(headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/);
 
-    // Success notification renders (201 from the gateway)
-    expect(container.textContent).toContain('Buy order submitted');
+    // The strip reports the accepted order (201 from the gateway).
+    await waitFor(() => expect(container.querySelector('[data-result="accepted"]')).toBeTruthy());
   });
 });
