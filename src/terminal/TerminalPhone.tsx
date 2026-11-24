@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Phone terminal shell (behind ?ui=ladder, 768px wide and below): a 56px
+ * Phone terminal shell (768px wide and below): a 56px
  * header (market button, price hero, live dot, menu), the tab body and a
  * bottom nav: Ladder, Chart, Orders N, Trades.
  *
@@ -31,6 +31,8 @@ import { TradingLadder } from './ladder/TradingLadder';
 import type { SlotChrome } from './layout/SideColumn';
 import { ChartPanel } from './panels/ChartPanel';
 import { TradesPanel } from './panels/TradesPanel';
+import { EnginesPanel } from './panels/EnginesPanel';
+import { useEngineWait } from '../ledger/engineStore';
 import { panelOrders } from './panels/ordersModel';
 import { ConnectedOrdersPanel, createActionsStore } from './TerminalDesktop';
 import type { TerminalDesktopProps } from './TerminalDesktop';
@@ -38,7 +40,8 @@ import type { TerminalDesktopProps } from './TerminalDesktop';
 /** The phone takes the same values and callbacks as the desktop shell. */
 export type TerminalPhoneProps = TerminalDesktopProps;
 
-export type PhoneTab = 'ladder' | 'chart' | 'orders' | 'trades';
+/** 'engines' opens from the menu; it has no place in the bottom nav. */
+export type PhoneTab = 'ladder' | 'chart' | 'orders' | 'trades' | 'engines';
 
 /** Placeholder for a value that has not arrived (en dash, not a zero). */
 const NONE = '–';
@@ -85,7 +88,9 @@ function phoneChrome(title: string): SlotChrome {
   };
 }
 
-function PhoneHeader(props: TerminalPhoneProps & { onOpenMarkets: () => void; marketsOpen: boolean }) {
+function PhoneHeader(
+  props: TerminalPhoneProps & { onOpenMarkets: () => void; marketsOpen: boolean; onOpenEngines: () => void; electing: boolean },
+) {
   const { market, stats, status } = props;
   const d = tickDecimals(market.tickSize);
   const raw = stats ? stats.lastPrice || props.orderBook.bids[0]?.price || 0 : null;
@@ -162,9 +167,10 @@ function PhoneHeader(props: TerminalPhoneProps & { onOpenMarkets: () => void; ma
         <span
           role="img"
           data-status={status}
-          aria-label={`Connection ${STATUS_WORDS[status]}`}
-          title={`Connection ${STATUS_WORDS[status]}`}
-          className={`h-2 w-2 flex-none rounded-full ${statusDot(status)}`}
+          data-electing={props.electing ? 'true' : undefined}
+          aria-label={`Connection ${STATUS_WORDS[status]}${props.electing ? ', an engine is electing a leader' : ''}`}
+          title={`Connection ${STATUS_WORDS[status]}${props.electing ? ', an engine is electing a leader' : ''}`}
+          className={`h-2 w-2 flex-none rounded-full ${props.electing ? 'bg-warn animate-pulse-soft' : statusDot(status)}`}
         />
       )}
       <button
@@ -189,6 +195,7 @@ function PhoneHeader(props: TerminalPhoneProps & { onOpenMarkets: () => void; ma
         ) : (
           <MenuItem onSelect={props.onSignIn}>Sign in</MenuItem>
         )}
+        <MenuItem onSelect={props.onOpenEngines}>Engines</MenuItem>
         <MenuItem onSelect={toggleTheme}>{isDark ? 'Switch to light theme' : 'Switch to dark theme'}</MenuItem>
       </Menu>
     </header>
@@ -217,6 +224,7 @@ export function TerminalPhone(props: TerminalPhoneProps) {
   const [sheetHost, setSheetHost] = useState<HTMLElement | null>(null);
   const [actionsStore] = useState(createActionsStore);
   useViewportFitCover();
+  const engineWait = useEngineWait();
 
   const openHere = useMemo(() => panelOrders(props.orders, market.id).here.length, [props.orders, market.id]);
   const ordersLabel = props.signedIn ? `Orders ${openHere}` : 'Orders';
@@ -226,7 +234,13 @@ export function TerminalPhone(props: TerminalPhoneProps) {
       data-terminal="phone"
       className="flex h-screen w-full flex-col overflow-hidden bg-bg pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] text-[14px] text-text tabular-nums supports-[height:100dvh]:h-dvh"
     >
-      <PhoneHeader {...props} onOpenMarkets={() => setMarketsOpen(true)} marketsOpen={marketsOpen} />
+      <PhoneHeader
+        {...props}
+        onOpenMarkets={() => setMarketsOpen(true)}
+        marketsOpen={marketsOpen}
+        onOpenEngines={() => setTab('engines')}
+        electing={engineWait !== null}
+      />
 
       <main className="relative flex min-h-0 flex-1 flex-col">
         <section
@@ -251,6 +265,7 @@ export function TerminalPhone(props: TerminalPhoneProps) {
             onCancelOrder={props.onCancelOrder}
             onReplaceOrder={props.onReplaceOrder}
             onOrderActions={actionsStore.set}
+            engineWait={engineWait}
           />
         </section>
         {tab === 'chart' && (
@@ -262,7 +277,7 @@ export function TerminalPhone(props: TerminalPhoneProps) {
           // The compact list is the desktop panel; on the phone its rows and
           // buttons grow to 44px touch targets from here.
           <div
-            className="flex min-h-0 flex-1 flex-col bg-surface [&_[data-order-row]]:h-11 [&_[data-order-row]]:grid-cols-[3px_72px_minmax(0,1fr)_72px_40px_44px] [&_[data-order-row]_button]:h-11 [&_[data-order-row]_button]:w-11 [&_[data-order-row]_button]:border-0 [&_[data-panel]>div:first-child_button[aria-label]]:h-11 [&_[data-panel]>div:first-child_button[aria-label]]:w-11"
+            className="flex min-h-0 flex-1 flex-col bg-surface [&_[data-order-row]]:h-11 [&_[data-order-row]]:grid-cols-[3px_72px_minmax(0,1fr)_72px_40px_44px] [&_[data-order-row]_button:last-child]:h-11 [&_[data-order-row]_button:last-child]:w-11 [&_[data-order-row]_button:last-child]:border-0 [&_[data-panel]>div:first-child_button[aria-label]]:h-11 [&_[data-panel]>div:first-child_button[aria-label]]:w-11"
           >
             <ConnectedOrdersPanel
               store={actionsStore}
@@ -277,6 +292,11 @@ export function TerminalPhone(props: TerminalPhoneProps) {
         {tab === 'trades' && (
           <div className="flex min-h-0 flex-1 flex-col bg-surface">
             <TradesPanel chrome={phoneChrome('Trades')} market={market} trades={props.trades} />
+          </div>
+        )}
+        {tab === 'engines' && (
+          <div className="flex min-h-0 flex-1 flex-col bg-surface">
+            <EnginesPanel chrome={phoneChrome('Engines')} signedIn={props.signedIn} />
           </div>
         )}
         {/* The staging sheet and results, above every tab. */}

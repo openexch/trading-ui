@@ -106,8 +106,8 @@ describe('market frames: golden files parse with the UI decoder', () => {
   it('TRADES_BATCH: one entry per trade, tradeId a decimal string, tradeCount 1', () => {
     const t = decodeMarketFrame(JSON.parse(golden('trades_batch_flush'))) as TradesBatchMessage;
     expect(t.trades).toEqual([
-      { tradeId: '105', price: 15002, quantity: 0.05, tradeCount: 1, side: 'BUY', timestamp: 1700000140000 },
-      { tradeId: '106', price: 15003, quantity: 0.075, tradeCount: 1, side: 'SELL', timestamp: 1700000165000 },
+      { tradeId: '105', price: 15002, quantity: 0.05, tradeCount: 1, side: 'BUY', timestamp: 1700000140000, journalSeq: null },
+      { tradeId: '106', price: 15003, quantity: 0.075, tradeCount: 1, side: 'SELL', timestamp: 1700000165000, journalSeq: null },
     ]);
   });
 
@@ -201,6 +201,7 @@ describe('market frames: type level', () => {
     >();
     expectTypeOf<TradeWire>().toEqualTypeOf<{
       tradeId: string; price: string; quantity: string; tradeCount: number; side: 'BUY' | 'SELL'; timestamp: number;
+      journalSeq?: number;
     }>();
     expectTypeOf<TickerStatsWire['lastPrice']>().toEqualTypeOf<string>();
     expectTypeOf<TickerStatsWire['marketId']>().toEqualTypeOf<number>();
@@ -223,5 +224,28 @@ describe('market frames: type level', () => {
       ['high24h', 'lastPrice', 'low24h', 'marketId', 'priceChange', 'priceChangePercent', 'timestamp', 'type', 'volume24h'],
     );
     expect(keys(CANDLES_BODY_SCHEMA)).toEqual(['candles', 'interval', 'marketId']);
+  });
+});
+
+describe('market frames: the trade journal sequence', () => {
+  const batch = (extra: Record<string, unknown>) => ({
+    type: 'TRADES_BATCH',
+    marketId: 3,
+    trades: [{ tradeId: '105', price: '15002', quantity: '0.05', tradeCount: 1, side: 'BUY', timestamp: 1, ...extra }],
+    timestamp: 2,
+  });
+
+  it('carries journalSeq to the tape when the service sends it', () => {
+    const m = decodeMarketFrame(batch({ journalSeq: 88123 }));
+    expect(m.type === 'TRADES_BATCH' && m.trades[0].journalSeq).toBe(88123);
+  });
+
+  it('a trade without journalSeq still decodes, with null (the tape prints a dash)', () => {
+    const m = decodeMarketFrame(batch({}));
+    expect(m.type === 'TRADES_BATCH' && m.trades[0].journalSeq).toBeNull();
+  });
+
+  it('a journalSeq that is not a JSON number is refused (the contract changed)', () => {
+    expect(() => decodeMarketFrame(batch({ journalSeq: '88123' }))).toThrow('journalSeq is not a JSON number');
   });
 });

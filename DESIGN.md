@@ -21,22 +21,33 @@ backend supplies each value, and until then rule 14 applies (a dash, never an
 invented number). It replaces the planned header engine rail.
 
 - **Log positions are visible.** The header carries the core and ME log
-  positions, the term and the node count. Each tape row carries the log
-  position of its trade.
-- **Motor panel** (a side-slot panel): for each cluster (core, ME), each
-  node's role, commit position and entries behind the leader; the last
+  positions (each leader's commit position), the term and the node count.
+  Each tape row carries the ME journal sequence of its trade. Only the
+  core's and the clusters' own positions are called log positions; the
+  matching engine's journal and egress sequences are labelled as what they
+  are.
+- **Motor panel** (the Engines side-slot panel): for each cluster (core,
+  ME), each node's role, commit position and how far behind the leader it
+  is, in bytes (no node reports a count of entries); the last
   snapshot with each node's state hash and whether they match; the last
   election; the bridge's position; each component's version and build
   commit, linked to its public repository. A diverged hash is shown and
   names the node.
 - **Order trail**: an own order opens its path (gateway, core accept and
   hold, forward, ME booked, ME matched, core settled), each step with its
-  time, delta and log position.
+  time, delta and position. The gateway step is this browser's own submit
+  time (the gateway does not journal); a delta compares times of one clock
+  only (browser, core or matching engine).
 - **Elections are ledger rows.** A leader change is written into the tape
   (start and end rows) and the header counter switches to a warning state;
-  order entry says it is waiting and that nothing is lost.
+  order entry says it is waiting and that nothing is lost, and one-click
+  disarms. A gateway timeout (504, outcome unknown) is never shown as safe
+  to retry: the strip says the order may have been applied.
 - **Balance ledger**: a balance opens its movements, each with its core log
-  position, above a per-asset conservation line.
+  position, above a per-asset conservation line (a later step; not shown
+  until the backend supplies it).
+- The engine values ride the user's stream, so a signed-out visitor sees
+  dashes; a stream that is down leaves dashes, never stale values.
 - **Materials**: the light theme becomes paper (a warm off-white ground,
   ink-blue wordmark and log numbers); ledger rules (a row hairline, a double
   rule either side of the price column, a heavy rule under headers and
@@ -67,13 +78,17 @@ invented number). It replaces the planned header engine rail.
   pair is hidden and keeps its panels, so crossing the breakpoint changes
   nothing stored.
   Each slot's title is a picker: Markets, Trades, Chart, Open orders, Fills,
-  Balances. A panel appears at most once; picking one that is open elsewhere
-  swaps the two, so no slot is ever empty or doubled. Each column has a
+  Balances, Engines. A panel appears at most once; picking one that is open
+  elsewhere swaps the two, and picking a closed one (there are more panels
+  than slots) replaces the slot's panel, so no slot is ever empty or
+  doubled. Each column has a
   height handle between its two slots. Presets (Default, Scalper,
   Chart-heavy) and Reset are always available.
 - The **header** carries the market symbol (a button that opens the market
   selector, so switching markets never depends on the panel layout), the
-  ticker hero, the connection pill and the account.
+  ticker hero, the ledger line (core and ME log positions, terms, node
+  counts; the 24 h high, low and volume show where the centre has room for
+  both), the connection pill and the account.
 
 ## Phone
 
@@ -81,7 +96,8 @@ A separate branch at 768 px and below: the ladder is the main tab (44 px
 rungs), tap stages into a bottom sheet with Place / Cancel, long-press opens
 the order-type menu (a visible "More order types" button covers people who
 cannot long-press), a floating Re-centre button, and a bottom nav (Ladder,
-Chart, Orders, Trades). No one-click on touch.
+Chart, Orders, Trades). The menu opens the Engines panel; the status dot
+turns to the warning state during an election. No one-click on touch.
 
 ## Non-negotiable behaviours
 
@@ -231,8 +247,9 @@ met at. The last price shows only here, never as a marked row.
 ## Where things live
 
 - Tokens, themes, fonts, scrollbars, focus: `src/index.css`
-- Data (unchanged by the redesign): `src/hooks`, `src/types`, `src/config.ts`,
-  `src/auth`
+- Data: `src/hooks`, `src/types`, `src/config.ts`, `src/auth`
+- Engine telemetry, order trail, balance movements (parsers, store,
+  formatting): `src/ledger`
 - Screen shells, ladder, panels, layout: `src/terminal`
 - Primitives (menu, popover, dialog, checkbox, switch): `src/ui`
 - Pure order-draft and market presentation logic: `src/trading`

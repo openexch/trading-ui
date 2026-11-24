@@ -3,9 +3,9 @@
  * Side-slot layout state (DESIGN.md: side slots, rules 15 and 16).
  *
  * - Six slots, always all stored: 0 and 1 are the left column (top,
- *   bottom), 2 and 3 the right column, 4 and 5 the far-right column. Every
- *   panel sits in exactly one slot, so the slots are a permutation of the
- *   six panels.
+ *   bottom), 2 and 3 the right column, 4 and 5 the far-right column. Six
+ *   distinct panels fill them; the registry has more panels than slots, and
+ *   a panel in no slot is closed.
  * - The mode decides which slots show (`visibleSlots`): wide mode shows all
  *   six; standard mode shows 0 to 3 (left and right columns) and the
  *   far-right column's two panels are hidden, keeping their places. Crossing
@@ -17,7 +17,8 @@
  * - Picking a panel swaps it with the slot's current panel, wherever it is:
  *   open in another visible slot (the two swap places) or in a hidden slot
  *   (the current panel takes its hidden place, so in standard mode it
- *   "becomes hidden"). The reducer needs no mode for this.
+ *   "becomes hidden"). Picking a closed panel replaces the slot's panel,
+ *   which closes. The reducer needs no mode for this.
  * - Invariant: every panel appears exactly once and no slot is ever empty.
  *   Any action that would break it leaves the state unchanged.
  * - Sizes change only through the handle (`split`), a preset or Reset.
@@ -125,9 +126,9 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       if (current === panel) return state;
       const next = [...state.slots] as PanelId[];
       const elsewhere = next.indexOf(panel);
-      if (elsewhere < 0) return state;
-      // The two swap places (a hidden slot included).
-      next[elsewhere] = current;
+      // The two swap places (a hidden slot included); a closed panel takes
+      // the slot and the slot's panel closes.
+      if (elsewhere >= 0) next[elsewhere] = current;
       next[slot] = panel;
       return slotsValid(next) ? { ...state, slots: next as unknown as Slots } : state;
     }

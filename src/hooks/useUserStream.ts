@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { EV, track } from '../analytics';
 import { STREAM_WS_URL } from '../config';
 import type { ApiOrder, ConnectionStatus } from '../types/market';
+import { parseElectionFrame, parseEngineFrame } from '../ledger/engine';
+import type { ElectionEvent, EngineStatus } from '../ledger/engine';
 import { notifyFillsGap } from './fillsGap';
 
 interface UseUserStreamOptions {
@@ -23,6 +25,10 @@ interface UseUserStreamOptions {
    *  resync, or after a reconnect that could not resume). Default: tell the
    *  mounted fills lists to re-read GET /api/v2/fills (fillsGap.ts). */
   onFillsGap?: (eventSeq: number) => void;
+  /** An `engine` frame: both clusters and the bridge (display telemetry). */
+  onEngine?: (status: EngineStatus) => void;
+  /** An `election` frame: a leader election's start or end. */
+  onElection?: (event: ElectionEvent) => void;
 }
 
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -69,6 +75,8 @@ export function useUserStream({
   onResync,
   resume = true,
   onFillsGap = notifyFillsGap,
+  onEngine,
+  onElection,
 }: UseUserStreamOptions) {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const wsRef = useRef<WebSocket | null>(null);
@@ -95,6 +103,10 @@ export function useUserStream({
   onConnectedRef.current = onConnected;
   const onResyncRef = useRef(onResync);
   onResyncRef.current = onResync;
+  const onEngineRef = useRef(onEngine);
+  onEngineRef.current = onEngine;
+  const onElectionRef = useRef(onElection);
+  onElectionRef.current = onElection;
 
   const seen = useCallback((seq: number | null) => {
     if (seq !== null && (lastSeqRef.current === null || seq > lastSeqRef.current)) lastSeqRef.current = seq;
@@ -159,9 +171,18 @@ export function useUserStream({
       case 'error':
         console.error('[stream] refused a frame:', frame.code, frame.error);
         return;
-      // subscribed, fill, balance, admission, engine, election: not used
-      // by this UI (fills are read through REST, balances are polled, the
-      // engine rail is not wired).
+      case 'engine': {
+        const status = parseEngineFrame(frame);
+        if (status) onEngineRef.current?.(status);
+        return;
+      }
+      case 'election': {
+        const event = parseElectionFrame(frame);
+        if (event) onElectionRef.current?.(event);
+        return;
+      }
+      // subscribed, fill, balance, admission: not used by this UI (fills
+      // are read through REST, balances are polled).
       default:
         return;
     }

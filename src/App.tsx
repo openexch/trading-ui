@@ -11,29 +11,18 @@ import { useOrders } from './hooks/useOrders';
 import { useUserStream } from './hooks/useUserStream';
 import { useTheme } from './hooks/useTheme';
 import { useAuth } from './auth/AuthContext';
-import { STACK_VERSION } from './config';
 import { AuthModal } from './components/Auth/AuthModal';
-import { OrderBook } from './components/OrderBook/OrderBook';
-import { TradeList } from './components/Trades/TradeList';
-import { Chart } from './components/Chart/Chart';
-import { ConnectionStatus } from './components/ConnectionStatus/ConnectionStatus';
-import { MarketSelector } from './components/MarketSelector/MarketSelector';
-import { MarketStats } from './components/MarketStats/MarketStats';
-import { OrderForm } from './components/OrderForm/OrderForm';
-import { OpenOrders } from './components/OpenOrders/OpenOrders';
-import { OrderHistory } from './components/OrderHistory/OrderHistory';
 import { AccountDrawer } from './components/Account/AccountDrawer';
-import { ThemeToggle } from './components/ThemeToggle/ThemeToggle';
-import { LogoMark } from './components/LogoMark';
 import { TerminalDesktop } from './terminal/TerminalDesktop';
 import { TerminalPhone } from './terminal/TerminalPhone';
-import { isLadderUiRequested } from './terminal/ladderFlag';
 import type { WebSocketMessage, Market, OrderRequest, UserOrder, ApiOrder, ExtendedConnectionStatus, BookDeltaMessage, TickerStatsMessage, TickersMessage, CandleData, CandleHistoryMessage, CandleUpdateMessage } from './types/market';
 import { loadMarkets, useMarketList } from './markets/marketStore';
 import { decodeCandlesBody } from './api/marketFrames';
 import { mergeLiveCandle } from './utils/candles';
 import { formatRejectReason } from './utils/rejectReasons';
 import { EV, track, updateContext } from './analytics';
+import { engineStore } from './ledger/engineStore';
+import { notifyOrderEvent } from './ledger/orderEvents';
 
 // Mobile detection hook
 function useIsMobile(breakpoint = 768) {
@@ -61,13 +50,6 @@ function MarketPage({ markets }: { markets: Market[] }) {
   const [selectedMarket, setSelectedMarket] = useState<Market>(markets[0]);
   const selectedMarketIdRef = useRef(selectedMarket.id);
 
-  // Mobile-specific state
-  const [mobileTab, setMobileTab] = useState<'chart' | 'orderbook' | 'trades'>('chart');
-  const [showMarketSelector, setShowMarketSelector] = useState(false);
-  const [mobileOrderSide, setMobileOrderSide] = useState<'BID' | 'ASK' | null>(null);
-
-  // Price click-to-fill state
-  const [clickedPrice, setClickedPrice] = useState<number | null>(null);
 
   // Server-aggregated candle state
   const [candles, setCandles] = useState<CandleData[]>([]);
@@ -91,7 +73,7 @@ function MarketPage({ markets }: { markets: Market[] }) {
   const { trades, handleTradesBatch, resetTrades } = useTrades();
   const { stats, setStats, handleTrades, handleBookUpdate, resetStats } = useMarketStats();
   const { tickers, handleTickers, handleTickerStats, resetTickers } = useMarketTickers();
-  const { submitOrder, cancelOrder, replaceOrder, loading: apiLoading } = useApi();
+  const { submitOrder, cancelOrder, replaceOrder } = useApi();
 
   // Rejections after the core accepted an order (the matching engine's
   // decision) arrive as REJECTED order events on the user stream: surface
@@ -108,6 +90,11 @@ function MarketPage({ markets }: { markets: Market[] }) {
     rejectTimerRef.current = window.setTimeout(() => setRejectNotice(null), 8000);
   }, []);
   const { orders, openOrders, handleOrderEvent, applySnapshot, seedOpenOrders, resetOrders, removeOrder } = useOrders(handleOrderRejected);
+  // An order frame also tells an open order trail to read its order again.
+  const handleOrderFrame = useCallback((order: ApiOrder) => {
+    handleOrderEvent(order);
+    notifyOrderEvent(order.orderId);
+  }, [handleOrderEvent]);
 
   // Market-plane reset (reconnect / market switch). User orders live on the
   // user stream and are reset on session change instead. Candles are NOT
@@ -225,18 +212,28 @@ function MarketPage({ markets }: { markets: Market[] }) {
   // The user stream (/ws/v2): connects only while signed in; each
   // (re)connect re-seeds open orders from REST (the stream then wins), and
   // its orders snapshot replaces the list.
+  // The same stream carries the engine telemetry (engine and election
+  // frames) into the engine store; signed out there is none and the screen
+  // prints dashes.
   const sessionToken = session?.token ?? null;
-  useUserStream({
+  const { status: streamStatus } = useUserStream({
     token: sessionToken,
-    onOrderEvent: handleOrderEvent,
+    onOrderEvent: handleOrderFrame,
     onSnapshot: applySnapshot,
     onConnected: seedOpenOrders,
+    onEngine: engineStore.engine,
+    onElection: engineStore.election,
   });
+  useEffect(() => {
+    engineStore.setLive(streamStatus === 'connected');
+  }, [streamStatus]);
 
-  // Session change: drop the previous principal's orders; seed the new one's
-  // immediately (the socket's onConnected covers later reconnects).
+  // Session change: drop the previous principal's orders and the engine
+  // telemetry of their stream; seed the new one's orders immediately (the
+  // socket's onConnected covers later reconnects).
   useEffect(() => {
     resetOrders();
+    engineStore.reset();
     if (sessionToken) seedOpenOrders();
   }, [sessionToken, resetOrders, seedOpenOrders]);
 
@@ -310,7 +307,6 @@ function MarketPage({ markets }: { markets: Market[] }) {
     // Dim (don't blank) the chart until the new market's history lands
     setChartLoading(true);
     resetAllState();
-    setShowMarketSelector(false);
   }, [resetAllState]);
 
   const handleReconnect = useCallback(() => {
@@ -346,360 +342,48 @@ function MarketPage({ markets }: { markets: Market[] }) {
     return await replaceOrder(order.omsOrderId, price, quantity);
   }, [replaceOrder]);
 
-  // Order book price click → fills order form
-  const handlePriceClick = useCallback((price: number) => {
-    setClickedPrice(price);
-  }, []);
 
-  // Bottom strip tab state (the order form lives in the right rail now)
-  const [bottomTab, setBottomTab] = useState<'orders' | 'history'>('orders');
-
-  // The ladder shell renders only under ?ui=ladder (read once, never
-  // persisted): the phone branch at 768px and below, the desktop above.
-  const [ladderUi] = useState(() => isLadderUiRequested());
-  if (ladderUi) {
-    const Shell = isMobile ? TerminalPhone : TerminalDesktop;
-    return (
-      <>
-        <Shell
-          market={selectedMarket}
-          markets={markets}
-          onSelectMarket={handleMarketChange}
-          stats={stats}
-          tickers={tickers}
-          orderBook={orderBook}
-          levelChanges={levelChanges}
-          openOrders={openOrders}
-          orders={orders}
-          trades={trades}
-          chart={{
-            candles,
-            currentCandle,
-            activeInterval: chartInterval,
-            onIntervalChange: handleIntervalChange,
-            loading: chartLoading,
-          }}
-          status={effectiveStatus}
-          onReconnect={handleReconnect}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          username={session?.username ?? null}
-          onSignIn={() => setShowAuthModal(true)}
-          onOpenAccount={() => {
-            track(EV.account_drawer_open);
-            setShowAccountDrawer(true);
-          }}
-          signedIn={!!session}
-          onSubmitOrder={handleSubmitOrder}
-          rejectNotice={rejectNotice}
-          onCancelOrder={handleCancelOrder}
-          onReplaceOrder={handleReplaceOrder}
-        />
-        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
-        {showAccountDrawer && session && <AccountDrawer onClose={() => setShowAccountDrawer(false)} />}
-      </>
-    );
-  }
-
-  const tabClass = (active: boolean) =>
-    `relative px-4 py-2.5 text-[13px] font-medium transition-colors ${
-      active ? 'text-text' : 'text-faint hover:text-muted'
-    }`;
-
+  // The phone shell at 768px and below, the desktop shell above.
+  const Shell = isMobile ? TerminalPhone : TerminalDesktop;
   return (
-    <div className="mx-auto flex h-screen max-w-[1920px] flex-col px-2">
-      {/* ── Header ── */}
-      <header className="flex flex-shrink-0 items-center justify-between border-b border-hairline py-2.5">
-        {/* The mobile header carries the logo mark without the wordmark: at
-            390px the full row wants ~500px, and letting flex shrink it wrapped
-            every label onto two lines (the market symbol became "BTC-" /
-            "USD"). The mark plus a compact status pill fit with room at 360px. */}
-        <div className={`flex min-w-0 items-center ${isMobile ? 'gap-2.5' : 'gap-5'}`}>
-          <div className="flex flex-shrink-0 select-none items-center gap-2.5">
-            <LogoMark />
-            {!isMobile && (
-              <span className="whitespace-nowrap font-display text-[17px] font-bold leading-none tracking-tight">
-                <span className="text-accent">Open</span>{' '}
-                <span className="text-text-strong">Exchange</span>
-              </span>
-            )}
-          </div>
-          {isMobile ? (
-            <button
-              className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 font-mono text-[13px] font-medium text-text-strong"
-              onClick={() => setShowMarketSelector(true)}
-            >
-              <span className="whitespace-nowrap">{selectedMarket.symbol}</span>
-              <svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor" className="text-faint">
-                <path d="M2 4l4 4 4-4" />
-              </svg>
-            </button>
-          ) : (
-            <MarketSelector
-              markets={markets}
-              selectedMarket={selectedMarket}
-              onSelectMarket={handleMarketChange}
-            />
-          )}
-        </div>
-        <div className="flex flex-shrink-0 items-center gap-2.5">
-          {session ? (
-            <button
-              onClick={() => {
-                track(EV.account_drawer_open);
-                setShowAccountDrawer(true);
-              }}
-              title="Account & balances"
-              className="flex h-8 items-center gap-1.5 rounded-md border border-hairline bg-surface-2 px-2.5 text-xs font-medium text-text transition-colors hover:bg-surface-3"
-            >
-              <span className="max-w-[120px] truncate">{session.username}</span>
-              <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-faint">
-                <path d="M2.5 4.5L6 8l3.5-3.5" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowAuthModal(true)}
-              className="h-8 whitespace-nowrap rounded-md border border-hairline bg-surface-2 px-3 text-xs font-medium text-text transition-colors hover:bg-surface-3"
-            >
-              Sign in
-            </button>
-          )}
-          <ThemeToggle theme={theme} onToggle={toggleTheme} />
-          <ConnectionStatus status={effectiveStatus} onReconnect={handleReconnect} compact={isMobile} />
-        </div>
-      </header>
-
-      {/* ── Ticker rail (signature) ── */}
-      <div className="flex-shrink-0 py-1.5">
-        <MarketStats market={selectedMarket} stats={stats} orderBook={orderBook} compact={isMobile} />
-      </div>
-
-      {/* ── Main grid: book | chart + own orders | order rail + tape ── */}
-      <main className="my-1.5 grid min-h-0 flex-1 grid-cols-1 gap-1.5 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[320px_minmax(0,1fr)_320px]">
-        {/* Left — Order Book (desktop) */}
-        {!isMobile && (
-          <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-hairline bg-surface">
-            <OrderBook orderBook={orderBook} levelChanges={levelChanges} onPriceClick={handlePriceClick} />
-          </aside>
-        )}
-
-        {/* Center — Chart + bottom tabs */}
-        <section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg border border-hairline bg-surface">
-          {/* Desktop chart */}
-          {!isMobile && (
-            <div className="flex min-h-[200px] flex-1 flex-col border-b border-hairline [&>*]:min-h-0 [&>*]:flex-1">
-              <Chart
-                candles={candles}
-                currentCandle={currentCandle}
-                symbol={selectedMarket.symbol}
-                theme={theme}
-                onIntervalChange={handleIntervalChange}
-                activeInterval={chartInterval}
-                loading={chartLoading}
-              />
-            </div>
-          )}
-
-          {/* Mobile tab bar */}
-          {isMobile && (
-            <div className="flex flex-shrink-0 border-b border-hairline">
-              {(['chart', 'orderbook', 'trades'] as const).map((t) => (
-                <button
-                  key={t}
-                  className={`relative min-h-11 flex-1 py-2.5 text-[13px] font-medium transition-colors ${
-                    mobileTab === t ? 'text-text-strong after:absolute after:inset-x-[20%] after:bottom-0 after:h-0.5 after:rounded-t after:bg-accent' : 'text-faint'
-                  }`}
-                  onClick={() => {
-                    track(EV.mobile_tab_switch, { to: t });
-                    setMobileTab(t);
-                  }}
-                >
-                  {t === 'chart' ? 'Chart' : t === 'orderbook' ? 'Order Book' : 'Trades'}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Mobile tab content */}
-          {isMobile && (
-            <div className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch]">
-              {mobileTab === 'chart' && (
-                <Chart candles={candles} currentCandle={currentCandle} symbol={selectedMarket.symbol} theme={theme} onIntervalChange={handleIntervalChange} activeInterval={chartInterval} loading={chartLoading} />
-              )}
-              {mobileTab === 'orderbook' && (
-                <OrderBook orderBook={orderBook} levelChanges={levelChanges} onPriceClick={handlePriceClick} />
-              )}
-              {mobileTab === 'trades' && <TradeList trades={trades} />}
-            </div>
-          )}
-
-          {/* Desktop bottom strip — FIXED height so the chart above never
-              resizes when the tab changes */}
-          {!isMobile ? (
-            <div className="flex h-[260px] flex-shrink-0 flex-col border-t border-hairline">
-              <div className="flex flex-shrink-0 gap-0 border-b border-hairline px-4">
-                <button className={tabClass(bottomTab === 'orders')} onClick={() => setBottomTab('orders')}>
-                  Open Orders ({openOrders.length}){bottomTab === 'orders' && <Underline />}
-                </button>
-                <button className={tabClass(bottomTab === 'history')} onClick={() => setBottomTab('history')}>
-                  History{bottomTab === 'history' && <Underline />}
-                </button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                {bottomTab === 'orders' && (
-                  session ? (
-                    <OpenOrders orders={openOrders} onCancelOrder={handleCancelOrder} onReplaceOrder={handleReplaceOrder} loading={apiLoading} />
-                  ) : (
-                    <SignInPrompt what="your orders" onSignIn={() => setShowAuthModal(true)} />
-                  )
-                )}
-                {bottomTab === 'history' && (
-                  session ? <OrderHistory market={selectedMarket} /> : <SignInPrompt what="your history" onSignIn={() => setShowAuthModal(true)} />
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-shrink-0 gap-2.5 border-t border-hairline bg-surface px-3 py-2">
-              <button
-                className="min-h-12 flex-1 rounded-md border border-buy/30 bg-buy-faint py-3 text-[15px] font-bold text-buy active:brightness-95"
-                onClick={() => setMobileOrderSide('BID')}
-              >
-                Buy
-              </button>
-              <button
-                className="min-h-12 flex-1 rounded-md border border-sell/30 bg-sell-faint py-3 text-[15px] font-bold text-sell active:brightness-95"
-                onClick={() => setMobileOrderSide('ASK')}
-              >
-                Sell
-              </button>
-            </div>
-          )}
-        </section>
-
-        {/* Right — always-visible order form over the live tape (desktop) */}
-        {!isMobile && (
-          <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-hairline bg-surface">
-            <div className="max-h-[60%] flex-shrink-0 overflow-y-auto">
-              <OrderForm
-                compact
-                market={selectedMarket}
-                onSubmitOrder={handleSubmitOrder}
-                loading={apiLoading}
-                externalPrice={clickedPrice}
-                lastPrice={stats?.lastPrice ?? null}
-                signedIn={!!session}
-                onRequestSignIn={() => setShowAuthModal(true)}
-                rejectNotice={rejectNotice}
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden border-t border-hairline">
-              <TradeList trades={trades} />
-            </div>
-          </aside>
-        )}
-      </main>
-
-      {/* Mobile Market Selector overlay */}
-      {isMobile && showMarketSelector && (
-        <MarketSelector
-          markets={markets}
-          selectedMarket={selectedMarket}
-          onSelectMarket={handleMarketChange}
-          isOverlay
-          onClose={() => setShowMarketSelector(false)}
-        />
-      )}
-
-      {/* Mobile Order Form bottom sheet */}
-      {isMobile && mobileOrderSide && (
-        <div
-          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 animate-overlay-in"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setMobileOrderSide(null);
-          }}
-        >
-          <div className="max-h-[85vh] overflow-y-auto rounded-t-2xl bg-surface animate-sheet-up [-webkit-overflow-scrolling:touch]">
-            <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl bg-surface px-4 pb-2 pt-4">
-              <span className="font-display text-lg font-bold text-text-strong">
-                {mobileOrderSide === 'BID' ? 'Buy' : 'Sell'} {selectedMarket.baseAsset}
-              </span>
-              <button
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-muted active:bg-surface-3"
-                onClick={() => setMobileOrderSide(null)}
-                aria-label="Close"
-              >
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-            <OrderForm
-              market={selectedMarket}
-              onSubmitOrder={async (order) => {
-                const result = await handleSubmitOrder(order);
-                if (result.success) setMobileOrderSide(null);
-                return result;
-              }}
-              loading={apiLoading}
-              externalPrice={clickedPrice}
-              defaultSide={mobileOrderSide}
-              lastPrice={stats?.lastPrice ?? null}
-              signedIn={!!session}
-              onRequestSignIn={() => setShowAuthModal(true)}
-              rejectNotice={rejectNotice}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Sign in / register modal */}
+    <>
+      <Shell
+        market={selectedMarket}
+        markets={markets}
+        onSelectMarket={handleMarketChange}
+        stats={stats}
+        tickers={tickers}
+        orderBook={orderBook}
+        levelChanges={levelChanges}
+        openOrders={openOrders}
+        orders={orders}
+        trades={trades}
+        chart={{
+          candles,
+          currentCandle,
+          activeInterval: chartInterval,
+          onIntervalChange: handleIntervalChange,
+          loading: chartLoading,
+        }}
+        status={effectiveStatus}
+        onReconnect={handleReconnect}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        username={session?.username ?? null}
+        onSignIn={() => setShowAuthModal(true)}
+        onOpenAccount={() => {
+          track(EV.account_drawer_open);
+          setShowAccountDrawer(true);
+        }}
+        signedIn={!!session}
+        onSubmitOrder={handleSubmitOrder}
+        rejectNotice={rejectNotice}
+        onCancelOrder={handleCancelOrder}
+        onReplaceOrder={handleReplaceOrder}
+      />
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
-
-      {/* Account slide-over (header username pill; works on mobile too) */}
       {showAccountDrawer && session && <AccountDrawer onClose={() => setShowAccountDrawer(false)} />}
-
-      {/* ── Footer ── */}
-      {!isMobile && (
-        <footer className="flex flex-shrink-0 items-center justify-between border-t border-hairline py-2 text-[11px] font-medium text-faint">
-          <div className="flex items-center gap-2">
-            <span className="text-accent">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-              </svg>
-            </span>
-            <span>Open Exchange Trading Engine</span>
-            <span className="text-hairline-strong">|</span>
-            <span className="font-mono text-[10px] text-muted">{STACK_VERSION}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse-soft" />
-            <span className="text-accent">Live updates</span>
-          </div>
-        </footer>
-      )}
-    </div>
-  );
-}
-
-/** Active-tab underline accent. */
-function Underline() {
-  return <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-t bg-accent" />;
-}
-
-/** Centered sign-in nudge for the user-scoped tab panels. */
-function SignInPrompt({ what, onSignIn }: { what: string; onSignIn: () => void }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 py-8">
-      <span className="text-[12px] text-muted">Sign in to see {what}</span>
-      <button
-        onClick={onSignIn}
-        className="rounded-md bg-accent px-4 py-1.5 text-xs font-semibold text-on-accent transition-colors hover:bg-accent-hover"
-      >
-        Sign in
-      </button>
-    </div>
+    </>
   );
 }
 
@@ -730,14 +414,9 @@ function MarketsGate() {
 
 function App() {
   return (
-    <>
-      {/* App-wide faint engineering dot-grid; opaque panels cover it, so it only
-          shows through the chrome/gutters. Decorative. */}
-      <div aria-hidden className="bg-dotgrid pointer-events-none fixed inset-0 -z-10" />
-      <Routes>
-        <Route path="/" element={<MarketsGate />} />
-      </Routes>
-    </>
+    <Routes>
+      <Route path="/" element={<MarketsGate />} />
+    </Routes>
   );
 }
 

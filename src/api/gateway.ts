@@ -23,7 +23,7 @@ export interface ApiErrorBody {
 
 export type ApiResult<T> =
   | { ok: true; status: number; body: T }
-  | { ok: false; status: number; error: ApiErrorBody };
+  | { ok: false; status: number; error: ApiErrorBody; retryAfterMs?: number | null };
 
 /** A fresh Idempotency-Key: one per user action, never reused for another
  *  request (a reuse with other fields is 409 REQUEST_ID_PAYLOAD_MISMATCH). */
@@ -95,7 +95,15 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
     }
   }
   if (res.ok) return { ok: true, status: res.status, body: parsed as T };
-  return { ok: false, status: res.status, error: toApiError(parsed) };
+  return { ok: false, status: res.status, error: toApiError(parsed), retryAfterMs: retryAfterMs(res) };
+}
+
+/** Retry-After (whole seconds, as the gateway sends it on every 429 and
+ *  503) in ms; null when absent or unreadable. */
+function retryAfterMs(res: Response): number | null {
+  const raw = typeof res.headers?.get === 'function' ? res.headers.get('Retry-After') : null;
+  if (raw === null || !/^[0-9]+$/.test(raw.trim())) return null;
+  return Number(raw.trim()) * 1000;
 }
 
 async function readText(res: Response): Promise<string> {

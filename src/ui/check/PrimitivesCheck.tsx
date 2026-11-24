@@ -2,7 +2,7 @@
 /**
  * Browser check page for the UI primitives: every primitive in its real
  * states, in whichever theme is active. Reachable only at
- * `?ui=ladder&check=primitives` and loaded as its own chunk, so it costs the
+ * `?check=primitives` and loaded as its own chunk, so it costs the
  * trading page nothing. No market data, no account calls.
  */
 import { useRef, useState } from 'react';

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
 /**
- * Ladder shell smoke test: the real <App/> under ?ui=ladder with the network
- * mocked. The flag picks the new shell; without it the default screen is
- * unchanged. A market-data snapshot pushed through the mocked socket reaches
- * the ladder as rungs.
+ * Ladder shell smoke test: the real <App/> with the network mocked. The
+ * ladder is the trading screen. A market-data snapshot pushed through the
+ * mocked socket reaches the ladder as rungs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -19,6 +18,7 @@ import { AuthProvider } from '../auth/AuthContext';
 import { BalancesProvider } from '../hooks/useBalances';
 import { apiError, apiOrder, asResponse, bookSnapshotFrame, gatewayReply, orderFrame, tickerEntry } from '../test/wire';
 import type { Reply } from '../test/wire';
+import { engineFrame } from '../test/engine';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -113,7 +113,7 @@ function renderApp() {
   );
 }
 
-describe('Ladder shell (?ui=ladder)', () => {
+describe('Ladder shell', () => {
   beforeEach(() => {
     cleanup();
     MockWebSocket.instances = [];
@@ -129,7 +129,6 @@ describe('Ladder shell (?ui=ladder)', () => {
   });
 
   it('renders the ladder shell: header, ladder, the slot panels at the sides', async () => {
-    window.history.replaceState({}, '', '/?ui=ladder');
     const { container } = renderApp();
 
     expect(await screen.findByRole('button', { name: /market btc-usd\. change market/i })).toBeTruthy();
@@ -160,7 +159,6 @@ describe('Ladder shell (?ui=ladder)', () => {
   });
 
   it('draws rungs from a book snapshot pushed through the market socket', async () => {
-    window.history.replaceState({}, '', '/?ui=ladder');
     const { container } = renderApp();
     await screen.findByRole('grid', { name: /price ladder/i });
     // Skeleton rungs until the first snapshot.
@@ -181,7 +179,6 @@ describe('Ladder shell (?ui=ladder)', () => {
   });
 
   it('Markets panel: dashes until TICKERS arrives, then every market priced; a switch keeps the values', async () => {
-    window.history.replaceState({}, '', '/?ui=ladder');
     const { container } = renderApp();
     await screen.findByRole('grid', { name: /price ladder/i });
     const row = (sym: string) => container.querySelector(`[data-market-row="${sym}"]`)!;
@@ -233,7 +230,6 @@ describe('Ladder shell (?ui=ladder)', () => {
   const posts = () => calls.filter(c => c.url.endsWith('/api/v2/orders') && c.init?.method === 'POST');
 
   async function ladderWithBook() {
-    window.history.replaceState({}, '', '/?ui=ladder');
     const utils = renderApp();
     await screen.findByRole('grid', { name: /price ladder/i });
     // The session is validated before the strip treats the user as signed in.
@@ -460,7 +456,6 @@ describe('Ladder shell (?ui=ladder)', () => {
 
   it('signed out: staging works and Place opens sign-in', async () => {
     localStorage.removeItem('oe.session');
-    window.history.replaceState({}, '', '/?ui=ladder');
     renderApp();
     await screen.findByRole('grid', { name: /price ladder/i });
     pushBook();
@@ -786,7 +781,6 @@ describe('Ladder shell (?ui=ladder)', () => {
   });
 
   it('a picked layout is remembered across a reload; Reset returns to Default', async () => {
-    window.history.replaceState({}, '', '/?ui=ladder');
     const first = renderApp();
     fireEvent.click(await screen.findByRole('button', { name: 'Panel: Trades. Change' }));
     fireEvent.click(screen.getByRole('menuitemradio', { name: /^balances/i }));
@@ -936,7 +930,6 @@ describe('Ladder shell (?ui=ladder)', () => {
 
   it('one-click cannot be armed signed out', async () => {
     localStorage.removeItem('oe.session');
-    window.history.replaceState({}, '', '/?ui=ladder');
     renderApp();
     await screen.findByRole('grid', { name: /price ladder/i });
     pushBook();
@@ -1236,9 +1229,112 @@ describe('Ladder shell (?ui=ladder)', () => {
     await waitFor(() => expect(allDialog().textContent).toContain('No fills yet'));
   });
 
-  it('keeps the default screen without the flag', async () => {
+  it('is the default screen: no flag, no old order form or book', async () => {
     renderApp();
-    expect(await screen.findByRole('button', { name: /open orders/i })).toBeTruthy();
-    expect(screen.queryByRole('grid', { name: /price ladder/i })).toBeNull();
+    expect(await screen.findByRole('grid', { name: /price ladder/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /buy btc/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^history$/i })).toBeNull();
+  });
+  // ---- the ledger identity -------------------------------------------------
+
+  const stream = () => MockWebSocket.instances.find(w => w.url.endsWith('/ws/v2'))!;
+  /** The user stream opens (once) and delivers a frame. */
+  let streamOpened: MockWebSocket | null = null;
+  const toStream = (frame: unknown) =>
+    act(() => {
+      const ws = stream();
+      if (streamOpened !== ws) {
+        ws.onopen?.();
+        streamOpened = ws;
+      }
+      ws.onmessage?.({ data: JSON.stringify(frame) });
+    });
+
+  it('a 504 OUTCOME_UNKNOWN is never shown as safe: an alert that it may have been applied, and it is not kept staged', async () => {
+    await ladderWithBook();
+    postReply = { status: 504, body: apiError('OUTCOME_UNKNOWN', 'the core did not answer in time') };
+    const cell = screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,400/i });
+    fireEvent.click(cell);
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    const alert = await screen.findByRole('alert');
+    expect(alert.getAttribute('data-result')).toBe('unknown');
+    expect(alert.textContent).toMatch(/^Outcome unknown: Buy 0.25 BTC @ 97,400\..*may have been applied/);
+    expect(alert.textContent).not.toMatch(/rejected/i);
+    // Not staged: another Enter cannot send it again blindly.
+    expect(strip().textContent).not.toContain('Staged');
+    expect(posts()).toHaveLength(1);
+  });
+
+  it('a 503 CORE_UNAVAILABLE waits: nothing was sent, the order stays staged', async () => {
+    await ladderWithBook();
+    postReply = { status: 503, body: apiError('CORE_UNAVAILABLE', 'the core session is not available') };
+    const cell = screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,400/i });
+    fireEvent.click(cell);
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    await waitFor(() => expect(strip().querySelector('[data-result="waiting"]')).toBeTruthy());
+    expect(strip().textContent).toMatch(/Waiting for the core: .* was not sent\. Nothing is lost/);
+    expect(strip().textContent).toContain('Staged');
+  });
+
+  it('engine and election frames: the header line, the waiting strip, a disarmed one-click and the tape rows', async () => {
+    const { container } = await ladderWithBook();
+    const coreLine = () => container.querySelector('[data-engine-line="core"]')!;
+    expect(coreLine().querySelector('[data-engine-position]')!.textContent).toBe('–');
+    toStream(engineFrame());
+    await waitFor(() => expect(coreLine().querySelector('[data-engine-position]')!.textContent).toBe('51,234,816'));
+    expect(coreLine().querySelector('[data-engine-term]')!.textContent).toBe('4');
+    expect(container.querySelector('[data-engine-line="matchingEngine"] [data-engine-position]')!.textContent).toBe('9,100');
+
+    // One-click is armed, then a core election starts.
+    fireEvent.click(screen.getByRole('switch', { name: /one-click/i }));
+    expect(strip().getAttribute('data-armed')).toBe('true');
+    toStream({ type: 'election', cluster: 'core', phase: 'start', atMs: Date.now(), previousTerm: 4, previousLeaderId: 0, lastCommitPosition: 1, candidates: [1] });
+    await waitFor(() => expect(coreLine().getAttribute('data-electing')).toBe('true'));
+    expect(strip().querySelector('[data-result="waiting"]')!.textContent).toMatch(/order entry is waiting\. Nothing is lost/);
+    expect(strip().getAttribute('data-armed')).toBeNull();
+
+    toStream({
+      type: 'election', cluster: 'core', phase: 'end', atMs: Date.now() + 1, previousTerm: 4, previousLeaderId: 0, term: 5, leaderId: 1,
+      firstEntryPosition: null, durationMs: null, observedGapMs: 900, orderEntryReopened: null,
+    });
+    await waitFor(() => expect(coreLine().getAttribute('data-electing')).toBeNull());
+    expect(strip().querySelector('[data-result="waiting"]')).toBeNull();
+
+    // The tape writes both rows once it has trades.
+    const md = MockWebSocket.instances.find(w => w.url.endsWith('/ws'))!;
+    act(() => {
+      md.onmessage?.({
+        data: JSON.stringify({
+          type: 'TRADES_BATCH', marketId: 1, timestamp: 1,
+          trades: [{ tradeId: '9', price: '97400', quantity: '0.1', tradeCount: 1, side: 'BUY', timestamp: 1, journalSeq: 4242 }],
+        }),
+      });
+    });
+    await waitFor(() => expect(container.querySelector('[data-election-row="start"]')).toBeTruthy());
+    expect(container.querySelector('[data-election-row="end"]')!.textContent).toContain('Core election ended · leader 1 · term 5');
+    expect(container.querySelector('[data-trade-row] [data-journal-seq]')!.textContent).toBe('journal seq 4,242');
+  });
+
+  it('the Engines panel is picked into a slot and shows the engine frame', async () => {
+    const { container } = await ladderWithBook();
+    toStream(engineFrame());
+    fireEvent.click(screen.getByRole('button', { name: 'Panel: Open orders. Change' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^engines/i }));
+    const panel = await screen.findByRole('region', { name: 'Engines' });
+    await waitFor(() => expect(panel.querySelector('[data-engine-node="core-0"]')).toBeTruthy());
+    expect(panel.querySelector('[data-engine-node="core-0"] a')!.getAttribute('href')).toBe(
+      'https://github.com/openexch/core/commit/abcdef1234567',
+    );
+    expect(container.querySelector('[data-engine-bridge]')!.textContent).toContain('880');
+  });
+
+  it('an own order opens its trail from the Orders panel', async () => {
+    await ladderWithBook();
+    pushOwn({ id: '9701', price: 97_390 });
+    const toggle = await screen.findByRole('button', { name: 'Show the trail of Buy 0.50 at 97,390' });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(calls.some(c => c.url.includes('/api/v2/orders/9701/trail'))).toBe(true));
+    expect(await screen.findByRole('list', { name: 'Order trail' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide the trail of Buy 0.50 at 97,390' }).getAttribute('aria-expanded')).toBe('true');
   });
 });

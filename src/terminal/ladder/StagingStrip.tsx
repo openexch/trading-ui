@@ -20,8 +20,11 @@ import type { OrderSide } from '../../types/market';
 import { LADDER_FRAME } from '../layoutColumns';
 
 export interface StripResult {
-  /** info: keyboard feedback, polite and neutral. */
-  kind: 'accepted' | 'rejected' | 'info';
+  /** info: keyboard feedback, polite and neutral. unknown: the core did not
+   *  answer in time and the request may have been applied (an alert, never
+   *  shown as safe). waiting: an election, or no core session (nothing was
+   *  sent; polite). */
+  kind: 'accepted' | 'rejected' | 'info' | 'unknown' | 'waiting';
   text: string;
   /** Engine reject code, kept inspectable as the title. */
   code?: string | null;
@@ -75,6 +78,42 @@ export interface StagingStripProps {
    *  buttons. `problem` disables them (why: the strip shows it, the buttons
    *  carry it as their title). */
   limit?: { onLimit: (side: OrderSide) => void; problem: string | null };
+}
+
+/** One result line, as the strip and the phone sheet print it. */
+export function ResultText({ result }: { result: StripResult }) {
+  switch (result.kind) {
+    case 'rejected':
+      return (
+        <span role="alert" data-result="rejected" title={result.code ?? undefined} className="font-medium text-sell">
+          {result.text}
+        </span>
+      );
+    case 'unknown':
+      return (
+        <span role="alert" data-result="unknown" title={result.code ?? undefined} className="font-medium text-warn">
+          {result.text}
+        </span>
+      );
+    case 'waiting':
+      return (
+        <span data-result="waiting" title={result.code ?? undefined} className="font-medium text-warn">
+          {result.text}
+        </span>
+      );
+    case 'info':
+      return (
+        <span data-result="info" className="text-text">
+          {result.text}
+        </span>
+      );
+    default:
+      return (
+        <span data-result="accepted" className="font-medium text-buy">
+          {result.text}
+        </span>
+      );
+  }
 }
 
 const BTN = 'h-[26px] flex-none rounded-md px-2.5 text-[12px] font-[inherit] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50';
@@ -186,22 +225,7 @@ export function StagingStrip({
       ) : (
         <span className="flex-none text-muted">Click a bid to buy, an ask to sell</span>
       )}
-      <span className="min-w-0 flex-1 truncate">
-        {result &&
-          (result.kind === 'rejected' ? (
-            <span role="alert" data-result="rejected" title={result.code ?? undefined} className="font-medium text-sell">
-              {result.text}
-            </span>
-          ) : result.kind === 'info' ? (
-            <span data-result="info" className="text-text">
-              {result.text}
-            </span>
-          ) : (
-            <span data-result="accepted" className="font-medium text-buy">
-              {result.text}
-            </span>
-          ))}
-      </span>
+      <span className="min-w-0 flex-1 truncate">{result && <ResultText result={result} />}</span>
       {cancelAll && !cancelAll.asking && (
         <button
           type="button"
