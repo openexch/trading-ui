@@ -4,8 +4,9 @@
  * cluster's log position (the leader's commit position), its term and its
  * node count (live / configured).
  *
- * - Source: the user stream's `engine` and `election` frames (engineStore).
- *   Signed out there is no stream, so every value is a dash; while the
+ * - Source: the user stream's `engine` and `election` frames (engineStore),
+ *   or signed out the anonymous engine feed where the server offers it
+ *   (useEngineFeed); without either every value is a dash; while the
  *   stream is down the last values are stale and print dashes too
  *   (DESIGN.md rule 14).
  * - An open election turns that cluster's counter into the warning state:

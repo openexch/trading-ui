@@ -4,11 +4,13 @@
  * the engines panel, the tape and order entry read one copy and a frame
  * re-renders only what reads it.
  *
- * - `status`: the latest `engine` frame, or null before the first one (and
- *   always while signed out: the frame rides the user stream, which needs a
- *   credential). Null prints dashes everywhere.
- * - `live`: the user stream is open. While it is not, the last frame is
- *   stale: the screen prints dashes instead of old values.
+ * - `status`: the latest `engine` frame, or null before the first one. The
+ *   frame rides the user stream while signed in and the anonymous engine
+ *   feed while signed out (useEngineFeed; null while the server does not
+ *   offer it). Null prints dashes everywhere.
+ * - `live`: the stream feeding the store is open (the user stream, or the
+ *   accepted anonymous feed). While it is not, the last frame is stale: the
+ *   screen prints dashes instead of old values.
  * - `elections`: the election frames seen this session, newest first (the
  *   tape's election rows).
  * - `electing`: per cluster, the start of an election with no end yet. An
@@ -82,7 +84,7 @@ export function createEngineStore(): EngineStore {
   };
 }
 
-/** The app's one store (the user stream feeds it). */
+/** The app's one store (the user stream or the anonymous feed fills it). */
 export const engineStore = createEngineStore();
 
 export function useEngine(store: EngineStore = engineStore): EngineState {
@@ -99,8 +101,7 @@ export function electingClusters(s: EngineState): ClusterKey[] {
   return (['core', 'matchingEngine'] as const).filter(k => s.electing[k] !== null);
 }
 
-/** The waiting line order entry shows during an election, or null. Only a
- *  signed-in stream sees elections. */
+/** The waiting line order entry shows during an election, or null. */
 export function engineWaitText(s: EngineState): string | null {
   if (s.electing.core) return 'Core is electing a leader: order entry is waiting. Nothing is lost';
   if (s.electing.matchingEngine) {

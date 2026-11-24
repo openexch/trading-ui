@@ -34,6 +34,10 @@ function invariantHolds(s: LayoutState) {
   for (const p of s.slots) expect(PANEL_IDS).toContain(p);
 }
 
+/** The Chart preset (Default before the ledger screen): the fixed layout
+ *  the reducer cases below are written against. */
+const chartLayout = () => presetLayout('chart');
+
 /** What a mode shows: the visible slots' panels, in slot order. */
 const shown = (s: LayoutState, mode: LayoutMode) => visibleSlots(mode).map(i => s.slots[i]);
 
@@ -47,7 +51,7 @@ describe('slots and modes', () => {
   });
 
   it('standard mode hides the far-right column; wide hides nothing', () => {
-    const d = defaultLayout();
+    const d = chartLayout();
     expect(shown(d, 'standard')).toEqual(['markets', 'trades', 'chart', 'orders']);
     expect(hiddenPanels(d.slots, 'standard')).toEqual(['fills', 'balances']);
     expect(hiddenPanels(d.slots, 'wide')).toEqual([]);
@@ -55,7 +59,7 @@ describe('slots and modes', () => {
 });
 
 describe('layoutReducer: pick', () => {
-  const base = defaultLayout(); // markets, trades | chart, orders | fills, balances
+  const base = chartLayout(); // markets, trades | chart, orders | fills, balances; engines closed
 
   it('picking the panel already in the slot changes nothing', () => {
     expect(layoutReducer(base, { type: 'pick', slot: 0, panel: 'markets' })).toBe(base);
@@ -138,7 +142,7 @@ describe('layoutReducer: pick', () => {
 describe('crossing the breakpoint', () => {
   it('a six-slot layout survives standard mode and comes back when the window widens', () => {
     // Set up a wide layout.
-    let s = defaultLayout();
+    let s = chartLayout();
     s = layoutReducer(s, { type: 'pick', slot: 4, panel: 'chart' }); // chart far right top
     s = layoutReducer(s, { type: 'split', column: 'farRight', ratio: 0.8 });
     const wide = s;
@@ -163,8 +167,8 @@ describe('crossing the breakpoint', () => {
 });
 
 describe('closed panels', () => {
-  it('Default leaves Engines closed; picking it replaces the slot panel, and picking that back swaps nothing else', () => {
-    const s = defaultLayout();
+  it('Chart leaves Engines closed; picking it replaces the slot panel, and picking that back swaps nothing else', () => {
+    const s = chartLayout();
     expect(s.slots).not.toContain('engines');
     const t = layoutReducer(s, { type: 'pick', slot: 3, panel: 'engines' });
     expect(t.slots).toEqual(['markets', 'trades', 'chart', 'engines', 'fills', 'balances']);
@@ -175,7 +179,7 @@ describe('closed panels', () => {
 });
 
 describe('layoutReducer: split', () => {
-  const base = defaultLayout();
+  const base = chartLayout();
 
   it('sets one column and clamps into bounds', () => {
     expect(layoutReducer(base, { type: 'split', column: 'left', ratio: 0.5 }).split).toEqual({ ...base.split, left: 0.5 });
@@ -203,9 +207,10 @@ describe('presets and reset', () => {
     }
   });
 
-  it('standard mode shows exactly the four-slot presets from before wide mode', () => {
+  it('standard mode shows each preset\'s four slots (the older ones as before wide mode)', () => {
     const before: Record<string, { slots: PanelId[]; left: number; right: number }> = {
-      default: { slots: ['markets', 'trades', 'chart', 'orders'], left: 0.36, right: 0.58 },
+      default: { slots: ['engines', 'markets', 'trades', 'orders'], left: 0.5, right: 0.6 },
+      chart: { slots: ['markets', 'trades', 'chart', 'orders'], left: 0.36, right: 0.58 },
       scalper: { slots: ['trades', 'markets', 'orders', 'chart'], left: 0.7, right: 0.66 },
       'chart-heavy': { slots: ['markets', 'trades', 'chart', 'orders'], left: 0.36, right: 0.78 },
     };
@@ -216,8 +221,32 @@ describe('presets and reset', () => {
     }
   });
 
-  it('Default is Markets / Trades | Chart / Orders | Fills / Balances', () => {
-    expect(defaultLayout().slots).toEqual(['markets', 'trades', 'chart', 'orders', 'fills', 'balances']);
+  it('Default is Engines / Markets | Trades / Orders | Chart / Fills, Balances closed', () => {
+    expect(defaultLayout().slots).toEqual(['engines', 'markets', 'trades', 'orders', 'chart', 'fills']);
+    expect(defaultLayout().slots).not.toContain('balances');
+  });
+
+  it('Default per mode: standard shows Engines over Markets left and Trades over Orders right; wide adds Chart over Fills', () => {
+    const d = defaultLayout();
+    expect(shown(d, 'standard')).toEqual(['engines', 'markets', 'trades', 'orders']);
+    expect(hiddenPanels(d.slots, 'standard')).toEqual(['chart', 'fills']);
+    expect(shown(d, 'wide')).toEqual(['engines', 'markets', 'trades', 'orders', 'chart', 'fills']);
+    expect(hiddenPanels(d.slots, 'wide')).toEqual([]);
+    // Engines and Trades on top of their columns, each with room to read.
+    expect(columnOf(d.slots.indexOf('engines') as SlotIndex)).toBe('left');
+    expect(columnOf(d.slots.indexOf('trades') as SlotIndex)).toBe('right');
+    expect(d.split.left).toBeGreaterThanOrEqual(0.4);
+    expect(d.split.right).toBeGreaterThanOrEqual(0.5);
+    expect(matchingPreset(d, 'standard')).toBe('default');
+    expect(matchingPreset(d, 'wide')).toBe('default');
+  });
+
+  it('Chart is the layout Default was before: Markets / Trades | Chart / Orders | Fills / Balances, Engines closed', () => {
+    expect(chartLayout()).toEqual({
+      slots: ['markets', 'trades', 'chart', 'orders', 'fills', 'balances'],
+      split: { left: 0.36, right: 0.58, farRight: 0.6 },
+    });
+    expect(matchingPreset(chartLayout(), 'standard')).toBe('chart');
   });
 
   it('Scalper puts Trades and Orders on top and tall, and Fills tall', () => {
@@ -251,7 +280,7 @@ describe('presets and reset', () => {
 
   it('matching counts only what the mode shows', () => {
     // The hidden pair swapped: standard still looks like Default, wide does not.
-    const s = layoutReducer(defaultLayout(), { type: 'pick', slot: 4, panel: 'balances' });
+    const s = layoutReducer(defaultLayout(), { type: 'pick', slot: 4, panel: 'fills' });
     expect(matchingPreset(s, 'standard')).toBe('default');
     expect(matchingPreset(s, 'wide')).toBeNull();
     const t = layoutReducer(defaultLayout(), { type: 'split', column: 'farRight', ratio: 0.2 });
@@ -264,13 +293,13 @@ describe('presets and reset', () => {
     (s.slots as unknown as PanelId[])[0] = 'fills';
     s.split.left = 0.9;
     s.split.farRight = 0.1;
-    expect(PRESETS.default.layout.slots[0]).toBe('markets');
-    expect(PRESETS.default.layout.split.left).toBe(0.36);
+    expect(PRESETS.default.layout.slots[0]).toBe('engines');
+    expect(PRESETS.default.layout.split.left).toBe(0.5);
     expect(PRESETS.default.layout.split.farRight).toBe(0.6);
   });
 
   it('apply refuses an invalid layout', () => {
-    const base = defaultLayout();
+    const base = chartLayout();
     const bad = (layout: unknown) => layoutReducer(base, { type: 'apply', layout: layout as LayoutState });
     const split = { left: 0.5, right: 0.5, farRight: 0.5 };
     expect(bad({ slots: ['chart', 'chart', 'trades', 'orders', 'fills', 'balances'], split })).toBe(base);

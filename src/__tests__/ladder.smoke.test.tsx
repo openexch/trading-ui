@@ -142,13 +142,18 @@ describe('Ladder shell', () => {
     expect(screen.getByRole('form', { name: /order defaults/i })).toBeTruthy();
     expect(screen.getByRole('status', { name: /staged order/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /buy btc/i })).toBeNull();
-    // The side columns hold the Default layout: Markets / Trades | Chart / Orders.
-    expect(screen.getByRole('button', { name: 'Panel: Markets. Change' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Panel: Trades. Change' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Panel: Chart. Change' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Panel: Open orders. Change' })).toBeTruthy();
+    // The side columns hold the Default layout (standard mode): Engines /
+    // Markets | Trades / Orders; the chart waits in the far-right column.
+    const titles = screen.getAllByRole('button', { name: /^Panel: .*\. Change$/ }).map(b => b.getAttribute('aria-label'));
+    expect(titles).toEqual([
+      'Panel: Engines. Change',
+      'Panel: Markets. Change',
+      'Panel: Trades. Change',
+      'Panel: Open orders. Change',
+    ]);
+    expect(screen.getByRole('region', { name: 'Engines' })).toBeTruthy();
     expect(screen.getAllByRole('separator', { name: /resize (left|right) panels/i })).toHaveLength(2);
-    expect(screen.getByTestId('chart-mock')).toBeTruthy();
+    expect(screen.queryByTestId('chart-mock')).toBeNull();
     // No footer and no old ticker rail in the new shell.
     expect(screen.queryByText('Open Exchange Trading Engine')).toBeNull();
 

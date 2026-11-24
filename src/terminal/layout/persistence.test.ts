@@ -31,6 +31,14 @@ describe('layout persistence', () => {
     expect(loadLayout()).toEqual(s);
   });
 
+  it('a stored layout is the user\'s: the old Default stays as stored, never moved to the new one', () => {
+    const old = { v: 2, slots: ['markets', 'trades', 'chart', 'orders', 'fills', 'balances'], split: { left: 0.36, right: 0.58, farRight: 0.6 } };
+    store(old);
+    expect(loadLayout()).toEqual({ slots: old.slots, split: old.split });
+    expect(loadLayout()).toEqual(presetLayout('chart'));
+    expect(loadLayout()).not.toEqual(defaultLayout());
+  });
+
   it('reads a valid stored layout, keeping no extra fields', () => {
     store({ ...valid, extra: 1, split: { ...valid.split, middle: 0.5 } });
     expect(loadLayout()).toEqual({ slots: valid.slots, split: valid.split });
@@ -109,9 +117,9 @@ describe('migration from version 1', () => {
     });
   });
 
-  it('every version 1 preset migrates to the matching version 2 preset', () => {
+  it('every version 1 preset migrates to the matching version 2 preset (v1 Default is today\'s Chart)', () => {
     const presets = {
-      default: { v: 1, slots: ['markets', 'trades', 'chart', 'orders'], split: { left: 0.36, right: 0.58 } },
+      chart: { v: 1, slots: ['markets', 'trades', 'chart', 'orders'], split: { left: 0.36, right: 0.58 } },
       scalper: { v: 1, slots: ['trades', 'markets', 'orders', 'chart'], split: { left: 0.7, right: 0.66 } },
       'chart-heavy': { v: 1, slots: ['markets', 'trades', 'chart', 'orders'], split: { left: 0.36, right: 0.78 } },
     } as const;

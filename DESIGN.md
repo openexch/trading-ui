@@ -46,8 +46,10 @@ invented number). It replaces the planned header engine rail.
 - **Balance ledger**: a balance opens its movements, each with its core log
   position, above a per-asset conservation line (a later step; not shown
   until the backend supplies it).
-- The engine values ride the user's stream, so a signed-out visitor sees
-  dashes; a stream that is down leaves dashes, never stale values.
+- The engine values ride the user's stream; signed out they come from an
+  anonymous engine-only subscription where the stream offers one, and
+  otherwise a signed-out visitor sees dashes and a sign-in note. A stream
+  that is down leaves dashes, never stale values.
 - **Materials**: the light theme becomes paper (a warm off-white ground,
   ink-blue wordmark and log numbers); ledger rules (a row hairline, a double
   rule either side of the price column, a heavy rule under headers and
@@ -82,8 +84,14 @@ invented number). It replaces the planned header engine rail.
   elsewhere swaps the two, and picking a closed one (there are more panels
   than slots) replaces the slot's panel, so no slot is ever empty or
   doubled. Each column has a
-  height handle between its two slots. Presets (Default, Scalper,
+  height handle between its two slots. Presets (Default, Chart, Scalper,
   Chart-heavy) and Reset are always available.
+- **Default** is the approved ledger screen: Engines
+  over Markets on the left, the tape over Open orders on the right, so the
+  engines are on screen on first open; the far-right column (wide mode)
+  holds Chart over Fills, and Balances starts closed. **Chart** keeps the
+  earlier default (Markets over Trades, Chart over Open orders) for a
+  chart-first user. A stored layout is never rewritten by a new Default.
 - The **header** carries the market symbol (a button that opens the market
   selector, so switching markets never depends on the panel layout), the
   ticker hero, the ledger line (core and ME log positions, terms, node
