@@ -13,9 +13,11 @@
  * - Bridge: the journal sequence the core has consumed against the
  *   matching engine's journal head (journal sequence numbers, not log
  *   positions).
- * - Signed out there is no engine frame (the stream needs a credential), and
- *   a stream that is down leaves the last frame stale: every value prints a
- *   dash, never an old or invented one (DESIGN.md rule 14).
+ * - Signed out the frames come from the anonymous engine feed
+ *   (useEngineFeed) where the server offers it; where it does not, there is
+ *   no engine frame and a note says sign-in shows it. A stream that is down
+ *   leaves the last frame stale: every value prints a dash, never an old or
+ *   invented one (DESIGN.md rule 14).
  */
 import { useEffect, useState } from 'react';
 import type { ClusterKey, EngineBridge, EngineCluster, EngineNode } from '../../ledger/engine';
@@ -203,7 +205,7 @@ export function EnginesPanel({ chrome, signedIn, state, now: fixedNow }: Engines
   const status = shownStatus(s);
   return (
     <PanelFrame label="Engines" position={chrome.position} header={chrome.picker()}>
-      {!signedIn && (
+      {!signedIn && !s.live && (
         <p className="m-0 border-b border-hairline px-4 py-2 text-[12px] text-muted">
           Engine status rides your account's stream: sign in to see it live.
         </p>

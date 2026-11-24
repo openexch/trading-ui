@@ -9,6 +9,7 @@ import { useMarketTickers } from './hooks/useMarketTickers';
 import { useApi } from './hooks/useApi';
 import { useOrders } from './hooks/useOrders';
 import { useUserStream } from './hooks/useUserStream';
+import { useEngineFeed } from './hooks/useEngineFeed';
 import { useTheme } from './hooks/useTheme';
 import { useAuth } from './auth/AuthContext';
 import { AuthModal } from './components/Auth/AuthModal';
@@ -213,8 +214,9 @@ function MarketPage({ markets }: { markets: Market[] }) {
   // (re)connect re-seeds open orders from REST (the stream then wins), and
   // its orders snapshot replaces the list.
   // The same stream carries the engine telemetry (engine and election
-  // frames) into the engine store; signed out there is none and the screen
-  // prints dashes.
+  // frames) into the engine store. Signed out, the anonymous engine feed
+  // asks for the engine frames alone (useEngineFeed); a server without that
+  // channel refuses it once and the screen prints dashes, as before.
   const sessionToken = session?.token ?? null;
   const { status: streamStatus } = useUserStream({
     token: sessionToken,
@@ -224,9 +226,10 @@ function MarketPage({ markets }: { markets: Market[] }) {
     onEngine: engineStore.engine,
     onElection: engineStore.election,
   });
+  const engineFeed = useEngineFeed(!sessionToken, engineStore.engine, engineStore.election);
   useEffect(() => {
-    engineStore.setLive(streamStatus === 'connected');
-  }, [streamStatus]);
+    engineStore.setLive(sessionToken ? streamStatus === 'connected' : engineFeed === 'live');
+  }, [sessionToken, streamStatus, engineFeed]);
 
   // Session change: drop the previous principal's orders and the engine
   // telemetry of their stream; seed the new one's orders immediately (the

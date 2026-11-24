@@ -41,6 +41,8 @@ import { useMarketTickers } from '../hooks/useMarketTickers';
 import { decodeMarketFrame } from '../api/marketFrames';
 import { PORT_MAP, linesWithoutTest } from '../api/portMap';
 import type { PortMapLineId } from '../api/portMap';
+import { LAYOUT_KEY } from '../terminal/layout/persistence';
+import { presetLayout } from '../terminal/layout/presets';
 import { setMarketList } from '../markets/marketStore';
 import type { ApiOrder, TickersMessage } from '../types/market';
 import { GATEWAY_MARKETS_BODY } from '../test/gatewayMarkets';
@@ -196,6 +198,12 @@ async function appWithMarketSocket() {
 }
 
 /** Switch the desktop app to SOL-USD (market 3, the golden frames' market). */
+/** The chart is not in Default's standard view: the candle lines store the
+ *  Chart preset (the chart on screen at 1440) before the app reads it. */
+function withChartOnScreen() {
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify({ v: 2, ...presetLayout('chart') }));
+}
+
 async function onSolana() {
   const { view, ws } = await appWithMarketSocket();
   fireEvent.click(document.querySelector('[data-market-row="SOL-USD"]')!);
@@ -704,6 +712,7 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
   },
 
   async 'candles-1m'() {
+    withChartOnScreen();
     const { ws } = await onSolana();
     ws.receive(golden('candle_history_1m'));
     await waitFor(() => expect(chart.props?.candles).toHaveLength(2));
@@ -718,6 +727,7 @@ const CASES: Record<PortMapLineId, () => Promise<void>> = {
 
   async 'candles-5m'() {
     routes.push({ match: c => c.url.startsWith('/api/candles'), reply: { status: 200, body: JSON.parse(golden('candles_body_5m')) } });
+    withChartOnScreen();
     await onSolana();
     act(() => chart.props!.onIntervalChange('5m'));
     await waitFor(() => expect(chart.props?.candles).toHaveLength(2));

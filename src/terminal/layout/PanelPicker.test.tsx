@@ -44,20 +44,22 @@ describe('PanelPicker', () => {
 
   it('says where every panel lives', () => {
     const l = defaultLayout();
-    expect(whereLabel(l, 1, 'trades', 'standard')).toBe('Here');
-    expect(whereLabel(l, 1, 'markets', 'standard')).toBe('Left top');
+    expect(whereLabel(l, 1, 'markets', 'standard')).toBe('Here');
+    expect(whereLabel(l, 1, 'engines', 'standard')).toBe('Left top');
+    expect(whereLabel(l, 1, 'trades', 'standard')).toBe('Right top');
     expect(whereLabel(l, 1, 'orders', 'standard')).toBe('Right bottom');
+    expect(whereLabel(l, 1, 'chart', 'standard')).toBe('Hidden');
     expect(whereLabel(l, 1, 'fills', 'standard')).toBe('Hidden');
-    expect(whereLabel(l, 1, 'balances', 'standard')).toBe('Hidden');
-    expect(whereLabel(l, 1, 'fills', 'wide')).toBe('Far right top');
-    expect(whereLabel(l, 1, 'balances', 'wide')).toBe('Far right bottom');
-    expect(whereLabel(l, 5, 'balances', 'wide')).toBe('Here');
+    expect(whereLabel(l, 1, 'balances', 'standard')).toBe('Closed');
+    expect(whereLabel(l, 1, 'chart', 'wide')).toBe('Far right top');
+    expect(whereLabel(l, 1, 'fills', 'wide')).toBe('Far right bottom');
+    expect(whereLabel(l, 5, 'fills', 'wide')).toBe('Here');
   });
 
   it('the title is the trigger; the icon variant keeps the accessible name', () => {
     render(<Slots />);
-    expect(trigger(0).getAttribute('aria-label')).toBe('Panel: Markets. Change');
-    expect(trigger(0).textContent).toContain('Markets');
+    expect(trigger(0).getAttribute('aria-label')).toBe('Panel: Engines. Change');
+    expect(trigger(0).textContent).toContain('Engines');
     expect(trigger(3).getAttribute('aria-label')).toBe('Panel: Open orders. Change');
     expect(trigger(3).textContent).toBe('');
   });
@@ -68,39 +70,44 @@ describe('PanelPicker', () => {
     const menu = screen.getByRole('menu', { name: 'Show in this panel' });
     const radios = within(menu).getAllByRole('menuitemradio');
     expect(radios.map(r => r.textContent)).toEqual([
-      'MarketsLeft top',
-      'TradesHere',
-      'ChartRight top',
+      'MarketsHere',
+      'TradesRight top',
+      'ChartHidden',
       'Open ordersRight bottom',
       'FillsHidden',
-      'BalancesHidden',
-      'EnginesClosed',
+      'BalancesClosed',
+      'EnginesLeft top',
     ]);
-    expect(radios.filter(r => r.getAttribute('aria-checked') === 'true').map(r => r.textContent)).toEqual(['TradesHere']);
+    expect(radios.filter(r => r.getAttribute('aria-checked') === 'true').map(r => r.textContent)).toEqual(['MarketsHere']);
     expect(within(menu).getAllByRole('menuitem').map(i => i.textContent)).toEqual(['Layout presets…', 'Reset layout']);
     expect(document.activeElement).toBe(radios[0]);
   });
 
-  it('picking a panel open elsewhere swaps; a hidden one replaces', () => {
+  it('picking a panel open elsewhere swaps; a hidden one swaps into the hidden place; a closed one replaces', () => {
     render(<Slots />);
     fireEvent.click(trigger(1));
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /^chart/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^trades/i }));
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(api.layout.slots).toEqual(['markets', 'chart', 'trades', 'orders', 'fills', 'balances']);
+    expect(api.layout.slots).toEqual(['engines', 'trades', 'markets', 'orders', 'chart', 'fills']);
     expect(document.activeElement).toBe(trigger(1));
+
+    fireEvent.click(trigger(1));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^chart/i }));
+    // Chart was hidden: Trades takes its hidden place.
+    expect(api.layout.slots).toEqual(['engines', 'chart', 'markets', 'orders', 'trades', 'fills']);
 
     fireEvent.click(trigger(0));
     fireEvent.click(screen.getByRole('menuitemradio', { name: /^balances/i }));
-    // Balances was hidden: Markets takes its hidden place.
-    expect(api.layout.slots).toEqual(['balances', 'chart', 'trades', 'orders', 'fills', 'markets']);
+    // Balances was closed: it replaces Engines, which closes.
+    expect(api.layout.slots).toEqual(['balances', 'chart', 'markets', 'orders', 'trades', 'fills']);
     // Remembered.
     expect(JSON.parse(localStorage.getItem(LAYOUT_KEY)!).slots).toEqual([
       'balances',
       'chart',
-      'trades',
-      'orders',
-      'fills',
       'markets',
+      'orders',
+      'trades',
+      'fills',
     ]);
   });
 
@@ -110,11 +117,16 @@ describe('PanelPicker', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Layout presets…' }));
     const presets = screen.getByRole('menu', { name: 'Layout presets' });
     const items = within(presets).getAllByRole('menuitemradio');
-    expect(items.map(i => i.textContent)).toEqual(['Default', 'Scalper', 'Chart-heavy']);
+    expect(items.map(i => i.textContent)).toEqual(['Default', 'Chart', 'Scalper', 'Chart-heavy']);
     expect(items[0].getAttribute('aria-checked')).toBe('true');
     expect(document.activeElement).toBe(items[0]);
-    fireEvent.click(items[1]);
+    fireEvent.click(items[2]);
     expect(api.layout).toEqual(presetLayout('scalper'));
+
+    fireEvent.click(trigger(0));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Layout presets…' }));
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Layout presets' })).getAllByRole('menuitemradio')[1]);
+    expect(api.layout).toEqual(presetLayout('chart'));
 
     fireEvent.click(trigger(0));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Reset layout' }));
@@ -148,24 +160,24 @@ describe('PanelPicker', () => {
     fireEvent.click(trigger(1));
     const radios = within(screen.getByRole('menu', { name: 'Show in this panel' })).getAllByRole('menuitemradio');
     expect(radios.map(r => r.textContent)).toEqual([
-      'MarketsLeft top',
-      'TradesHere',
-      'ChartRight top',
+      'MarketsHere',
+      'TradesRight top',
+      'ChartFar right top',
       'Open ordersRight bottom',
-      'FillsFar right top',
-      'BalancesFar right bottom',
-      'EnginesClosed',
+      'FillsFar right bottom',
+      'BalancesClosed',
+      'EnginesLeft top',
     ]);
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /^balances/i }));
-    expect(api.layout.slots).toEqual(['markets', 'balances', 'chart', 'orders', 'fills', 'trades']);
-    expect(trigger(5).getAttribute('aria-label')).toBe('Panel: Trades. Change');
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^fills/i }));
+    expect(api.layout.slots).toEqual(['engines', 'fills', 'trades', 'orders', 'chart', 'markets']);
+    expect(trigger(5).getAttribute('aria-label')).toBe('Panel: Markets. Change');
   });
 
   it('the preset menu marks a preset by what the mode shows', () => {
     // Default with the hidden pair swapped: standard still shows Default.
     localStorage.setItem(
       LAYOUT_KEY,
-      JSON.stringify({ v: 2, ...defaultLayout(), slots: ['markets', 'trades', 'chart', 'orders', 'balances', 'fills'] }),
+      JSON.stringify({ v: 2, ...defaultLayout(), slots: ['engines', 'markets', 'trades', 'orders', 'fills', 'chart'] }),
     );
     render(<Slots mode="standard" />);
     fireEvent.click(trigger(0));
@@ -177,6 +189,6 @@ describe('PanelPicker', () => {
     fireEvent.click(trigger(0));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Layout presets…' }));
     const wide = within(screen.getByRole('menu', { name: 'Layout presets' })).getAllByRole('menuitemradio');
-    expect(wide.map(i => i.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false']);
+    expect(wide.map(i => i.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false', 'false']);
   });
 });
