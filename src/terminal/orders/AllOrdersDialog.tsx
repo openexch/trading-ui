@@ -26,7 +26,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode, RefObject } from 'react';
 import type { Market, OrderSide, UserOrder } from '../../types/market';
-import { MARKETS } from '../../types/market';
+import { findMarket, getMarkets } from '../../markets/marketStore';
 import { Checkbox, Dialog } from '../../ui';
 import { marketUi } from '../../trading/marketUi';
 import { typeLabel } from '../../trading/staging';
@@ -83,7 +83,7 @@ const TABS: { id: AllOrdersTab; label: string }[] = [
 ];
 
 function marketOf(id: number): Market | undefined {
-  return MARKETS.find(m => m.id === id);
+  return findMarket(id);
 }
 
 function OpenAllOrders({
@@ -253,7 +253,7 @@ function OpenTab({
   const focusNotice = useRef(false);
   const focusAsk = useRef(false);
 
-  const chipMarkets = useMemo(() => marketsWithOrders(MARKETS, listed), [listed]);
+  const chipMarkets = useMemo(() => marketsWithOrders(getMarkets(), listed), [listed]);
   const rows = useMemo(
     () => sortByTime(listed.filter(o => matchesFilters(o, marketOf(o.marketId), filters)), newestFirst),
     [listed, filters, newestFirst],

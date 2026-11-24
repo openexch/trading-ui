@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Module-level auth session store (oms#72 demo auth).
+ * Module-level auth session store (the gateway's demo auth).
  *
  * Holds the current `{token, userId, username}` session, persisted in
  * localStorage (same pattern as useTheme's `oe-theme` key) with a
@@ -43,7 +43,7 @@ function readStored(): Session | null {
   }
 }
 
-/** Dev-only token (e.g. 'dev:1'); the OMS dev auth provider maps it directly. */
+/** Dev-only token (e.g. 'dev:1'); the gateway's dev auth mode maps it directly. */
 function envFallback(): Session | null {
   const token: string | undefined = import.meta.env.VITE_AUTH_TOKEN;
   if (!token) return null;
@@ -81,7 +81,7 @@ export function loadSession(): Session | null {
   return current;
 }
 
-/** Dev tokens skip /auth/me validation; the OMS dev provider accepts them as-is. */
+/** Dev tokens skip /auth/me validation; the gateway's dev mode accepts them as-is. */
 export function isDevToken(token: string): boolean {
   return token.startsWith('dev:');
 }

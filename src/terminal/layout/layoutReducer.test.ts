@@ -29,7 +29,9 @@ function rng(seed: number) {
 
 function invariantHolds(s: LayoutState) {
   expect(s.slots).toHaveLength(6);
-  expect(new Set(s.slots)).toEqual(new Set(PANEL_IDS));
+  // Six distinct known panels; the registry's others are closed.
+  expect(new Set(s.slots).size).toBe(6);
+  for (const p of s.slots) expect(PANEL_IDS).toContain(p);
 }
 
 /** What a mode shows: the visible slots' panels, in slot order. */
@@ -96,7 +98,7 @@ describe('layoutReducer: pick', () => {
   it.each<[LayoutMode, number]>([
     ['standard', 4],
     ['wide', 6],
-  ])('fuzz (%s, picks from %i slots): every panel exactly once, picks swap', (mode, count) => {
+  ])('fuzz (%s, picks from %i slots): every panel at most once, picks swap or replace', (mode, count) => {
     const slotsOfMode = visibleSlots(mode);
     expect(slotsOfMode).toHaveLength(count);
     for (let seed = 1; seed <= 20; seed++) {
@@ -110,7 +112,13 @@ describe('layoutReducer: pick', () => {
         invariantHolds(s);
         expect(s.slots[slot]).toBe(panel);
         const was = before.slots.indexOf(panel);
-        if (was !== slot) {
+        if (was < 0) {
+          // A closed panel replaces the slot's panel, which closes.
+          expect(s.slots).not.toContain(before.slots[slot]);
+          s.slots.forEach((p, j) => {
+            if (j !== slot) expect(p).toBe(before.slots[j]);
+          });
+        } else if (was !== slot) {
           // Exactly a swap: the old panel took the picked one's place.
           expect(s.slots[was]).toBe(before.slots[slot]);
           s.slots.forEach((p, j) => {
@@ -151,6 +159,18 @@ describe('crossing the breakpoint', () => {
     const u = layoutReducer(t, { type: 'pick', slot: 2, panel: 'chart' });
     expect(u.slots).toEqual(['trades', 'markets', 'chart', 'orders', 'fills', 'balances']);
     invariantHolds(u);
+  });
+});
+
+describe('closed panels', () => {
+  it('Default leaves Engines closed; picking it replaces the slot panel, and picking that back swaps nothing else', () => {
+    const s = defaultLayout();
+    expect(s.slots).not.toContain('engines');
+    const t = layoutReducer(s, { type: 'pick', slot: 3, panel: 'engines' });
+    expect(t.slots).toEqual(['markets', 'trades', 'chart', 'engines', 'fills', 'balances']);
+    invariantHolds(t);
+    const u = layoutReducer(t, { type: 'pick', slot: 3, panel: 'orders' });
+    expect(u.slots).toEqual(s.slots);
   });
 });
 

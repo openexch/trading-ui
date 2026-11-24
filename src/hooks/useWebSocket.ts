@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { EV, track } from '../analytics';
 import type { ConnectionStatus, WebSocketMessage } from '../types/market';
 import { MessageConflator } from '../utils/conflation';
+import { decodeMarketFrame } from '../api/marketFrames';
 
 interface UseWebSocketOptions {
   marketId: number;
@@ -99,7 +100,7 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
   }, [flushMessages]);
 
   const getWebSocketUrl = useCallback(() => {
-    // Use environment variable if set (for cloudflared deployment)
+    // The market-data service (oe-marketdata) serves /ws on its public host.
     if (import.meta.env.VITE_MARKET_WS_URL) {
       return `${import.meta.env.VITE_MARKET_WS_URL}/ws`;
     }
@@ -194,8 +195,10 @@ export function useWebSocket({ marketId, onMessage, onReconnecting, onReconnecte
             lastMessageLogTime = now;
             messageCount = 0;
           }
-          // omsOrderId arrives as a JSON string natively now (match#65)
-          const message = JSON.parse(event.data) as WebSocketMessage;
+          // Validated against the frame schema; decimal strings become
+          // numbers here (api/marketFrames.ts). A frame that breaks the
+          // schema is dropped and logged.
+          const message: WebSocketMessage = decodeMarketFrame(JSON.parse(event.data));
           // Buffer + flush once per frame instead of dispatching synchronously
           conflatorRef.current!.push(message);
           scheduleFlush();

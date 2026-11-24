@@ -33,10 +33,10 @@ track(EV.app_open, { signed_in: getSession() !== null })
 
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
-// Browser check page for the UI primitives, behind the ladder flag. Read once,
+// Browser check page for the UI primitives, at ?check=primitives. Read once,
 // never persisted, and split into its own chunk.
 const params = new URLSearchParams(window.location.search)
-if (params.get('ui') === 'ladder' && params.get('check') === 'primitives') {
+if (params.get('check') === 'primitives') {
   import('./ui/check/PrimitivesCheck').then(({ PrimitivesCheck }) => {
     root.render(<PrimitivesCheck />)
   })

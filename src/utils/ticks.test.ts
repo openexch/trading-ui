@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, it, expect } from 'vitest';
 import { snapPrice, isInPriceRange, tickDecimals, tickLabel, priceRangeLabel } from './ticks';
-import { MARKETS } from '../types/market';
+import { TEST_MARKETS as MARKETS } from '../test/markets';
 
 const BTC = MARKETS[0];   // tick 1,      50k-150k
 const SOL = MARKETS[2];   // tick 0.05,   50-500

@@ -1,67 +1,80 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { EV, track } from '../analytics';
-import type { UserOrder, OmsOrderEvent, OrderStatus, OrderType } from '../types/market';
-import { MARKETS } from '../types/market';
-import { API_BASE, getAuthHeaders } from '../config';
-import { fromWireMoney } from '../utils/money';
+import type { UserOrder, ApiOrder, OrderStatus, OrderType } from '../types/market';
+import { apiRequest } from '../api/gateway';
+import { marketIdFromApi } from '../api/marketId';
+import { parseDecimal, parseOptionalDecimal } from '../api/decimal';
+import { marketSymbol } from '../markets/marketStore';
 
 const MAX_ORDERS = 100;
-const TERMINAL: ReadonlySet<string> = new Set(['FILLED', 'CANCELLED', 'REJECTED']);
+export const TERMINAL: ReadonlySet<string> = new Set(['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED']);
+/** How many recently closed ids a late REST seed may not bring back. */
+const MAX_CLOSED_IDS = 512;
 
-/** Map a wire OrderResponse (OMS /ws/v1 event or GET /api/v1/orders row) to
- *  UI state. Exported for tests. */
-export function mapOrderEvent(event: OmsOrderEvent): UserOrder {
+/** Map a v2 Order (stream `order` frame, stream snapshot row or GET
+ *  /api/v2/orders row) to UI state. Exported for tests. */
+export function mapOrder(o: ApiOrder): UserOrder {
+  const marketId = marketIdFromApi(o.marketId);
   return {
-    // Engine ids are small sequential longs — safe as a JS number. Display
-    // only: REST cancel/replace keys on omsOrderId, never this (#25).
-    orderId: Number(event.clusterOrderId),
-    omsOrderId: event.omsOrderId,
-    marketId: event.marketId,
-    market: MARKETS.find(m => m.id === event.marketId)?.symbol ?? `#${event.marketId}`,
-    userId: event.userId,
-    side: event.side === 'BUY' ? 'BID' : 'ASK',
-    type: event.orderType as OrderType,
-    price: fromWireMoney(event.price),
-    originalQuantity: fromWireMoney(event.quantity),
-    remainingQuantity: fromWireMoney(event.remainingQty),
-    filledQuantity: fromWireMoney(event.filledQty),
-    status: event.status as OrderStatus,
-    timestamp: event.createdAtMs,
+    // The matching engine's id: display only. REST cancel/amend key on the
+    // gateway's orderId (omsOrderId here), never this.
+    orderId: o.meOrderId ? Number(o.meOrderId) : 0,
+    omsOrderId: o.orderId,
+    marketId,
+    market: marketSymbol(marketId),
+    side: o.side === 'BUY' ? 'BID' : 'ASK',
+    type: o.type as OrderType,
+    // MARKET, STOP_LOSS and TRAILING_STOP orders carry no price.
+    price: parseOptionalDecimal(o.price, 'price') ?? 0,
+    originalQuantity: parseDecimal(o.quantity, 'quantity'),
+    remainingQuantity: parseDecimal(o.remainingQuantity, 'remainingQuantity'),
+    filledQuantity: parseDecimal(o.filledQuantity, 'filledQuantity'),
+    status: o.status as OrderStatus,
+    timestamp: o.createdAt,
   };
 }
 
 /**
- * The signed-in user's working orders, fed by the user-scoped OMS surfaces
- * (oms#72): OrderResponse events from /ws/v1 keyed by omsOrderId, seeded from
- * GET /api/v1/orders on (re)connect and session change. Replaces the old
- * market-plane ORDER_STATUS_BATCH path (global broadcast, being removed from
- * the gateway).
+ * The signed-in user's working orders: `order` frames of the user stream
+ * (/ws/v2) keyed by orderId, the stream's orders snapshot, and the REST seed
+ * GET /api/v2/orders on (re)connect and session change.
  */
-export function useOrders(onRejected?: (event: OmsOrderEvent) => void) {
+export function useOrders(onRejected?: (order: ApiOrder) => void) {
   const [orders, setOrders] = useState<UserOrder[]>([]);
+  // Ids the stream closed: a REST seed answered from an older core state
+  // must not bring them back.
+  const closedRef = useRef<Set<string>>(new Set());
 
-  // WS event: terminal status removes the entry, anything else upserts.
-  const handleOrderEvent = useCallback((event: OmsOrderEvent) => {
-    // An accepted-then-rejected order must never vanish silently: the engine
-    // rejects async (off-tick/out-of-range prices, full book) and the only
+  const markClosed = useCallback((id: string) => {
+    const closed = closedRef.current;
+    closed.add(id);
+    if (closed.size > MAX_CLOSED_IDS) {
+      const oldest = closed.values().next().value;
+      if (oldest !== undefined) closed.delete(oldest);
+    }
+  }, []);
+
+  // Stream event: terminal status removes the entry, anything else upserts.
+  const handleOrderEvent = useCallback((order: ApiOrder) => {
+    // An accepted-then-rejected order must never vanish silently: the
+    // matching engine rejects after the core accepted it, and the only
     // signal is this event. Surface it before dropping the row.
-    if (event.status === 'REJECTED') {
-      onRejected?.(event);
+    if (order.status === 'REJECTED') {
+      onRejected?.(order);
     }
-    // The lifecycle end, from the user's side of the socket. No quantities:
-    // whether it filled is the question, how much is not ours to export.
-    if (event.status === 'FILLED') {
-      track(EV.order_filled, { market_id: event.marketId, side: event.side, order_type: event.orderType });
+    if (order.status === 'FILLED') {
+      track(EV.order_filled, { market_id: order.marketId, side: order.side, order_type: order.type });
     }
+    if (TERMINAL.has(order.status)) markClosed(order.orderId);
     setOrders(prev => {
-      if (TERMINAL.has(event.status)) {
-        return prev.some(o => o.omsOrderId === event.omsOrderId)
-          ? prev.filter(o => o.omsOrderId !== event.omsOrderId)
+      if (TERMINAL.has(order.status)) {
+        return prev.some(o => o.omsOrderId === order.orderId)
+          ? prev.filter(o => o.omsOrderId !== order.orderId)
           : prev;
       }
-      const mapped = mapOrderEvent(event);
-      const idx = prev.findIndex(o => o.omsOrderId === event.omsOrderId);
+      const mapped = mapOrder(order);
+      const idx = prev.findIndex(o => o.omsOrderId === order.orderId);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = mapped;
@@ -69,20 +82,29 @@ export function useOrders(onRejected?: (event: OmsOrderEvent) => void) {
       }
       return [mapped, ...prev].slice(0, MAX_ORDERS);
     });
-  }, [onRejected]);
+  }, [onRejected, markClosed]);
 
-  // REST seed of the caller's ACTIVE orders. Merge where the WS wins: an
-  // entry already present (live-updated) is never overwritten by the
-  // possibly-staler snapshot.
+  // The stream's orders snapshot (on subscribe and after a resync) is the
+  // full open set as of its eventSeq: it replaces the list.
+  const applySnapshot = useCallback((rows: ApiOrder[]) => {
+    const mapped = rows.filter(o => !TERMINAL.has(o.status)).map(mapOrder);
+    mapped.sort((a, b) => b.timestamp - a.timestamp);
+    setOrders(mapped.slice(0, MAX_ORDERS));
+  }, []);
+
+  // REST seed of the caller's open orders (all markets). Merge where the
+  // stream wins: an entry already present is never overwritten, and an id
+  // the stream closed is not brought back.
   const seedOpenOrders = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/v1/orders`, { headers: getAuthHeaders() });
+      const res = await apiRequest<{ orders?: unknown }>('/orders');
       if (!res.ok) return;
-      const raw = (await res.json()) as unknown;
+      const raw = res.body?.orders;
       if (!Array.isArray(raw)) return;
-      const seeded = (raw as OmsOrderEvent[])
-        .filter(e => !TERMINAL.has(e.status))
-        .map(mapOrderEvent);
+      const closed = closedRef.current;
+      const seeded = (raw as ApiOrder[])
+        .filter(o => !TERMINAL.has(o.status) && !closed.has(o.orderId))
+        .map(mapOrder);
       setOrders(prev => {
         const known = new Set(prev.map(o => o.omsOrderId));
         const additions = seeded.filter(o => !known.has(o.omsOrderId));
@@ -92,28 +114,36 @@ export function useOrders(onRejected?: (event: OmsOrderEvent) => void) {
         return merged.slice(0, MAX_ORDERS);
       });
     } catch {
-      // OMS briefly unreachable: the WS reconnect path retries the seed.
+      // Gateway briefly unreachable: the stream reconnect path retries the seed.
     }
   }, []);
 
   const resetOrders = useCallback(() => {
+    closedRef.current = new Set();
     setOrders([]);
   }, []);
 
   const removeOrder = useCallback((omsOrderId: string) => {
+    markClosed(omsOrderId);
     setOrders(prev => prev.filter(o => o.omsOrderId !== omsOrderId));
-  }, []);
+  }, [markClosed]);
 
-  // Only engine-acked working orders; PENDING_* states are transient and
-  // stay out of the Open Orders panel (same selector semantics as before).
+  // Orders resting in the book, including an accepted cancel or amend on its
+  // way (PENDING_CANCEL, PENDING_REPLACE); PENDING_NEW is transient and stays
+  // out of the Open Orders panel.
   const openOrders = orders.filter(
-    o => o.status === 'NEW' || o.status === 'PARTIALLY_FILLED'
+    o =>
+      o.status === 'NEW' ||
+      o.status === 'PARTIALLY_FILLED' ||
+      o.status === 'PENDING_REPLACE' ||
+      o.status === 'PENDING_CANCEL'
   );
 
   return {
     orders,
     openOrders,
     handleOrderEvent,
+    applySnapshot,
     seedOpenOrders,
     resetOrders,
     removeOrder,

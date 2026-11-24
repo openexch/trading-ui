@@ -17,7 +17,7 @@ API, the market-data WebSocket, and the admin gateway.
 npm ci
 npm test
 npm run build
-npm run dev   # dev server with proxies to local OMS (:8080), market WS (:8081), admin (:8082)
+npm run dev   # dev server with proxies to local oe-gateway (:8080), oe-stream (:8084), oe-marketdata (:8081), admin (:8082)
 ```
 
 CI runs tests and the production build, plus Trivy scanning.

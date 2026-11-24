@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Desktop terminal shell (behind ?ui=ladder): a 52px header over a three
+ * Desktop terminal shell (above 768px): a 52px header over a three
  * column grid, 340 | 1fr | 340 at 1440 (280px side columns below 1200,
  * growing to 480px on wider screens), and from 2140px a four column grid,
  * left | 960 | right | far right (see layoutColumns), with 1px hairline
@@ -11,7 +11,6 @@
  */
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import type {
-  ClusterState,
   ExtendedConnectionStatus,
   Market,
   MarketStats,
@@ -26,7 +25,7 @@ import { MarketSelector } from '../components/MarketSelector/MarketSelector';
 import { Header } from './Header';
 import { SIDE_COLUMNS } from './layoutColumns';
 import { TradingLadder } from './ladder/TradingLadder';
-import type { LadderOrderActions } from './ladder/TradingLadder';
+import type { LadderOrderActions, OrderAnswer } from './ladder/TradingLadder';
 import type { LadderReveal } from './ladder/useLadderKeys';
 import { SideColumn } from './layout/SideColumn';
 import type { SlotChrome } from './layout/SideColumn';
@@ -41,6 +40,8 @@ import { OrdersPanel } from './panels/OrdersPanel';
 import type { OrdersPanelProps } from './panels/OrdersPanel';
 import { FillsPanel } from './panels/FillsPanel';
 import { BalancesPanel } from './panels/BalancesPanel';
+import { EnginesPanel } from './panels/EnginesPanel';
+import { useEngineWait } from '../ledger/engineStore';
 
 export interface TerminalDesktopProps {
   market: Market;
@@ -59,7 +60,6 @@ export interface TerminalDesktopProps {
   trades: TapeTrade[];
   chart: ChartData;
   status: ExtendedConnectionStatus;
-  clusterState?: ClusterState;
   onReconnect: () => void;
   theme: Theme;
   onToggleTheme: () => void;
@@ -68,13 +68,13 @@ export interface TerminalDesktopProps {
   onSignIn: () => void;
   onOpenAccount: () => void;
   /** The page's order submit handler (the same one the order form uses). */
-  onSubmitOrder: (order: OrderRequest) => Promise<{ success: boolean; message: string }>;
+  onSubmitOrder: (order: OrderRequest) => Promise<OrderAnswer>;
   /** Async reject of an accepted order, from the user's order stream. */
   rejectNotice: { text: string; code: string | null } | null;
   /** The page's cancel handler (keyed on omsOrderId). */
-  onCancelOrder: (order: UserOrder) => Promise<{ success: boolean; message: string }>;
+  onCancelOrder: (order: UserOrder) => Promise<OrderAnswer>;
   /** The page's replace handler; the ladder's Move sends the price only. */
-  onReplaceOrder: (order: UserOrder, price?: number, quantity?: number) => Promise<{ success: boolean; message: string }>;
+  onReplaceOrder: (order: UserOrder, price?: number, quantity?: number) => Promise<OrderAnswer>;
 }
 
 export interface ActionsStore {
@@ -109,6 +109,7 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
   const [marketsOpen, setMarketsOpen] = useState(false);
   const { market, stats, orderBook } = props;
   const layout = useLayout();
+  const engineWait = useEngineWait();
   // The ladder's own-order actions, for the Orders panel (cancel, Cancel
   // all). Held in a small store, not in this component's state: a change
   // (a cancel going pending) re-renders the Orders panel only, never the
@@ -164,6 +165,8 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
         return <FillsPanel chrome={chrome} signedIn={props.signedIn} onSignIn={props.onSignIn} orders={props.orders} />;
       case 'balances':
         return <BalancesPanel chrome={chrome} signedIn={props.signedIn} onSignIn={props.onSignIn} />;
+      case 'engines':
+        return <EnginesPanel chrome={chrome} signedIn={props.signedIn} />;
     }
   };
 
@@ -176,7 +179,6 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
         stats={stats}
         bestBid={orderBook.bids[0]?.price ?? null}
         status={props.status}
-        clusterState={props.clusterState}
         onReconnect={props.onReconnect}
         theme={props.theme}
         onToggleTheme={props.onToggleTheme}
@@ -203,6 +205,7 @@ export function TerminalDesktop(props: TerminalDesktopProps) {
             onReplaceOrder={props.onReplaceOrder}
             onOrderActions={actionsStore.set}
             reveal={reveal}
+            engineWait={engineWait}
           />
         </section>
         <SideColumn column="right" api={layout} renderPanel={renderPanel} />

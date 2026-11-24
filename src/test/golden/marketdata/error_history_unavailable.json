@@ -1,0 +1,1 @@
+{"type":"ERROR","code":"HISTORY_UNAVAILABLE","message":"the market history is not available: no tape, candles or ticker","parts":["tape","candles","ticker"]}

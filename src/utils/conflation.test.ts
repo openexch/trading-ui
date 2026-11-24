@@ -13,7 +13,6 @@ import type {
 const ticker = (marketId: number, lastPrice: number): TickerStatsMessage => ({
   type: 'TICKER_STATS',
   marketId,
-  market: 'BTC-USD',
   lastPrice,
   priceChange: 0,
   priceChangePercent: 0,
@@ -26,26 +25,26 @@ const ticker = (marketId: number, lastPrice: number): TickerStatsMessage => ({
 const delta = (marketId: number, price: number): BookDeltaMessage => ({
   type: 'BOOK_DELTA',
   marketId,
-  market: 'BTC-USD',
   changes: [{ price, quantity: 1, orderCount: 1, side: 'BID', updateType: 'UPDATE_LEVEL' }],
   bidVersion: 0,
   askVersion: 0,
+  bookVersion: 0,
+  fromVersion: 0,
   timestamp: price,
 });
 
 const snapshot = (marketId: number): BookSnapshotMessage => ({
   type: 'BOOK_SNAPSHOT',
   marketId,
-  market: 'BTC-USD',
   bids: [],
   asks: [],
+  bookVersion: 0,
   timestamp: 1,
 });
 
 const tradesBatch = (marketId: number, prices: number[]): TradesBatchMessage => ({
   type: 'TRADES_BATCH',
   marketId,
-  market: 'BTC-USD',
   trades: prices.map((p) => ({
     price: p,
     quantity: 1,
@@ -59,7 +58,6 @@ const tradesBatch = (marketId: number, prices: number[]): TradesBatchMessage => 
 const candleUpdate = (marketId: number, time: number, close: number): CandleUpdateMessage => ({
   type: 'CANDLE_UPDATE',
   marketId,
-  market: 'BTC-USD',
   interval: '1m',
   candle: { time, open: 0, high: 0, low: 0, close, volume: 0, tradeCount: 0 },
 });
@@ -179,7 +177,7 @@ describe('MessageConflator', () => {
     const c = new MessageConflator();
     c.push({ type: 'PONG', timestamp: 1 });
     c.push(ticker(1, 1));
-    c.push({ type: 'ERROR', message: 'x' });
+    c.push({ type: 'ERROR', code: 'BAD_REQUEST', message: 'x' });
     const out = drainMessages(c);
     expect(out.map((m) => m.type)).toEqual(['PONG', 'TICKER_STATS', 'ERROR']);
   });
@@ -188,7 +186,7 @@ describe('MessageConflator', () => {
     const c = new MessageConflator();
     const frame = (ts: number): WebSocketMessage => ({
       type: 'TICKERS',
-      tickers: [{ marketId: 2, market: 'ETH-USD', lastPrice: ts, priceChange: 0, priceChangePercent: 0,
+      tickers: [{ marketId: 2, lastPrice: ts, priceChange: 0, priceChangePercent: 0,
         high24h: 0, low24h: 0, volume24h: 0, timestamp: ts }],
       timestamp: ts,
     });

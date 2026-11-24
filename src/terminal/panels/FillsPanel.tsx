@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Fills: the user's executions (GET /api/v1/executions, latest 100). There
+ * Fills: the user's executions (GET /api/v2/fills, latest 100). There
  * is no fills stream yet, so the list refreshes on mount (useExecutions),
  * whenever the total filled quantity across the user's orders changes or an
  * order leaves the list, and from the refresh button. Signed out, the hook
- * is not mounted at all.
+ * is not mounted at all. A fill's side and size opens its order's trail.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { OrderTrail } from '../orders/OrderTrail';
 import type { UserOrder } from '../../types/market';
-import { MARKETS } from '../../types/market';
+import { findMarket } from '../../markets/marketStore';
 import { useExecutions } from '../../hooks/useExecutions';
 import type { ExecutionEntry } from '../../hooks/useExecutions';
 import { marketUi } from '../../trading/marketUi';
@@ -45,21 +46,28 @@ export function useFillsRefresh(orders: readonly UserOrder[], refresh: () => voi
   }, [orders, refresh]);
 }
 
-function FillRow({ e }: { e: ExecutionEntry }) {
-  const market = MARKETS.find(m => m.id === e.marketId);
+function FillRow({ e, trailOpen, onToggleTrail }: { e: ExecutionEntry; trailOpen: boolean; onToggleTrail: () => void }) {
+  const market = findMarket(e.marketId);
   const buy = e.side === 'BUY';
   const price = market ? formatFixed(e.price, tickDecimals(market.tickSize)) : String(e.price);
   const size = market ? formatFixed(e.quantity, marketUi(market).sizeDecimals) : String(e.quantity);
   return (
+    <>
     <li
       data-fill-row
       className="grid h-[30px] grid-cols-[3px_minmax(0,1fr)_minmax(0,1fr)_64px] items-center gap-2 border-b border-hairline pr-3 text-[12px]"
     >
       <span aria-hidden className={`self-stretch ${buy ? 'bg-buy' : 'bg-sell'}`} />
       <span className="truncate">
-        <span className={`font-semibold ${buy ? 'text-buy' : 'text-sell'}`}>
+        <button
+          type="button"
+          aria-expanded={trailOpen}
+          aria-label={`${trailOpen ? 'Hide' : 'Show'} the trail of order ${e.omsOrderId}`}
+          onClick={onToggleTrail}
+          className={`font-semibold ${buy ? 'text-buy' : 'text-sell'} underline decoration-transparent underline-offset-2 hover:decoration-current`}
+        >
           {buy ? 'Buy' : 'Sell'} {size}
-        </span>{' '}
+        </button>{' '}
         <span className="text-muted">{market?.symbol ?? `#${e.marketId}`}</span>
       </span>
       <span className="truncate text-right text-text-strong">
@@ -70,6 +78,12 @@ function FillRow({ e }: { e: ExecutionEntry }) {
       </span>
       <span className="text-right text-muted">{clockTime(e.executedAtMs)}</span>
     </li>
+    {trailOpen && (
+      <li data-order-trail-row={e.omsOrderId}>
+        <OrderTrail orderId={e.omsOrderId} />
+      </li>
+    )}
+    </>
   );
 }
 
@@ -78,6 +92,9 @@ function FillRow({ e }: { e: ExecutionEntry }) {
 export function FillsList({ orders }: { orders: readonly UserOrder[] }) {
   const { executions, loading, error, refresh } = useExecutions();
   useFillsRefresh(orders, refresh);
+  // One trail open at a time, by the fill's tradeId and order (a trade can
+  // fill two of the user's own orders).
+  const [trailOf, setTrailOf] = useState<string | null>(null);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -107,7 +124,12 @@ export function FillsList({ orders }: { orders: readonly UserOrder[] }) {
         ) : (
           <ul className="m-0 list-none p-0" aria-label="Your fills">
             {executions.map(e => (
-              <FillRow key={e.tradeId} e={e} />
+              <FillRow
+                key={`${e.tradeId}-${e.omsOrderId}`}
+                e={e}
+                trailOpen={trailOf === `${e.tradeId}-${e.omsOrderId}`}
+                onToggleTrail={() => setTrailOf(t => (t === `${e.tradeId}-${e.omsOrderId}` ? null : `${e.tradeId}-${e.omsOrderId}`))}
+              />
             ))}
           </ul>
         )}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, it, expect } from 'vitest';
-import { MARKETS } from '../types/market';
+import { TEST_MARKETS as MARKETS } from '../test/markets';
 import { parsePriceField, priceFieldText, stepPriceField } from './priceField';
 
 const [BTC, ETH, , XRP, DOGE] = MARKETS;

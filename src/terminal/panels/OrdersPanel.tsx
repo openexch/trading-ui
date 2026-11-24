@@ -14,6 +14,9 @@
  *   the same per-order pending state, the same Cancel all question in the
  *   strip (nothing is sent before it is confirmed), the same results.
  * - Rows keep omsOrderId keys and have no mount animation (rule 4).
+ * - The order's side and size is a button that opens its trail under the
+ *   row (OrderTrail: gateway, core accepted, ME booked, matched, settled,
+ *   each with time, delta and position). One trail is open at a time.
  */
 import { useId, useMemo, useRef, useState } from 'react';
 import type { Market, UserOrder } from '../../types/market';
@@ -28,6 +31,7 @@ import { NONE, PanelFrame, PanelNote, PanelSignIn } from './PanelFrame';
 import { FillsList } from './FillsPanel';
 import { fillPercent, isAwaitingTrigger, panelOrders } from './ordersModel';
 import { AllOrdersDialog } from '../orders/AllOrdersDialog';
+import { OrderTrail } from '../orders/OrderTrail';
 
 export interface OrdersPanelProps {
   chrome: SlotChrome;
@@ -49,6 +53,7 @@ const ICON_BTN =
 export function OrdersPanel({ chrome, market, orders, signedIn, onSignIn, actions, onShowOnLadder }: OrdersPanelProps) {
   const [tab, setTab] = useState<'open' | 'fills'>('open');
   const [viewAll, setViewAll] = useState(false);
+  const [trailOf, setTrailOf] = useState<string | null>(null);
   const viewAllRef = useRef<HTMLButtonElement>(null);
   const { here, elsewhere } = useMemo(() => panelOrders(orders, market.id), [orders, market.id]);
   const more = useMenuTrigger();
@@ -165,7 +170,14 @@ export function OrdersPanel({ chrome, market, orders, signedIn, onSignIn, action
               ) : (
                 <ul className="m-0 list-none p-0" aria-label={`Open orders on ${market.symbol}`}>
                   {here.map(o => (
-                    <OrderRow key={o.omsOrderId || `#${o.orderId}`} order={o} market={market} actions={actions} />
+                    <OrderRow
+                      key={o.omsOrderId || `#${o.orderId}`}
+                      order={o}
+                      market={market}
+                      actions={actions}
+                      trailOpen={trailOf !== null && trailOf === o.omsOrderId}
+                      onToggleTrail={() => setTrailOf(t => (t === o.omsOrderId ? null : o.omsOrderId))}
+                    />
                   ))}
                 </ul>
               )}
@@ -182,7 +194,15 @@ export function OrdersPanel({ chrome, market, orders, signedIn, onSignIn, action
   );
 }
 
-function OrderRow({ order, market, actions }: { order: UserOrder; market: Market; actions: LadderOrderActions | null }) {
+interface OrderRowProps {
+  order: UserOrder;
+  market: Market;
+  actions: LadderOrderActions | null;
+  trailOpen: boolean;
+  onToggleTrail: () => void;
+}
+
+function OrderRow({ order, market, actions, trailOpen, onToggleTrail }: OrderRowProps) {
   const buy = order.side === 'BID';
   const side = buy ? 'Buy' : 'Sell';
   const amount = formatCompactSize(order.originalQuantity, marketUi(market).sizeDecimals);
@@ -193,7 +213,9 @@ function OrderRow({ order, market, actions }: { order: UserOrder; market: Market
   const canCancel = actions !== null && order.omsOrderId !== '' && pending === null;
   const what = stop ? `${side} ${amount} ${typeLabel(order.type).toLowerCase()}, awaiting trigger` : `${side} ${amount} at ${price}`;
 
+  const hasTrail = order.omsOrderId !== '';
   return (
+    <>
     <li
       data-order-row={order.omsOrderId}
       data-pending={pending ?? undefined}
@@ -202,9 +224,16 @@ function OrderRow({ order, market, actions }: { order: UserOrder; market: Market
       }`}
     >
       <span aria-hidden className={`self-stretch ${buy ? 'bg-buy' : 'bg-sell'}`} />
-      <span className={`truncate font-semibold ${buy ? 'text-buy' : 'text-sell'}`}>
+      <button
+        type="button"
+        disabled={!hasTrail}
+        aria-expanded={trailOpen}
+        aria-label={`${trailOpen ? 'Hide' : 'Show'} the trail of ${what}`}
+        onClick={onToggleTrail}
+        className={`truncate text-left font-semibold ${buy ? 'text-buy' : 'text-sell'} underline decoration-transparent underline-offset-2 hover:decoration-current disabled:no-underline`}
+      >
         {side} {amount}
-      </span>
+      </button>
       <span className="truncate text-muted" title={stop ? `${typeLabel(order.type)}, awaiting trigger` : undefined}>
         {type}
       </span>
@@ -225,5 +254,11 @@ function OrderRow({ order, market, actions }: { order: UserOrder; market: Market
         {pending ? '…' : '×'}
       </button>
     </li>
+    {trailOpen && hasTrail && (
+      <li data-order-trail-row={order.omsOrderId}>
+        <OrderTrail orderId={order.omsOrderId} />
+      </li>
+    )}
+    </>
   );
 }

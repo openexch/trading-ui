@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
-import { MARKETS } from '../types/market';
+import { TEST_MARKETS as MARKETS } from '../test/markets';
 import {
   TIF_CHOICES,
   TYPE_CHOICES,

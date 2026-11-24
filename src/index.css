@@ -40,7 +40,6 @@
 
   /* Decorative background FX (subtle, derived from accent) */
   --glow: color-mix(in srgb, var(--accent) 14%, transparent);
-  --grid-dot: rgba(74, 62, 36, 0.06);
 
   /* Ledger rules on the ladder: the heavy rule under the column header and
      around the spread row. Solid ink on paper. */
@@ -101,7 +100,6 @@
   --mid: rgba(91, 140, 255, 0.16);
 
   --glow: color-mix(in srgb, var(--accent) 24%, transparent);
-  --grid-dot: rgba(140, 170, 255, 0.05);
 
   /* The heavy ledger rule at reduced strength: solid --text glares on ink. */
   --rule-heavy: color-mix(in srgb, var(--text) 38%, transparent);
@@ -179,7 +177,6 @@
   --animate-sheet-up: sheetUp 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-slide-in-right: slideInRight 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-overlay-in: overlayIn 0.18s ease-out;
-  --animate-drift: drift 18s ease-in-out infinite;
 }
 
 /* ================================================================
@@ -211,28 +208,6 @@
   .tnum {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
-  }
-
-  /* Faint engineering dot-grid; fades toward edges via mask. Decorative. */
-  .bg-dotgrid {
-    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.5px);
-    background-size: 22px 22px;
-    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 75%);
-    mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 75%);
-  }
-
-  /* High-velocity light tracer (comet: faded tail -> bright head + glow). */
-  .beam {
-    position: absolute;
-    left: 0;
-    height: 1.5px;
-    width: var(--len, 16rem);
-    border-radius: 9999px;
-    background: linear-gradient(90deg, transparent, var(--beam, var(--accent)));
-    box-shadow: 0 0 8px 0 var(--beam, var(--accent));
-    opacity: 0;
-    will-change: transform, opacity;
-    animation: streak var(--dur, 6s) var(--delay, 0s) linear infinite;
   }
 
   /* Visible, on-brand keyboard focus */
@@ -304,19 +279,6 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
-/* Decorative FX — transform/opacity only (GPU-friendly, reduced-motion safe) */
-@keyframes drift {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50%      { transform: translate3d(3%, -4%, 0) scale(1.08); }
-}
-@keyframes streak {
-  0%   { transform: translateX(calc(-1 * var(--len, 16rem) - 2rem)); opacity: 0; }
-  3%   { opacity: var(--max, 0.5); }
-  15%  { opacity: var(--max, 0.5); }
-  18%  { transform: translateX(calc(100vw + 2rem)); opacity: 0; }
-  100% { transform: translateX(calc(100vw + 2rem)); opacity: 0; }
-}
-
 /* Respect reduced-motion globally */
 @media (prefers-reduced-motion: reduce) {
   *,

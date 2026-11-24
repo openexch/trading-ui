@@ -1,24 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState, useEffect, useCallback } from 'react';
 import { formatPrice } from '../../utils/formatters';
-import { API_BASE, getAuthHeaders } from '../../config';
 import { useAuth } from '../../auth/AuthContext';
 import { useBalances } from '../../hooks/useBalances';
+import { transferFunds } from '../../hooks/useApi';
+import { getMarkets, useMarketList } from '../../markets/marketStore';
+import type { Asset } from '../../markets/marketStore';
 
 interface AccountDrawerProps {
   onClose: () => void;
 }
 
-// Asset IDs are 0-based and MUST match the backend Asset enum (USD=0, BTC=1, ...).
-// (Was 1-based, so every deposit/withdraw hit the next asset — e.g. "USD" funded BTC.)
-const ASSETS = [
-  { id: 0, name: 'USD' },
-  { id: 1, name: 'BTC' },
-  { id: 2, name: 'ETH' },
-  { id: 3, name: 'SOL' },
-  { id: 4, name: 'XRP' },
-  { id: 5, name: 'DOGE' },
-];
+/** The asset preselected for a transfer: the first market's quote asset
+ *  (the currency orders are paid in), else the first asset of the list. */
+function defaultAssetId(assets: Asset[]): string {
+  const quote = getMarkets()[0]?.quoteAsset;
+  return (assets.find(a => a.code === quote) ?? assets[0])?.assetId ?? '';
+}
 
 const th =
   'border-b border-hairline px-4 py-1.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted';
@@ -30,13 +28,15 @@ const td = 'border-b border-hairline px-4 py-1.5 font-mono text-xs tabular-nums'
  * the 3-column table reads far better at 360px than stretched full-width.
  */
 export function AccountDrawer({ onClose }: AccountDrawerProps) {
-  // Path segment only — identity is enforced from the auth token (oms#36/#72).
+  // The credential decides the user; no id is sent (gateway rule).
   const { session, logout } = useAuth();
-  const userId = session?.userId ?? null;
   const { assets, refresh } = useBalances();
+  // Deposit and withdraw pick from the core's asset list (GET /api/v2/markets).
+  const assetList = useMarketList().assets;
 
   const [loading, setLoading] = useState(false);
-  const [depositAsset, setDepositAsset] = useState(0); // USD (asset id 0)
+  const [pickedAsset, setDepositAsset] = useState<string | null>(null);
+  const depositAsset = pickedAsset ?? defaultAssetId(assetList);
   const [depositAmount, setDepositAmount] = useState('');
   const [actionMsg, setActionMsg] = useState('');
 
@@ -55,29 +55,20 @@ export function AccountDrawer({ onClose }: AccountDrawerProps) {
 
   const transfer = useCallback(async (kind: 'deposit' | 'withdraw') => {
     const amount = parseFloat(depositAmount);
-    if (isNaN(amount) || amount <= 0 || userId === null) return;
+    if (isNaN(amount) || amount <= 0 || !session || !depositAsset) return;
 
     setLoading(true);
     setActionMsg('');
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/accounts/${userId}/${kind}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ assetId: depositAsset, amount: amount.toFixed(8) }),
-      });
-      if (res.ok) {
-        setActionMsg(kind === 'deposit' ? 'Deposit successful' : 'Withdrawal successful');
-        setDepositAmount('');
-        refresh();
-      } else {
-        const data = await res.json();
-        setActionMsg(data.error || (kind === 'deposit' ? 'Deposit failed' : 'Insufficient balance'));
-      }
-    } catch {
-      setActionMsg('Network error');
+    const result = await transferFunds(kind, depositAsset, amount);
+    if (result.success) {
+      setActionMsg(kind === 'deposit' ? 'Deposit successful' : 'Withdrawal successful');
+      setDepositAmount('');
+      refresh();
+    } else {
+      setActionMsg(result.message);
     }
     setLoading(false);
-  }, [depositAsset, depositAmount, refresh, userId]);
+  }, [depositAsset, depositAmount, refresh, session]);
 
   return (
     <div
@@ -149,11 +140,11 @@ export function AccountDrawer({ onClose }: AccountDrawerProps) {
           <div className="relative">
             <select
               value={depositAsset}
-              onChange={e => setDepositAsset(Number(e.target.value))}
+              onChange={e => setDepositAsset(e.target.value)}
               className="w-full appearance-none rounded-md border border-hairline bg-surface-2 px-3 py-2 pr-8 text-xs text-text outline-none focus:border-accent"
             >
-              {ASSETS.map(a => (
-                <option key={a.id} value={a.id}>{a.name}</option>
+              {assetList.map(a => (
+                <option key={a.assetId} value={a.assetId}>{a.code}</option>
               ))}
             </select>
             <svg
@@ -205,7 +196,7 @@ export function AccountDrawer({ onClose }: AccountDrawerProps) {
         <div className="flex-shrink-0 border-t border-hairline px-4 py-3">
           <button
             onClick={() => {
-              logout();
+              void logout();
               onClose();
             }}
             className="w-full rounded-md border border-hairline bg-surface-2 px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-hairline-strong hover:bg-surface-3 hover:text-text"

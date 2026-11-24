@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { MarketStats, TapeTrade, UserOrder } from '../../types/market';
-import { MARKETS } from '../../types/market';
+import { TEST_MARKETS as MARKETS } from '../../test/markets';
 import type { SlotChrome } from '../layout/SideColumn';
 import type { LadderOrderActions } from '../ladder/TradingLadder';
 
@@ -61,7 +61,6 @@ function order(over: Partial<UserOrder> = {}): UserOrder {
     omsOrderId: String(5000 + id),
     marketId: BTC.id,
     market: BTC.symbol,
-    userId: 1,
     side: 'BID',
     type: 'LIMIT',
     price: 97405,
@@ -229,7 +228,7 @@ describe('orders model', () => {
       order({ status: 'PENDING_NEW' }),
       order({ marketId: ETH.id }),
       order({ marketId: ETH.id, status: 'PENDING_TRIGGER', type: 'STOP_LOSS' }),
-      order({ marketId: ETH.id, status: 'PENDING_RISK' }),
+      order({ marketId: ETH.id, status: 'PENDING_NEW' }),
     ];
     const r = panelOrders(o, BTC.id);
     expect(r.here.map(x => x.timestamp)).toEqual([3, 2, 1]);
@@ -355,7 +354,7 @@ describe('OrdersPanel', () => {
 
   it('the Fills tab shows the fills list', () => {
     exec.executions = [
-      { tradeId: '1', omsOrderId: 'x', userId: 1, marketId: BTC.id, side: 'BUY', price: 97400, quantity: 0.25, maker: true, executedAtMs: 0 },
+      { tradeId: '1', omsOrderId: 'x', marketId: BTC.id, side: 'BUY', price: 97400, quantity: 0.25, maker: true, executedAtMs: 0 },
     ];
     render0();
     fireEvent.click(screen.getByRole('tab', { name: 'Fills' }));
@@ -378,8 +377,8 @@ describe('OrdersPanel', () => {
 describe('FillsPanel', () => {
   it('lists fills newest first as given, with market and maker / taker', () => {
     exec.executions = [
-      { tradeId: '2', omsOrderId: 'x', userId: 1, marketId: ETH.id, side: 'SELL', price: 3642.5, quantity: 1, maker: false, executedAtMs: 0 },
-      { tradeId: '1', omsOrderId: 'y', userId: 1, marketId: BTC.id, side: 'BUY', price: 97400, quantity: 0.25, maker: true, executedAtMs: 0 },
+      { tradeId: '2', omsOrderId: 'x', marketId: ETH.id, side: 'SELL', price: 3642.5, quantity: 1, maker: false, executedAtMs: 0 },
+      { tradeId: '1', omsOrderId: 'y', marketId: BTC.id, side: 'BUY', price: 97400, quantity: 0.25, maker: true, executedAtMs: 0 },
     ];
     render(<FillsPanel chrome={chrome()} signedIn onSignIn={() => {}} orders={[]} />);
     const rows = [...document.querySelectorAll('[data-fill-row]')].map(r => r.textContent);
@@ -410,7 +409,7 @@ describe('FillsPanel', () => {
   });
 
   it('shows the error as an alert and an empty list honestly', () => {
-    exec.error = 'Trade history unavailable: OMS persistence is disabled';
+    exec.error = 'Trade history unavailable: the history service is not answering';
     const { unmount } = render(<FillsPanel chrome={chrome()} signedIn onSignIn={() => {}} orders={[]} />);
     expect(screen.getByRole('alert').textContent).toContain('unavailable');
     unmount();

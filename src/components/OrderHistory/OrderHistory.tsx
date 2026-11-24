@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from 'react';
 import type { Market } from '../../types/market';
-import { MARKETS } from '../../types/market';
 import { formatPrice, formatQuantity, formatTime } from '../../utils/formatters';
 import { useOrderHistory } from '../../hooks/useOrderHistory';
 import { useExecutions } from '../../hooks/useExecutions';
 import { formatRejectReason } from '../../utils/rejectReasons';
+import { marketSymbol } from '../../markets/marketStore';
 
 interface OrderHistoryProps {
   market: Market;
@@ -23,11 +23,11 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function symbolFor(marketId: number): string {
-  return MARKETS.find(m => m.id === marketId)?.symbol ?? `#${marketId}`;
+  return marketSymbol(marketId);
 }
 
-/** History panel: terminal order history (Orders) and the user's fills
- *  (Trades), both from the principal-scoped OMS REST reads (oms#72). */
+/** History panel: closed orders (Orders) and the user's fills (Trades), both
+ *  from the gateway's history reads (GET /api/v2/orders/history, /fills). */
 export function OrderHistory({ market, only }: OrderHistoryProps) {
   const [picked, setSubTab] = useState<'orders' | 'trades'>('orders');
   const subTab = only ?? picked;

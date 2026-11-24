@@ -4,7 +4,8 @@
  * (`orders` from useOrders); filtering it by market is allowed, filtering a
  * shared feed by user is not (DESIGN.md rule 7).
  *
- * - Working orders: NEW and PARTIALLY_FILLED.
+ * - Working orders: NEW and PARTIALLY_FILLED, and a working order whose
+ *   cancel or amend is on its way (PENDING_CANCEL, PENDING_REPLACE).
  * - Stops awaiting their trigger: PENDING_TRIGGER. They are not in the book,
  *   so they are listed here and never on the ladder. The UI order model
  *   carries no trigger price, so none is shown (rule 14).
@@ -20,7 +21,13 @@ export interface PanelOrders {
 }
 
 export function isListed(o: UserOrder): boolean {
-  return o.status === 'NEW' || o.status === 'PARTIALLY_FILLED' || o.status === 'PENDING_TRIGGER';
+  return (
+    o.status === 'NEW' ||
+    o.status === 'PARTIALLY_FILLED' ||
+    o.status === 'PENDING_CANCEL' ||
+    o.status === 'PENDING_REPLACE' ||
+    o.status === 'PENDING_TRIGGER'
+  );
 }
 
 export function isAwaitingTrigger(o: UserOrder): boolean {

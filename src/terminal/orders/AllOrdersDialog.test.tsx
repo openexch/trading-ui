@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { OrderType, UserOrder } from '../../types/market';
-import { MARKETS } from '../../types/market';
+import { TEST_MARKETS as MARKETS } from '../../test/markets';
 import type { LadderOrderActions } from '../ladder/TradingLadder';
 import type { CancelResult } from '../../trading/orderActions';
 import { AllOrdersDialog } from './AllOrdersDialog';
@@ -37,7 +37,6 @@ function order(o: {
     omsOrderId: o.id ?? String(5000 + n),
     marketId: m.id,
     market: m.symbol,
-    userId: 1,
     side: o.side ?? 'BID',
     type: o.type ?? 'LIMIT',
     price: o.price,

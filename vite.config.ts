@@ -13,18 +13,20 @@ export default defineConfig({
   server: {
     port: 80,
     proxy: {
-      // OMS user-scoped socket (oms#72). Listed BEFORE '/ws': Vite matches
-      // proxy contexts in key order, so '/ws/v1' must win over the market
-      // gateway's '/ws' prefix.
-      '/ws/v1': {
-        target: 'ws://localhost:8080',
+      // The user stream (oe-stream). Listed BEFORE '/ws': Vite matches proxy
+      // contexts in key order, so '/ws/v2' must win over the market-data
+      // service's '/ws' prefix. Point it at your local STREAM_WS_BIND.
+      '/ws/v2': {
+        target: 'ws://localhost:8084',
         ws: true,
       },
+      // The market-data service (oe-marketdata, MD_PUBLIC_BIND).
       '/ws': {
         target: 'ws://localhost:8081',
         ws: true,
       },
-      '/api/v1': {
+      // The REST gateway (oe-gateway, GATEWAY_HTTP_BIND).
+      '/api/v2': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
@@ -42,16 +44,16 @@ export default defineConfig({
     port: 80,
     allowedHosts: ['trade.openexchange.dev', 'localhost'],
     proxy: {
-      // Keep in sync with server.proxy above ('/ws/v1' before '/ws').
-      '/ws/v1': {
-        target: 'ws://localhost:8080',
+      // Keep in sync with server.proxy above ('/ws/v2' before '/ws').
+      '/ws/v2': {
+        target: 'ws://localhost:8084',
         ws: true,
       },
       '/ws': {
         target: 'ws://localhost:8081',
         ws: true,
       },
-      '/api/v1': {
+      '/api/v2': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },

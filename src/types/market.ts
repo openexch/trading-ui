@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-// Market definitions
+// Market definitions. The list comes from the gateway (GET /api/v2/markets,
+// see markets/marketStore.ts); there is no static market table.
 export interface Market {
+  /** UI form of the market id (a number); the API form is a decimal string,
+   *  converted only by api/marketId.ts. */
   id: number;
   symbol: string;
   baseAsset: string;
   quoteAsset: string;
+  /** Display name: the base asset's long name (markets/assetNames.ts), or
+   *  its code when no long name is known. */
   name: string;
   /** Engine price grid (match MarketConfig): orders must land on a tick
    *  inside [minPrice, maxPrice] or the engine rejects them (PRICE_OFF_TICK /
@@ -14,42 +19,36 @@ export interface Market {
   maxPrice: number;
 }
 
-export const MARKETS: Market[] = [
-  { id: 1, symbol: 'BTC-USD', baseAsset: 'BTC', quoteAsset: 'USD', name: 'Bitcoin', tickSize: 1, minPrice: 50_000, maxPrice: 150_000 },
-  { id: 2, symbol: 'ETH-USD', baseAsset: 'ETH', quoteAsset: 'USD', name: 'Ethereum', tickSize: 0.5, minPrice: 1_000, maxPrice: 10_000 },
-  { id: 3, symbol: 'SOL-USD', baseAsset: 'SOL', quoteAsset: 'USD', name: 'Solana', tickSize: 0.05, minPrice: 50, maxPrice: 500 },
-  { id: 4, symbol: 'XRP-USD', baseAsset: 'XRP', quoteAsset: 'USD', name: 'Ripple', tickSize: 0.001, minPrice: 0.5, maxPrice: 10 },
-  { id: 5, symbol: 'DOGE-USD', baseAsset: 'DOGE', quoteAsset: 'USD', name: 'Dogecoin', tickSize: 0.0001, minPrice: 0.05, maxPrice: 1 },
-];
-
 export interface BookLevel {
   price: number;
   quantity: number;
   orderCount: number;
 }
 
-// Aggregated trade from batch message
+// One trade of a TRADES_BATCH (one entry per trade; tradeCount is always 1).
 export interface AggregatedTrade {
+  /** Trade id, a decimal string on the wire. */
+  tradeId?: string;
   price: number;
   quantity: number;
   tradeCount: number;
-  /** Taker side (market WS v5+). Absent/null on older gateway data — the UI
-   *  falls back to a tick test against the previous trade. */
+  /** Taker side. The tape keeps a tick-test fallback for a missing side. */
   side?: 'BUY' | 'SELL' | null;
   timestamp: number;
+  /** The matching engine's journal sequence of the trade (not a log
+   *  position); null or absent when the service does not send it. */
+  journalSeq?: number | null;
 }
 
 export interface TradesBatchMessage {
   type: 'TRADES_BATCH';
   marketId: number;
-  market: string;
   trades: AggregatedTrade[];
   timestamp: number;
 }
 
-/** A trade-tape row: an aggregated trade tagged at ingest with a client-side
- *  monotonic `seq`. The wire payload carries no id, so `seq` is the stable
- *  React key that survives batch prepends (DESIGN.md: stable seq keys). */
+/** A trade-tape row tagged at ingest with a client-side monotonic `seq`, the
+ *  stable React key that survives batch prepends (DESIGN.md: stable seq keys). */
 export interface TapeTrade extends AggregatedTrade {
   seq: number;
 }
@@ -57,13 +56,13 @@ export interface TapeTrade extends AggregatedTrade {
 export interface BookSnapshotMessage {
   type: 'BOOK_SNAPSHOT';
   marketId: number;
-  market: string;
   bids: BookLevel[];
   asks: BookLevel[];
+  /** The book version this snapshot represents (chains with deltas). */
+  bookVersion: number;
   timestamp: number;
-  version?: number;
-  /** v4: single monotonic book version this snapshot represents (chains with deltas). */
-  bookVersion?: number;
+  /** Present (true) when the service cannot prove the book is current. */
+  stale?: true;
 }
 
 export interface BookDeltaChange {
@@ -77,14 +76,13 @@ export interface BookDeltaChange {
 export interface BookDeltaMessage {
   type: 'BOOK_DELTA';
   marketId: number;
-  market: string;
   changes: BookDeltaChange[];
   bidVersion: number;
   askVersion: number;
+  /** This delta advances the book fromVersion -> bookVersion. */
+  bookVersion: number;
+  fromVersion: number;
   timestamp: number;
-  /** v4 chain: this delta advances the book fromVersion -> bookVersion. */
-  bookVersion?: number;
-  fromVersion?: number;
 }
 
 export interface SubscriptionConfirmMessage {
@@ -100,13 +98,16 @@ export interface PongMessage {
 
 export interface ErrorMessage {
   type: 'ERROR';
+  code: string;
   message: string;
+  /** HISTORY_UNAVAILABLE: the parts of the initial state that are missing
+   *  (`tape`, `candles`, `ticker`). */
+  parts?: string[];
 }
 
 export interface TickerStatsMessage {
   type: 'TICKER_STATS';
   marketId: number;
-  market: string;
   lastPrice: number;
   priceChange: number;
   priceChangePercent: number;
@@ -121,55 +122,17 @@ export interface TickerStatsMessage {
 export type TickersEntry = Omit<TickerStatsMessage, 'type'>;
 
 /** Every market's ticker in one frame, sent to every market-data client
- *  whatever market it subscribes to (at most once a second, only on change).
- *  No top-level marketId. Markets without a price are absent. Older gateways
- *  never send it; the UI then keeps its dashes. */
+ *  whatever market it subscribes to (at the handshake and on change). No
+ *  top-level marketId. Markets without a price are absent. */
 export interface TickersMessage {
   type: 'TICKERS';
   tickers: TickersEntry[];
   timestamp: number;
 }
 
-// Cluster status types - includes transitional states during rolling updates
-export type NodeStatus = 'LEADER' | 'FOLLOWER' | 'CANDIDATE' | 'OFFLINE' | 'STOPPING' | 'STARTING' | 'REJOINING' | 'ELECTION';
-
-export interface ClusterNode {
-  id: number;
-  status: NodeStatus;
-  healthy: boolean;
-}
-
-export interface ClusterStatusMessage {
-  type: 'CLUSTER_STATUS';
-  leaderId: number;
-  leadershipTermId: number;
-  nodes: ClusterNode[];
-  gatewayConnected: boolean;
-  timestamp: number;
-}
-
-export interface ClusterEventMessage {
-  type: 'CLUSTER_EVENT';
-  event: 'LEADER_CHANGE' | 'NODE_UP' | 'NODE_DOWN' | 'ROLLING_UPDATE_START' | 'ROLLING_UPDATE_COMPLETE' | 'CONNECTION_LOST' | 'CONNECTION_RESTORED';
-  nodeId?: number;
-  newLeaderId?: number;
-  message: string;
-  timestamp: number;
-}
-
-// UI cluster state - aggregated from CLUSTER_STATUS and CLUSTER_EVENT messages
-export interface ClusterState {
-  leaderId: number;
-  leadershipTermId: number;
-  nodes: ClusterNode[];
-  gatewayConnected: boolean;
-  isRollingUpdate: boolean;
-  isElecting: boolean;
-  lastEvent: ClusterEventMessage | null;
-  lastUpdate: number;
-}
-
-// Extended connection status that includes cluster-aware states
+// Connection status as the header shows it. The cluster states have no
+// source since the market feed stopped carrying cluster frames; they stay in
+// the vocabulary of the status pill.
 export type ExtendedConnectionStatus =
   | 'connecting'
   | 'connected'
@@ -181,6 +144,7 @@ export type ExtendedConnectionStatus =
 
 // Candle types (server-aggregated)
 export interface CandleData {
+  /** Bucket start, epoch seconds. */
   time: number;
   open: number;
   high: number;
@@ -193,7 +157,6 @@ export interface CandleData {
 export interface CandleHistoryMessage {
   type: 'CANDLE_HISTORY';
   marketId: number;
-  market: string;
   interval: string;
   candles: CandleData[];
 }
@@ -201,7 +164,6 @@ export interface CandleHistoryMessage {
 export interface CandleUpdateMessage {
   type: 'CANDLE_UPDATE';
   marketId: number;
-  market: string;
   interval: string;
   candle: CandleData;
 }
@@ -215,8 +177,6 @@ export type WebSocketMessage =
   | ErrorMessage
   | TickerStatsMessage
   | TickersMessage
-  | ClusterStatusMessage
-  | ClusterEventMessage
   | CandleHistoryMessage
   | CandleUpdateMessage;
 
@@ -234,51 +194,55 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'er
 export type OrderSide = 'BID' | 'ASK';
 export type OrderType = 'LIMIT' | 'MARKET' | 'LIMIT_MAKER' | 'STOP_LOSS' | 'STOP_LIMIT' | 'TRAILING_STOP' | 'ICEBERG';
 export type TimeInForce = 'GTC' | 'GTD' | 'IOC' | 'FOK';
-// PENDING_* are the OMS's pre-engine states (oms#72); FILLED/CANCELLED/REJECTED are terminal.
+// The core's ten order statuses. FILLED, CANCELLED, REJECTED and EXPIRED are
+// terminal.
 export type OrderStatus =
-  | 'PENDING_RISK'
-  | 'PENDING_HOLD'
   | 'PENDING_NEW'
   | 'PENDING_TRIGGER'
   | 'NEW'
   | 'PARTIALLY_FILLED'
+  | 'PENDING_CANCEL'
+  | 'PENDING_REPLACE'
   | 'FILLED'
   | 'CANCELLED'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'EXPIRED';
 
-/** Bare OrderResponse from the user-scoped OMS WS (/ws/v1) and the scoped
- *  REST reads (oms#72). NO `type` field on the wire — the presence of
- *  omsOrderId is what distinguishes an order event from acks/pongs. Money
- *  crosses as exact decimal strings, ids as strings (Snowflake ids overflow
- *  JS numbers, oms#39). */
-export interface OmsOrderEvent {
-  omsOrderId: string;
-  /** Engine order id; '0' until the engine acks. */
-  clusterOrderId: string;
-  userId: number;
-  marketId: number;
+/** The v2 Order object (REST reads, stream `order` frames and snapshots).
+ *  Ids are decimal strings, money is decimal strings, times are epoch ms. */
+export interface ApiOrder {
+  orderId: string;
+  clientOrderId: string | null;
+  marketId: string;
   side: 'BUY' | 'SELL';
-  orderType: string;
+  type: string;
   timeInForce: string;
-  price: string;
-  quantity: string;
-  filledQty: string;
-  remainingQty: string;
+  price: string | null;
   stopPrice: string | null;
+  quantity: string;
+  filledQuantity: string;
+  remainingQuantity: string;
   status: string;
-  rejectReason: string | null;
-  createdAtMs: number;
-  updatedAtMs: number;
+  /** The core reject reason name, or null. */
+  reason: string | null;
+  meReason: number | null;
+  meOrderId: string | null;
+  hold?: { assetId: string; amount: string; remaining?: string } | null;
+  createdAt: number;
+  updatedAt: number;
+  displayQuantity?: string | null;
+  expiresAt?: number | null;
+  budget?: string | null;
 }
 
 export interface UserOrder {
+  /** The matching engine's id (display only; 0 before dispatch). */
   orderId: number;
-  /** OMS order id as a STRING ('' when unknown) — Snowflake ids overflow JS
-   *  numbers, and REST cancel/replace must use THIS id, never orderId (#25). */
+  /** The gateway's order id (v2 `orderId`) as a STRING: ids are decimal
+   *  strings on the wire, and REST cancel/amend key on THIS id. */
   omsOrderId: string;
   marketId: number;
   market: string;
-  userId: number;
   side: OrderSide;
   type: OrderType;
   price: number;
@@ -289,7 +253,7 @@ export interface UserOrder {
   timestamp: number;
 }
 
-// No userId: identity comes from the auth token; the OMS derives it (oms#36).
+// No userId: identity comes from the credential; the gateway derives it.
 export interface OrderRequest {
   market: string;
   orderType: OrderType;

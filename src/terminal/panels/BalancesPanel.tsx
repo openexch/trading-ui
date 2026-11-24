@@ -2,9 +2,12 @@
 /**
  * Balances: available and locked per asset, from the 5 s balances poll
  * (useBalances). No portfolio total: there is no valuation source yet
- * (DESIGN.md rule 14).
+ * (DESIGN.md rule 14). An asset opens its balance ledger (BalanceLedger:
+ * its movements, each with its core log position); one at a time.
  */
+import { Fragment, useState } from 'react';
 import { useBalances } from '../../hooks/useBalances';
+import { BalanceLedger } from './BalanceLedger';
 import type { SlotChrome } from '../layout/SideColumn';
 import { PanelFrame, PanelNote, PanelSignIn } from './PanelFrame';
 
@@ -22,6 +25,7 @@ const ROW = 'grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_minmax(0,1fr)] item
 
 export function BalancesPanel({ chrome, signedIn, onSignIn }: BalancesPanelProps) {
   const { assets } = useBalances();
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <PanelFrame label="Balances" position={chrome.position} header={chrome.picker()}>
       {!signedIn ? (
@@ -39,11 +43,30 @@ export function BalancesPanel({ chrome, signedIn, onSignIn }: BalancesPanelProps
           </thead>
           <tbody>
             {assets.map(a => (
-              <tr key={a.assetId} data-balance-row={a.asset} className={`${ROW} h-[30px] border-b border-hairline`}>
-                <th scope="row" className="truncate text-left font-semibold text-text-strong">{a.asset}</th>
-                <td className="truncate text-right text-text-strong">{formatAmount(a.available)}</td>
-                <td className="truncate text-right text-muted">{formatAmount(a.locked)}</td>
-              </tr>
+              <Fragment key={a.assetId}>
+                <tr data-balance-row={a.asset} className={`${ROW} h-[30px] border-b border-hairline`}>
+                  <th scope="row" className="truncate text-left font-semibold text-text-strong">
+                    <button
+                      type="button"
+                      aria-expanded={open === a.assetId}
+                      aria-label={`${open === a.assetId ? 'Hide' : 'Show'} ${a.asset} movements`}
+                      onClick={() => setOpen(o => (o === a.assetId ? null : a.assetId))}
+                      className="font-semibold underline decoration-transparent underline-offset-2 hover:decoration-current"
+                    >
+                      {a.asset}
+                    </button>
+                  </th>
+                  <td className="truncate text-right text-text-strong">{formatAmount(a.available)}</td>
+                  <td className="truncate text-right text-muted">{formatAmount(a.locked)}</td>
+                </tr>
+                {open === a.assetId && (
+                  <tr className="block">
+                    <td className="block p-0">
+                      <BalanceLedger assetId={a.assetId} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>

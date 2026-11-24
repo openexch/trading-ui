@@ -10,7 +10,7 @@ interface AuthModalProps {
 const inputClass =
   'w-full rounded-md border border-hairline bg-surface-2 px-3 py-2 font-mono text-xs text-text outline-none placeholder:text-faint focus:border-accent';
 
-/** Login | Register modal against the OMS demo auth endpoints (oms#72).
+/** Login | Register modal against the gateway's demo auth routes (/api/v2/auth).
  *  Server error messages (validation / username taken / bad credentials)
  *  are shown inline; success stores the session and closes the modal. */
 export function AuthModal({ onClose }: AuthModalProps) {
@@ -52,7 +52,7 @@ export function AuthModal({ onClose }: AuthModalProps) {
       track(EV.auth_success, { mode, round_trip_ms: Date.now() - startedAt });
       onClose();
     } else {
-      // The error string comes from a fixed set the OMS returns (taken name,
+      // The error string comes from a fixed set the gateway returns (taken name,
       // bad credentials, unreachable); it carries no user input back.
       track(EV.auth_failure, { mode, reason: (result.error ?? 'unknown').slice(0, 120) });
       setError(result.error ?? 'Something went wrong');

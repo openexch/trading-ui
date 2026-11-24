@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // @vitest-environment jsdom
 /**
- * Phone shell smoke test: the real <App/> under ?ui=ladder with matchMedia
+ * Phone shell smoke test: the real <App/> with matchMedia
  * reporting a phone (max-width 768px) and the network mocked. A tap stages
  * into the bottom sheet and Place sends the same wire request as the
  * desktop; the rung menu opens by long-press and by the visible "More order
@@ -17,6 +17,7 @@ vi.mock('../components/Chart/Chart', () => ({
 }));
 
 import App from '../App';
+import { asResponse, bookSnapshotFrame, gatewayReply } from '../test/wire';
 import { AuthProvider } from '../auth/AuthContext';
 import { BalancesProvider } from '../hooks/useBalances';
 import { LONG_PRESS_MS } from '../terminal/ladder/Rung';
@@ -75,21 +76,16 @@ function stubPhoneMatchMedia() {
 
 type Call = { url: string; init?: RequestInit };
 let calls: Call[] = [];
-let accounts: unknown = { userId: 1, assets: [] };
+/** What GET /api/v2/balances answers. */
+let accounts: unknown = { asOf: { logPosition: 1 }, assets: [] };
 
 function stubFetch() {
   calls = [];
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
-    let body: unknown = {};
-    if (url.includes('/api/v1/orders') && init?.method === 'POST')
-      body = { accepted: true, omsOrderId: '331911111111111111', status: 'PENDING_NEW' };
-    else if (url.includes('/api/v1/auth/me')) body = { userId: 1, username: 'dev' };
-    else if (url.includes('/api/v1/orders') || url.includes('/api/v1/executions')) body = [];
-    else if (url.includes('/api/v1/accounts')) body = accounts;
-    else if (url.includes('/api/candles')) body = { candles: [] };
-    return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as Response;
+    if (url.endsWith('/api/v2/balances')) return asResponse({ status: 200, body: accounts });
+    return asResponse(gatewayReply(url, init?.method));
   }) as unknown as typeof fetch;
 }
 
@@ -112,17 +108,16 @@ function pushBook() {
   act(() => {
     ws.onopen?.();
     ws.onmessage?.({
-      data: JSON.stringify({ type: 'BOOK_SNAPSHOT', marketId: 1, market: 'BTC-USD', bids, asks, timestamp: 1 }),
+      data: bookSnapshotFrame(1, bids, asks, 1),
     });
   });
 }
 
-const posts = () => calls.filter(c => c.url.includes('/api/v1/orders') && c.init?.method === 'POST');
+const posts = () => calls.filter(c => c.url.endsWith('/api/v2/orders') && c.init?.method === 'POST');
 const sheet = () => screen.getByRole('status', { name: /staged order/i });
 const bodyOf = (c: Call) => JSON.parse(String(c.init!.body));
 
 async function phoneWithBook() {
-  window.history.replaceState({}, '', '/?ui=ladder');
   const utils = renderApp();
   await screen.findByRole('grid', { name: /price ladder/i });
   await screen.findByRole('button', { name: /menu, signed in as dev/i });
@@ -131,14 +126,14 @@ async function phoneWithBook() {
   return utils;
 }
 
-describe('Phone shell (?ui=ladder at 768px and below)', () => {
+describe('Phone shell (768px and below)', () => {
   beforeEach(() => {
     cleanup();
     MockWebSocket.instances = [];
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
     globalThis.ResizeObserver = FixedResizeObserver as unknown as typeof ResizeObserver;
     stubPhoneMatchMedia();
-    accounts = { userId: 1, assets: [] };
+    accounts = { asOf: { logPosition: 1 }, assets: [] };
     stubFetch();
     localStorage.clear();
     localStorage.setItem('oe.session', JSON.stringify({ token: 'smoketoken1', userId: 1, username: 'dev' }));
@@ -203,11 +198,12 @@ describe('Phone shell (?ui=ladder at 768px and below)', () => {
     expect(body.price).toBe('97400.00000000');
     expect(body.quantity).toBe('0.25000000');
     expect(body.side).toBe('BUY');
-    expect(body.orderType).toBe('LIMIT');
+    expect(body.type).toBe('LIMIT');
     expect(body.timeInForce).toBe('GTC');
-    expect(body.marketId).toBe(1);
+    expect(body.marketId).toBe('1');
     expect(body.userId).toBeUndefined();
     expect((post.init!.headers as Record<string, string>).Authorization).toMatch(/^Bearer /);
+    expect((post.init!.headers as Record<string, string>)['Idempotency-Key']).toBeTruthy();
     // Accepted: the result shows, the sheet closes.
     await waitFor(() => expect(sheet().textContent).toContain('Accepted: Buy 0.25 BTC @ 97,400'));
     expect(screen.queryByRole('button', { name: /^place/i })).toBeNull();
@@ -241,9 +237,11 @@ describe('Phone shell (?ui=ladder at 768px and below)', () => {
     fireEvent.click(within(sheet()).getByRole('button', { name: /^place sell$/i }));
     await waitFor(() => expect(posts()).toHaveLength(1));
     const body = bodyOf(posts()[0]);
-    expect(body.orderType).toBe('STOP_LOSS');
+    expect(body.type).toBe('STOP_LOSS');
     expect(body.side).toBe('SELL');
     expect(body.stopPrice).toBe('97390.00000000');
+    // A STOP_LOSS carries no limit price (the gateway refuses one).
+    expect(body.price).toBeUndefined();
     expect(body.quantity).toBe('0.25000000');
     expect(body.userId).toBeUndefined();
   });
@@ -288,7 +286,7 @@ describe('Phone shell (?ui=ladder at 768px and below)', () => {
     fireEvent.click(within(sheet()).getByRole('button', { name: /^confirm market sell$/i }));
     await waitFor(() => expect(posts()).toHaveLength(1));
     const body = bodyOf(posts()[0]);
-    expect(body.orderType).toBe('MARKET');
+    expect(body.type).toBe('MARKET');
     expect(body.side).toBe('SELL');
     expect(body.quantity).toBe('0.25000000');
     expect(body.userId).toBeUndefined();
@@ -302,7 +300,7 @@ describe('Phone shell (?ui=ladder at 768px and below)', () => {
   });
 
   it('% of available sets the size from the spent asset\'s balance', async () => {
-    accounts = { userId: 1, assets: [{ asset: 'USD', assetId: 2, available: '10000', locked: '0', total: '10000' }] };
+    accounts = { asOf: { logPosition: 1 }, assets: [{ assetId: '0', asset: 'USD', available: '10000', locked: '0', total: '10000' }] };
     await phoneWithBook();
     fireEvent.click(screen.getByRole('gridcell', { name: /^buy 0.25 btc at 97,400/i }));
     fireEvent.click(await within(sheet()).findByRole('button', { name: '50%' }));
@@ -354,5 +352,13 @@ describe('Phone shell (?ui=ladder at 768px and below)', () => {
     } finally {
       meta.remove();
     }
+  });
+  it('the menu opens the Engines view; signed in without a frame it is all dashes', async () => {
+    await phoneWithBook();
+    fireEvent.click(screen.getByRole('button', { name: /menu, signed in as dev/i }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Engines' }));
+    const panel = await screen.findByRole('region', { name: 'Engines' });
+    expect(panel.querySelectorAll('[data-engine-node]')).toHaveLength(0);
+    expect(panel.querySelector('[data-engine-bridge]')!.textContent).not.toMatch(/[0-9]/);
   });
 });

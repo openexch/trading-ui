@@ -6,7 +6,8 @@
  * where it lives now (Here, Left top, ..., Far right bottom, Hidden).
  * Picking one that is open elsewhere swaps the two; picking a hidden one
  * replaces this slot's panel, which takes the hidden one's place (in
- * standard mode, the far-right column's slots are the hidden ones).
+ * standard mode, the far-right column's slots are the hidden ones); picking
+ * a closed one (in no slot) replaces this slot's panel, which closes.
  * Below them: Layout presets… (opens a second menu at the same place) and
  * Reset layout.
  *
@@ -35,6 +36,7 @@ export const SLOT_NAMES: Readonly<Record<SlotIndex, string>> = {
 /** Where a panel lives, as the picker says it, from one slot's view. A
  *  panel in a slot the mode does not show is Hidden. */
 export function whereLabel(layout: LayoutState, here: SlotIndex, panel: PanelId, mode: LayoutMode): string {
+  if (!layout.slots.includes(panel)) return 'Closed';
   const at = visibleSlots(mode).find(i => layout.slots[i] === panel);
   if (at === here) return 'Here';
   return at === undefined ? 'Hidden' : SLOT_NAMES[at];

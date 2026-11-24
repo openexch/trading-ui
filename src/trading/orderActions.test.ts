@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 import type { UserOrder } from '../types/market';
-import { MARKETS } from '../types/market';
+import { TEST_MARKETS as MARKETS } from '../test/markets';
 import { cancelAllSummary, canMove, menuReference, oneClickPlaces, rungMenuSides, stepPrice, MOVE_LABEL } from './orderActions';
 import { snapDeltaText } from './orderDraft';
 import { buildStaged, describeStaged } from './staging';
@@ -13,7 +13,7 @@ const DOGE = MARKETS.find(m => m.symbol === 'DOGE-USD')!;
 
 function order(type: UserOrder['type'], id = '1'): UserOrder {
   return {
-    orderId: 1, omsOrderId: id, marketId: 1, market: 'BTC-USD', userId: 1, side: 'BID', type,
+    orderId: 1, omsOrderId: id, marketId: 1, market: 'BTC-USD', side: 'BID', type,
     price: 97_400, originalQuantity: 0.5, remainingQuantity: 0.5, filledQuantity: 0, status: 'NEW', timestamp: 1,
   };
 }
