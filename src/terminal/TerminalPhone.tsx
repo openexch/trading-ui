@@ -40,7 +40,7 @@ import type { TerminalDesktopProps } from './TerminalDesktop';
 /** The phone takes the same values and callbacks as the desktop shell. */
 export type TerminalPhoneProps = TerminalDesktopProps;
 
-/** 'engines' opens from the menu; it has no place in the bottom nav. */
+/** The five tabs of the bottom nav, in its order. */
 export type PhoneTab = 'ladder' | 'chart' | 'orders' | 'trades' | 'engines';
 
 /** Placeholder for a value that has not arrived (en dash, not a zero). */
@@ -89,7 +89,7 @@ function phoneChrome(title: string): SlotChrome {
 }
 
 function PhoneHeader(
-  props: TerminalPhoneProps & { onOpenMarkets: () => void; marketsOpen: boolean; onOpenEngines: () => void; electing: boolean },
+  props: TerminalPhoneProps & { onOpenMarkets: () => void; marketsOpen: boolean; electing: boolean },
 ) {
   const { market, stats, status } = props;
   const d = tickDecimals(market.tickSize);
@@ -195,7 +195,6 @@ function PhoneHeader(
         ) : (
           <MenuItem onSelect={props.onSignIn}>Sign in</MenuItem>
         )}
-        <MenuItem onSelect={props.onOpenEngines}>Engines</MenuItem>
         <MenuItem onSelect={toggleTheme}>{isDark ? 'Switch to light theme' : 'Switch to dark theme'}</MenuItem>
       </Menu>
     </header>
@@ -238,7 +237,6 @@ export function TerminalPhone(props: TerminalPhoneProps) {
         {...props}
         onOpenMarkets={() => setMarketsOpen(true)}
         marketsOpen={marketsOpen}
-        onOpenEngines={() => setTab('engines')}
         electing={engineWait !== null}
       />
 
@@ -305,7 +303,7 @@ export function TerminalPhone(props: TerminalPhoneProps) {
 
       <nav
         aria-label="Sections"
-        className="relative z-30 box-content grid h-16 flex-none grid-cols-4 border-t border-hairline bg-surface pb-[max(8px,env(safe-area-inset-bottom))]"
+        className="relative z-30 box-content grid h-16 flex-none grid-cols-5 border-t border-hairline bg-surface pb-[max(8px,env(safe-area-inset-bottom))]"
       >
         <NavTab tab="ladder" active={tab === 'ladder'} onSelect={setTab}>
           Ladder
@@ -318,6 +316,9 @@ export function TerminalPhone(props: TerminalPhoneProps) {
         </NavTab>
         <NavTab tab="trades" active={tab === 'trades'} onSelect={setTab}>
           Trades
+        </NavTab>
+        <NavTab tab="engines" active={tab === 'engines'} onSelect={setTab}>
+          Engines
         </NavTab>
       </nav>
 

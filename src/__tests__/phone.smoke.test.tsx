@@ -160,7 +160,7 @@ describe('Phone shell (768px and below)', () => {
     expect(screen.getByRole('button', { name: /^order settings: 0.25 btc, limit, good till cancelled$/i })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: /price grouping/i })).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: /sections/i });
-    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['Ladder', 'Chart', 'Orders 0', 'Trades']);
+    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['Ladder', 'Chart', 'Orders 0', 'Trades', 'Engines']);
     // The desktop defaults bar and strip are not here.
     expect(screen.queryByRole('form', { name: /order defaults/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /keyboard shortcuts/i })).toBeNull();
@@ -353,10 +353,22 @@ describe('Phone shell (768px and below)', () => {
       meta.remove();
     }
   });
-  it('the menu opens the Engines view; signed in without a frame it is all dashes', async () => {
+  it('Engines is a bottom nav tab, not a menu item; signed in without a frame it is all dashes', async () => {
     await phoneWithBook();
+    const nav = screen.getByRole('navigation', { name: 'Sections' });
+    expect([...nav.querySelectorAll('[data-tab]')].map((t) => t.getAttribute('data-tab'))).toEqual([
+      'ladder',
+      'chart',
+      'orders',
+      'trades',
+      'engines',
+    ]);
     fireEvent.click(screen.getByRole('button', { name: /menu, signed in as dev/i }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Engines' }));
+    await screen.findByRole('menuitem', { name: 'Account and balances' });
+    expect(screen.queryByRole('menuitem', { name: 'Engines' })).toBeNull();
+    const tab = nav.querySelector('[data-tab="engines"]') as HTMLElement;
+    fireEvent.click(tab);
+    expect(tab.getAttribute('aria-current')).toBe('page');
     const panel = await screen.findByRole('region', { name: 'Engines' });
     expect(panel.querySelectorAll('[data-engine-node]')).toHaveLength(0);
     expect(panel.querySelector('[data-engine-bridge]')!.textContent).not.toMatch(/[0-9]/);

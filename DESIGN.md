@@ -104,8 +104,10 @@ A separate branch at 768 px and below: the ladder is the main tab (44 px
 rungs), tap stages into a bottom sheet with Place / Cancel, long-press opens
 the order-type menu (a visible "More order types" button covers people who
 cannot long-press), a floating Re-centre button, and a bottom nav (Ladder,
-Chart, Orders, Trades). The menu opens the Engines panel; the status dot
-turns to the warning state during an election. No one-click on touch.
+Chart, Orders, Trades, Engines). Engines is a tab of its own, one tap away:
+the engines' logs are the identity, so they are not behind the menu. The
+status dot turns to the warning state during an election. No one-click on
+touch.
 
 ## Non-negotiable behaviours
 
